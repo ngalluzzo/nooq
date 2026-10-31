@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 1 — pre-implementation.** Implements DM-8 of
+**Status: Draft 1.1 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -51,7 +51,8 @@ Message types: `hello`, `hello-reply`, `update`, `delta`, `awareness`,
 A client opens a session by sending:
 
 ```json
-{ "v": 1, "t": "hello", "doc": "…", "backend": "yjs/1", "sv": "<base64|null>" }
+{ "v": 1, "t": "hello", "doc": "…", "backend": "yjs/1", "sv": "<base64|null>",
+  "update": "<base64|null>" }
 ```
 
 - `backend` identifies the CRDT payload encoding. `yjs/1` is the only
@@ -60,6 +61,14 @@ A client opens a session by sending:
   session ends.
 - `sv` is the client's current state vector, base64 — or `null` for a
   fresh peer that has nothing.
+- `update` is the client's full local state, base64 — or `null` when
+  empty. **The responder MUST apply it before computing its reply**, so
+  each side learns everything the other has from the handshake alone.
+  *(Draft 1.1 amendment: Draft 1 omitted this field, making the
+  handshake receive-only — a peer with pre-existing content could never
+  share it, because content only flows on new edits after connecting.
+  Found by the first bootstrap test; doc changed before code, per
+  SW-11.)*
 
 The responding peer replies:
 
