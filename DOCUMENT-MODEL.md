@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.5 — pre-implementation.** This spec converts
+**Status: Draft 1.6 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -27,6 +27,10 @@ Normative language: MUST, SHOULD, MAY as usual.
 5. **Suggestions & revalidation** (DM-6) — AI edits as proposals.
 6. **Migrations** (DM-7) — CRDT-aware schema evolution.
 7. **Sync** (DM-8) — peers, snapshots, digests.
+8. **Signed transactions** (DM-12) — envelopes binding transactions to
+   actors and their exact effects.
+9. **Access rules** (DM-13) — shared, pure, enforced identically by
+   every peer.
 
 ## DM-2. Identity and canonical bytes
 
@@ -45,7 +49,10 @@ Adopted from gooi `protocol/identity.md`:
   as malformed input.
 - An **actor ID** is a stable unique string for each actor (human, AI
   session, importer, migration runner). Actor IDs never imply identity of
-  persons; they are correlation handles.
+  persons; they are correlation handles. When a document has access
+  rules (DM-13), an actor's Ed25519 public key binds to its actorId
+  through the document's `access` header — the ID remains a correlation
+  handle; the key is the identity.
 - A **Lamport clock** per actor, incremented on each transaction, paired
   with the actor ID for total ordering: `(lamport, actorId)` compared
   lexicographically. Causality between transactions additionally uses a
@@ -338,3 +345,63 @@ The proposal payload:
 Same rule as PHILOSOPHY: citable by section in review and design debates.
 A PR that violates DM-x is wrong, or DM-x is — in which case the spec
 changes first, in public, under governance.
+
+## DM-12. Signed transactions
+
+A nooq transaction produces exactly one Yjs transaction and one
+incremental update. A **signed envelope** binds the transaction to its
+actor and its exact effects:
+
+```json
+{
+  "tx": { "…the nooq transaction…": "…" },
+  "client": "<yjs clientID>",
+  "clocks": { "from": 0, "to": 9 },
+  "updateDigest": "sha256:…",
+  "sig": "<base64 Ed25519 signature>"
+}
+```
+
+- The signature is Ed25519 over the canonical JSON (DM-2) of
+  `{docId, tx, client, clocks, updateDigest}`.
+- The update may contain only structs from the declared client (a Yjs
+  clientID bound to the actor for this envelope), in the declared
+  contiguous clock range. `updateDigest` is the SHA-256 fingerprint of
+  the update bytes: an update that does not match its envelope is
+  tampered and MUST be dropped.
+- Its delete set may target only blocks the access rules (DM-13) allow.
+
+## DM-13. Access rules
+
+The document header gains an optional `access` value:
+
+```json
+{
+  "owner": { "actorId": "…", "key": "<base64 Ed25519 public key>" },
+  "grants": [ { "actorId": "…", "key": "<base64>", "role": "writer" } ]
+}
+```
+
+- `access` is written only by owner-signed envelopes (DM-12). Grants are
+  append-only in v1; revocation means forking the document to a new
+  access set (DM-10 open problems).
+- Roles:
+  - **writer** — any op.
+  - **suggester** — may create and attach `nooq.suggestion/v1` blocks
+    only. Actors of kind `ai` default to suggester (PHILOSOPHY §5).
+  - **reader** — no ops.
+- Accept and reject require a writer. An adoption is signed by its
+  `adoptedBy` actor, and its ops MUST canonically equal the proposal's
+  ops (DM-6.3's "verbatim" now verified, not promised).
+- `authorize(access, envelope, touched)` is a **pure function**. Every
+  peer — relays included — applies it identically before applying an
+  update; no peer applies any other content policy (SW-1.2).
+- An envelope whose signer is validly signed but not yet granted is
+  **held pending** and re-evaluated when grants arrive. An envelope that
+  fails verification or authorization is never applied or relayed.
+- A document without `access` behaves exactly as before: open,
+  single-player or trusted-peers mode. Existing documents and tests are
+  unaffected.
+
+*(Draft 1.6, per proposals/0001.)*
+

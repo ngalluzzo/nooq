@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 1.2 — pre-implementation.** Implements DM-8 of
+**Status: Draft 2 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -14,8 +14,11 @@ Normative language: MUST, SHOULD, MAY as usual.
 1. **Transport-agnostic envelope.** Messages are data; one normative
    transport binding is defined (SW-8) and others MAY follow.
 2. **Every peer is a peer.** A hosted nooq service relays, persists, and
-   serves — it never resolves, edits, rejects, or gates document updates
-   (PHILOSOPHY §2). There is no authority on the wire.
+   serves — it never resolves, edits, or gates document updates on its
+   own authority (PHILOSOPHY §2). Every peer applies the same shared
+   rules (DM-13) identically, and no other content policy; there is no
+   authority on the wire because there is no policy but the document's
+   own (DM-12/13).
 3. **Retransmission is free.** Document updates are idempotent CRDT
    payloads; sending one twice changes nothing. Senders need no
    reliability guarantees from the transport beyond eventual delivery,
@@ -44,7 +47,9 @@ Every message is a single UTF-8 JSON object:
   named `sv`, `update`, or `delta`.
 
 Message types: `hello`, `hello-reply`, `update`, `delta`, `awareness`,
-`error`.
+`error`. When a document has access rules (DM-13), an `update` or
+`delta` carries a signed envelope (DM-12) alongside its payload, and
+receivers verify before applying.
 
 ## SW-3. Handshake and bootstrap
 
@@ -84,6 +89,9 @@ The responding peer replies:
   that delta. The receiver SHOULD apply the delta, project, and compare;
   on mismatch it MUST discard the delta, emit `error`
   (`verification-failed`) locally, and not treat the session as synced.
+- For documents with access rules, bootstrap ships the **envelope log**
+  (DM-12), so a joining peer verifies every transaction back to the
+  first (SW-3).
 - Reconnection re-runs the handshake; the delta since the last state
   vector is small by construction.
 
@@ -114,8 +122,10 @@ A hosted nooq sync service is a peer that:
   `update` payload of a `hello`, which is an update like any other — to
   every other connected session of the same document, unchanged.
 - MUST NOT modify, reorder semantically, reject, or gate any update on
-  content grounds. Conflict resolution happens in every client's CRDT;
-  there is nothing to resolve server-side.
+  its own content policy. The relay verifies envelopes and drops invalid
+  ones exactly like any peer (DM-13 `authorize`), and applies no other
+  policy. Conflict resolution happens in every client's CRDT; there is
+  nothing to resolve server-side.
 - MAY evict, rate-limit, or require transport-level authentication —
   these are operational policies on the *connection*, never on
   *document content*. A policy that distinguishes between documents'
@@ -148,31 +158,28 @@ A hosted nooq sync service is a peer that:
 
 ## SW-9. Security and privacy
 
-Wire v1 carries no identity or authentication; it assumes a secure
-transport (TLS or loopback). Hosted relays MAY authenticate connections
-at the transport layer — auth is about *who may connect*, never about
-*what may sync*. Payloads contain everything the document contains; peers
-that must not see content must not be peers.
+Wire v2 carries identity where the document demands it: envelope
+signatures (DM-12) are actor identity, verified by every peer; transport
+authentication remains about *who may connect*, never about *what may
+sync*. Open documents (no `access`) still carry no identity. Payloads
+contain everything the document contains; peers that must not see
+content must not be peers.
 
 ## SW-10. Open questions
 
 1. Binary framing (length-prefixed) instead of base64-in-JSON for
    throughput; deferred until measured (PHILOSOPHY §3 budgets).
-1. ~~Incremental update exchange.~~ **Resolved (Draft 1.2).** Root
-   cause, found by apply-oracle bisection: (a) the document header was
-   written as CRDT content, consuming clock numbers 0–1, so every real
-   item started at clock 2 — and Yjs correctly *pends* structs whose
-   predecessors are missing, so fresh peers silently parked new-block
-   increments as pending; and (b) the relay never rebroadcast a joining
-   peer's hello base, so earlier peers never learned the joiner's
-   clock 0–1. Fixes: the header is side-channel metadata, not CRDT
-   content (real items start at clock 0); a hosted peer MUST relay a
-   hello's `update` payload to existing sessions like any other update
-   (SW-6). Sessions exchange bare per-transaction increments again.
-   Pending-until-base remains correct Yjs behavior for out-of-order
-   delivery and is part of SW-4's semantics.
-2. Awareness piggybacking on `update` to cut message counts.
-3. Compaction/truncation of full-history deltas for very old documents.
+2. ~~Incremental update exchange.~~ **Resolved (Draft 1.2)** — the
+   original "nested-type insert" diagnosis was wrong: the real cause was
+   a Yjs clock gap. The document header was CRDT content consuming
+   clocks 0–1 (Yjs correctly pends structs with missing predecessors),
+   and the relay never forwarded a joining peer's hello base. Fixes: the
+   header is side-channel metadata; hello updates are relayed (SW-6).
+   Sessions exchange bare per-transaction increments, and
+   pending-until-base is part of SW-4's semantics.
+3. Awareness piggybacking on `update` to cut message counts.
+4. Compaction/truncation of full-history deltas for very old documents.
+5. Grant revocation and key rotation (DM-13 non-goals in v1).
 
 ## SW-11. What this spec is for
 

@@ -49,9 +49,12 @@ optimization, never a requirement. Servers — including nooq's own hosted
 service, if it exists — are peers, not sources of truth.
 
 - Commits us to: every feature functioning in airplane mode from the first
-  commit; sync as a background concern the writer never waits on.
-- Broken when: any input, save, or edit blocks on connectivity, or any
-  feature gates on round-trips.
+  commit; sync as a background concern the writer never waits on. Servers
+  are peers that apply the same shared rules as everyone else, nothing
+  more (DM-12/13).
+- Broken when: any input, save, or edit blocks on connectivity, any
+  feature gates on round-trips, or a server enforces a policy the
+  document's own rules do not state.
 
 ## 3. The cursor is sacred
 
@@ -86,8 +89,9 @@ flow, not an afterthought.
 
 - Commits us to: attribution stored in the document, not in logs;
   suggestion and acceptance as document-level operations.
-- Broken when: an AI edit lands indistinguishably from a human's, or
-  provenance is only knowable while the logs survive.
+- Broken when: an AI edit lands indistinguishably from a human's,
+  provenance is only knowable while the logs survive, or a peer can
+  claim another actor's identity.
 
 ## 6. Intelligence is pluggable; the contract is not
 
