@@ -49,6 +49,8 @@ export interface YjsLayout {
   blocks: Y.Map<Y.Map<unknown>>;
   roots: Y.Array<BlockId>;
   placement: Y.Map<Placement>;
+  /** DM-13: replicated access header (owner + append-only grants). */
+  access: Y.Map<unknown>;
   log: Y.Array<unknown>;
 }
 
@@ -80,6 +82,7 @@ export function layout(doc: Y.Doc): YjsLayout {
     blocks: doc.getMap<Y.Map<unknown>>("blocks"),
     roots: doc.getArray<BlockId>("roots"),
     placement: doc.getMap<Placement>("placement"),
+    access: doc.getMap("access"),
     log: doc.getArray("log"),
   };
 }

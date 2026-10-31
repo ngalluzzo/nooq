@@ -31,7 +31,7 @@ function isRegister(raw: unknown): raw is Register {
 
 export function readState(doc: Y.Doc): DocState {
   const header = documentHeader(doc);
-  const { blocks: yblocks, roots: yroots, placement, log } = layout(doc);
+  const { blocks: yblocks, roots: yroots, placement, access: yaccess, log } = layout(doc);
 
   const containerOf = new Map<BlockId, BlockId | null>();
   for (const id of yblocks.keys()) {
@@ -66,9 +66,12 @@ export function readState(doc: Y.Doc): DocState {
     blocks[id] = readBlock(id, yb, childrenOf);
   }
 
+  const accessEntry = yaccess.get("access");
+  const accessJson = accessEntry === undefined ? undefined : (structuredClone(accessEntry) as unknown);
   return {
     docId: header.docId,
     schemaVersion: header.schemaVersion,
+    ...(accessJson ? { access: accessJson as DocState["access"] } : {}),
     roots: childrenOf(null),
     blocks,
     log: log.toArray() as unknown as Transaction[],

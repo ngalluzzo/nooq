@@ -89,7 +89,9 @@ export type Op =
   | { op: "textEdit"; block: BlockId; changes: readonly import("./text.ts").TextChange[] }
   | { op: "move"; block: BlockId; newParent: BlockId | null; index?: number }
   | { op: "delete"; block: BlockId }
-  | { op: "restore"; block: BlockId; parent: BlockId | null; index?: number };
+  | { op: "restore"; block: BlockId; parent: BlockId | null; index?: number }
+  /** DM-13: write the document's access header. Owner-signed envelopes only. */
+  | { op: "setAccess"; access: Access };
 
 export interface Transaction {
   id: string;

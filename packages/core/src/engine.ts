@@ -176,6 +176,13 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       detach(state, op.block); // Tombstone: map entry, fields, and text persist (DM-3.4).
       return;
     }
+    case "setAccess": {
+      if (!op.access?.owner?.actorId || !Array.isArray(op.access.grants)) {
+        throw new Error("malformed access (DM-13)");
+      }
+      state.access = structuredClone(op.access);
+      return;
+    }
     case "restore": {
       requireBlock(state, op.block);
       if (liveTree(state).alive.has(op.block)) throw new Error(`block ${op.block} is not tombstoned`);

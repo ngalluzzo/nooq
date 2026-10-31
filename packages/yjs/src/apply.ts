@@ -19,6 +19,7 @@ import {
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
+import { applyTransaction as engineApply } from "@nooq/core";
 import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
@@ -30,7 +31,11 @@ export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
 }
 
 /** Apply a nooq transaction to a Y.Doc. Durable intent is logged with the ops (DM-4). */
-export function applyTransaction(doc: Y.Doc, tx: Transaction): void {
+export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown): void {
+  // Atomicity (DM-12): validate the WHOLE transaction against the
+  // sequential engine over the current projection before any Yjs
+  // mutation — a failing op never leaves its siblings applied.
+  engineApply(readState(doc), tx);
   doc.transact(() => {
     tx.ops.forEach((op, index) => {
       try {
@@ -41,7 +46,7 @@ export function applyTransaction(doc: Y.Doc, tx: Transaction): void {
       }
     });
     layout(doc).log.push([tx as unknown as Record<string, unknown>]);
-  });
+  }, origin);
 }
 
 function applyOp(doc: Y.Doc, op: import("@nooq/core").Op, tx: Transaction): void {
@@ -77,6 +82,10 @@ function applyOp(doc: Y.Doc, op: import("@nooq/core").Op, tx: Transaction): void
         actor: tx.actor.actorId,
         tombstoned: true,
       });
+      return;
+    }
+    case "setAccess": {
+      layout(doc).access.set("access", structuredClone(op.access));
       return;
     }
     case "restore": {
