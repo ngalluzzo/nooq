@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.2 — pre-implementation.** This spec converts
+**Status: Draft 1.3 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -127,13 +127,34 @@ Operations (all reference block IDs, never positions):
   same transaction.
 - **DM-4.5 Delete** — `{op:"delete", block}` (tombstone; DM-3.4).
 - **DM-4.6 Restore** — `{op:"restore", block, parent, index?}` — reverse
-  tombstone.
+  tombstone. Restore obeys DM-4.4's rule: the new parent MUST NOT lie in
+  the restored block's subtree, which may contain tombstoned descendants
+  and therefore needs checking even though the block itself is unreachable.
+  Descendants that were reparented while a block was tombstoned remain
+  where they were placed (placement-register semantics, DM-4.7): reviving
+  a block never steals its former children back, and the sequential
+  engine realizes this by removing a block from every children list
+  before attaching it.
+  *(Draft 1.3: subtree rule and reparenting semantics clarified after the
+  first op-storm runs produced placement cycles and revived-parent
+  collisions through restored blocks; doc changed before code, per
+  DM-11.)*
 
-**Concurrent-move resolution (DM-4.7).** If, after merging, a block ID
-appears in two `children`/`roots` arrays, the winner is the insertion with
-the greater `(lamport, actorId)`; all other insertions are treated as
-deleted entries. This rule is a pure function of the merged operation set,
-so every peer computes the identical forest without communication.
+**Concurrent-move resolution (DM-4.7).** Placement authority is a
+deterministic LWW **placement register** (block ID → parent or tombstone).
+If, after merging, a block's placement was written concurrently by several
+peers, the register keeps exactly one winner; every `children`/`roots`
+entry that disagrees with the register is ignored by projection (and
+physically removed by normalization). The register's resolution MUST be a
+pure function of the merged operation set, so every peer computes the
+identical forest without communication. The reference Yjs adapter realizes
+this with Yjs's native register conflict resolution ((clock, clientID));
+adapters whose CRDT exposes lamport clocks SHOULD resolve by greater
+`(lamport, actorId)`. *(Draft 1.3 amendment: Draft 1.2 specified
+(lamport, actorId) resolution for all adapters, which is unimplementable
+above a CRDT that does not expose losing concurrent register values —
+Yjs keeps one deterministic winner and discards the rest. Found while
+implementing the adapter; doc changed before code, per DM-11.)*
 
 **Edit-vs-delete (DM-4.8).** Order removal and field/text writes are
 independent: a concurrently edited-and-deleted block stays removed, keeps
@@ -190,10 +211,15 @@ The proposal payload:
     every ancestor's block digest. The **root digest** is the fingerprint
     over the ordered live `roots` block digests, and thus pins the entire
     document.
-  Evidence records the content and structure digests. A children entry
-  referencing a block absent from the map (only possible in malformed or
-  GC'd documents) serializes as `null` in digest inputs — revalidation
-  degrades deterministically to `conflicted` instead of crashing.
+  Evidence records the content and structure digests. Digests are defined
+  over the **alive forest** — blocks reachable from `roots` — which is a
+  single-parent spanning forest by construction and therefore acyclic:
+  every alive block has exactly one digest, computed along its unique
+  path from a root. Unreachable blocks (tombstoned, or orphaned by
+  placement cycles from concurrent merges) have no digests; revalidation
+  reports them as `tombstoned` or `missing` before any digest comparison,
+  so revalidation never crashes on states concurrent editing legitimately
+  produces.
   *(Draft 1.2 amendment: Draft 1.1 defined the structure digest over
   child block digests, which include content — so any descendant content
   edit flipped every ancestor's structure digest and `stale` vs
