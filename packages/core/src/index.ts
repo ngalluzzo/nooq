@@ -9,6 +9,13 @@ export {
 } from "./canonical.ts";
 export { fingerprint, sha256, toHex } from "./digest.ts";
 export {
+  applyTextChanges,
+  caretAfterChanges,
+  replaceChanges,
+  TextChangeError,
+  type TextChange,
+} from "./text.ts";
+export {
   computeDigests,
   rootDigest,
   type BlockDigests,

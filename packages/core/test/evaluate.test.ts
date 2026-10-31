@@ -25,7 +25,7 @@ describe("evaluate (DM-6.2/6.5)", () => {
     const proposal = await proposalAgainst(state, [p]);
     const edited = applyTransaction(
       state,
-      tx([{ op: "textEdit", block: p, replace: rt("hello world!") }], 5),
+      tx([{ op: "textEdit", block: p, changes: [{ retain: 11 }, { insert: "!" }] }], 5),
     );
     expect(await evaluate(proposal, edited)).toEqual({ status: "stale", drift: [{ block: p, reason: "content" }] });
   });

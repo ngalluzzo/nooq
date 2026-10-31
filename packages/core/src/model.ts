@@ -68,12 +68,8 @@ export interface DocState {
 export type Op =
   | { op: "insert"; block: Block; parent: BlockId | null; index?: number }
   | { op: "setField"; block: BlockId; key: string; value: JsonValue }
-  /**
-   * v0 simplification: full rendered-content replacement. DM-4.3 sequence
-   * CRDT ops arrive with the Yjs adapter; the state shape they produce is
-   * identical, so digests are unaffected.
-   */
-  | { op: "textEdit"; block: BlockId; replace: RenderedText }
+  /** DM-4.3 (Draft 1.5): splice steps applied left to right. */
+  | { op: "textEdit"; block: BlockId; changes: readonly import("./text.ts").TextChange[] }
   | { op: "move"; block: BlockId; newParent: BlockId | null; index?: number }
   | { op: "delete"; block: BlockId }
   | { op: "restore"; block: BlockId; parent: BlockId | null; index?: number };

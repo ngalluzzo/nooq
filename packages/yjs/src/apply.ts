@@ -20,6 +20,7 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { REGISTER, layout } from "./layout.ts";
+import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
 
 export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
@@ -63,7 +64,7 @@ function applyOp(doc: Y.Doc, op: import("@nooq/core").Op, tx: Transaction): void
         yt = new Y.Text();
         yb.set("text", yt); // integrate before writing: Y.Text.format is unavailable on prelim types
       }
-      setText(yt, op.replace);
+      applyChanges(yt, op.changes);
       yb.set("textBy", { actor: tx.actor.actorId, lamport: tx.lamport });
       return;
     }
@@ -195,6 +196,46 @@ function detachEverywhere(doc: Y.Doc, id: BlockId): void {
 
 function removeAll(arr: Y.Array<BlockId>, id: BlockId): void {
   for (let i = arr.toArray().indexOf(id); i >= 0; i = arr.toArray().indexOf(id)) arr.delete(i, 1);
+}
+
+/** DM-4.3: apply splice steps to a Y.Text. Marks on inserts become per-character attributes; setMarks formats the range. */
+export function applyChanges(yt: Y.Text, changes: readonly TextChange[]): void {
+  let position = 0;
+  for (const change of changes) {
+    if ("retain" in change) {
+      if ("setMarks" in change) {
+        const target = change.setMarks === null ? [] : [...new Set(change.setMarks)].sort();
+        const attrs: Record<string, true | null> = {};
+        for (const mark of new Set([...marksInRange(yt, position, change.retain), ...target])) {
+          attrs[mark] = target.includes(mark) ? true : null;
+        }
+        if (Object.keys(attrs).length > 0) yt.format(position, change.retain, attrs);
+      }
+      position += change.retain;
+    } else if ("insert" in change) {
+      const set = [...new Set(change.marks ?? [])].sort();
+      const attrs: Record<string, true> = {};
+      for (const mark of set) attrs[mark] = true;
+      yt.insert(position, change.insert, set.length > 0 ? attrs : undefined);
+      position += change.insert.length;
+    } else if ("delete" in change) {
+      yt.delete(position, change.delete);
+    }
+  }
+}
+
+function marksInRange(yt: Y.Text, from: number, length: number): string[] {
+  const names = new Set<string>();
+  let cursor = 0;
+  for (const run of yt.toDelta() as unknown as Array<{ insert: unknown; attributes?: Record<string, unknown> }>) {
+    const str = typeof run.insert === "string" ? run.insert : "";
+    const attrs = run.attributes ?? {};
+    if (cursor + str.length > from && cursor < from + length) {
+      for (const name of Object.keys(attrs)) if (attrs[name]) names.add(name);
+    }
+    cursor += str.length;
+  }
+  return [...names];
 }
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {

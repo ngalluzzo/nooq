@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   acceptChecked,
+  replaceChanges,
   applyTransaction as engineApply,
   canonicalJson,
   evaluateSuggestion,
@@ -17,7 +18,7 @@ describe("cross-peer suggestion lifecycle (DM-6.3 over replication)", () => {
     const { p1, p2, ids } = makePeers();
     const ops: Op[] = [
       { op: "setField", block: ids.p, key: "tone", value: "urgent" },
-      { op: "textEdit", block: ids.p, replace: rt("hello from the other peer") },
+      { op: "textEdit", block: ids.p, changes: replaceChanges("hello world", "hello from the other peer") },
       { op: "insert", block: makeBlock({ type: "nooq.paragraph/v1", text: rt("appended by ai") }, AI), parent: ids.section, index: 3 },
     ];
     const proposal = await proposalAgainst(p1.mirror, [ids.section, ids.p], ops);

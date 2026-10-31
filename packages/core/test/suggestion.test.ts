@@ -6,6 +6,7 @@ import {
   liveTree,
   makeBlock,
   makeSuggestionBlock,
+  replaceChanges,
   acceptChecked,
   rejectTransaction,
   rootDigest,
@@ -46,7 +47,7 @@ describe("suggestion lifecycle (DM-6.3/6.4)", () => {
     const { state, section, p } = await buildFixture();
     const ops: Op[] = [
       { op: "setField", block: p, key: "tone", value: "urgent" },
-      { op: "textEdit", block: p, replace: rt("hello brave new world") },
+      { op: "textEdit", block: p, changes: replaceChanges("hello world", "hello brave new world") },
     ];
     const setup = await propose(state, p, section, ops);
     const accept = await acceptChecked({
@@ -155,7 +156,7 @@ describe("suggestion lifecycle (DM-6.3/6.4)", () => {
     const ops: Op[] = [{ op: "setField", block: p, key: "tone", value: "urgent" }];
     const setup = await propose(state, p, section, ops);
     expect((await evaluateSuggestion(setup.state, setup.suggestion)).status).toBe("fresh");
-    const drifted = applyTransaction(setup.state, tx([{ op: "textEdit", block: p, replace: rt("drift") }], 6, HUMAN));
+    const drifted = applyTransaction(setup.state, tx([{ op: "textEdit", block: p, changes: replaceChanges("hello world", "drift") }], 6, HUMAN));
     expect((await evaluateSuggestion(drifted, setup.suggestion)).status).toBe("stale");
   });
 });

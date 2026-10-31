@@ -15,11 +15,11 @@ describe("adapter/engine equivalence (single peer)", () => {
 
     const follow: ReturnType<typeof txOf>[] = [
       txOf([{ op: "setField", block: ids.p, key: "tone", value: "urgent" }], 10, P1),
-      txOf([{ op: "textEdit", block: ids.p, replace: rt("hello bold world", [{ from: 6, to: 10, mark: "bold" }]) }], 11, P1),
+      txOf([{ op: "textEdit", block: ids.p, changes: [{ retain: 6, setMarks: ["bold"] }, { retain: 5 }, { insert: " world" }] }], 11, P1),
       txOf([{ op: "move", block: ids.h, newParent: ids.section, index: 0 }], 12, P1),
       txOf([{ op: "delete", block: ids.q }], 13, P1),
       txOf([{ op: "restore", block: ids.q, parent: ids.other }], 14, P1),
-      txOf([{ op: "textEdit", block: ids.c, replace: rt("") }], 15, P1),
+      txOf([{ op: "textEdit", block: ids.c, changes: [{ delete: 1 }] }], 15, P1),
     ];
     for (const t of follow) {
       engine = engineApply(engine, t);

@@ -57,14 +57,19 @@ describe("applyTransaction (DM-4, sequential v0)", () => {
     void section; void q; void h;
   });
 
-  test("rejects malformed rendered text (DM-3.3)", async () => {
+  test("text changes are positional: lenient tail, strict ranges (DM-4.3)", async () => {
     const { state, p } = await buildFixture();
+    // p is "hello world" (11 chars). Trailing retains may be omitted:
+    // an early stop leaves the remainder untouched.
+    const trimmed = applyTransaction(state, tx([{ op: "textEdit", block: p, changes: [{ delete: 5 }, { insert: "ab" }] }], 5));
+    expect(trimmed.blocks[p]!.text!.s).toBe("ab world");
+    // Out-of-range steps are malformed.
     expect(() =>
-      applyTransaction(state, tx([{ op: "textEdit", block: p, replace: { s: "ab", marks: [] } }], 5)),
-    ).toThrow(/marks length/);
-    expect(() =>
-      applyTransaction(state, tx([{ op: "textEdit", block: p, replace: { s: "ab", marks: [["bold"], ["bold"]] } }], 5)),
-    ).not.toThrow();
+      applyTransaction(state, tx([{ op: "textEdit", block: p, changes: [{ retain: 12 }] }], 5)),
+    ).toThrow(/out of range/);
+    // Empty changes are a no-op.
+    const untouched = applyTransaction(state, tx([{ op: "textEdit", block: p, changes: [] }], 5));
+    expect(untouched.blocks[p]!.text!.s).toBe("hello world");
   });
 
   test("immutability: the input state is untouched", async () => {
@@ -84,7 +89,7 @@ describe("applyTransaction (DM-4, sequential v0)", () => {
 
     const retyped = applyTransaction(
       edited,
-      tx([{ op: "textEdit", block: p, replace: rt("hello world!") }], 8, "ai:1"),
+      tx([{ op: "textEdit", block: p, changes: [{ retain: 11 }, { insert: "!" }] }], 8, "ai:1"),
     );
     expect(retyped.blocks[p]!.attribution.text).toEqual({ actor: "ai:1", lamport: 8 });
     expect(retyped.blocks[p]!.attribution.created).toEqual({ actor: "human:1" });

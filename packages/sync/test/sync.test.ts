@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
-import { canonicalJson, makeBlock, newBlockId, type Op, type Transaction } from "@nooq/core";
+import { canonicalJson, makeBlock, newBlockId, replaceChanges, type Op, type Transaction } from "@nooq/core";
 import { applyTransaction, newDocument, readState } from "@nooq/yjs";
 import { BACKEND, decodeMessage, encodeMessage, NooqRelay, REMOTE_ORIGIN, settled, SyncSession, type AwarenessEntry } from "../src/index.ts";
 import { rt } from "./rt.ts";
@@ -86,7 +86,7 @@ describe("bootstrap and steady state through a hosted peer (SW-3/4/6)", () => {
 
     applyTransaction(
       alice.doc,
-      tx([{ op: "textEdit", block: alice.p1, replace: rt("edited later") }], 4, ALICE),
+      tx([{ op: "textEdit", block: alice.p1, changes: replaceChanges("first paragraph", "edited later") }], 4, ALICE),
     );
     await settled();
 

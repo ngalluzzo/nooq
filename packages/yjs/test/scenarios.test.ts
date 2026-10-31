@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canonicalJson, liveTree, rootDigest, type BlockId, type DocState } from "@nooq/core";
+import { canonicalJson, liveTree, replaceChanges, rootDigest, type BlockId, type DocState } from "@nooq/core";
 import { normalize, readState } from "../src/index.ts";
 import { P1, P2, applyToPeer, makePeers, rt, sync, txOf } from "./helpers.ts";
 
@@ -57,7 +57,7 @@ describe("DM-4.7: concurrent moves", () => {
 describe("DM-4.8: edit vs delete", () => {
   test("delete wins placement; concurrent edits persist in the tombstone", async () => {
     const { p1, p2, ids } = makePeers();
-    applyToPeer(p1, txOf([{ op: "textEdit", block: ids.p, replace: rt("edited while away") }], 10, P1));
+    applyToPeer(p1, txOf([{ op: "textEdit", block: ids.p, changes: replaceChanges("hello world", "edited while away") }], 10, P1));
     applyToPeer(p2, txOf([{ op: "delete", block: ids.p }], 10, P2));
     sync(p1.doc, p2.doc);
 

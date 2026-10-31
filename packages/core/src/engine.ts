@@ -16,6 +16,7 @@ import type {
   Transaction,
 } from "./model.ts";
 import { liveTree, subtreeOf } from "./tree.ts";
+import { applyTextChanges, type TextChange } from "./text.ts";
 
 export function emptyDocument(docId: string): DocState {
   return { docId, schemaVersion: 1, roots: [], blocks: {}, log: [] };
@@ -145,7 +146,8 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
     }
     case "textEdit": {
       const block = requireBlock(state, op.block);
-      block.text = validateRenderedText(structuredClone(op.replace));
+      const base: RenderedText = block.text ?? { s: "", marks: [] };
+      block.text = validateRenderedText(applyTextChanges(base, op.changes));
       block.attribution.text = writer;
       return;
     }

@@ -145,6 +145,33 @@ export function randomText(rng: () => number): RenderedText {
   return rt(s, runs);
 }
 
+/**
+ * Character-level edits (DM-4.3 Draft 1.5): a random splice — insert,
+ * delete, or replace a short range, occasionally re-marking one — so the
+ * storms exercise concurrent sequence-CRDT merging, not full rewrites.
+ */
+export function randomTextChanges(rng: () => number, before: string): Array<{ retain: number; setMarks?: string[] | null } | { insert: string; marks?: string[] } | { delete: number }> {
+  const at = Math.floor(rng() * (before.length + 1));
+  const changes: Array<{ retain: number; setMarks?: string[] | null } | { insert: string; marks?: string[] } | { delete: number }> = [];
+  if (at > 0) changes.push({ retain: at });
+  const roll = rng();
+  if (roll < 0.4) {
+    const length = 1 + Math.floor(rng() * 3);
+    let text = "";
+    for (let i = 0; i < length; i++) text += CHARS[Math.floor(rng() * CHARS.length)]!;
+    changes.push({ insert: text });
+  } else if (roll < 0.7 && at < before.length) {
+    const length = 1 + Math.floor(rng() * Math.min(3, before.length - at));
+    changes.push({ delete: length });
+  } else if (at < before.length) {
+    const length = 1 + Math.floor(rng() * Math.min(4, before.length - at));
+    changes.push(rng() < 0.5 ? { retain: length, setMarks: ["bold"] } : { retain: length, setMarks: null });
+  }
+  const consumed = changes.reduce((n, change) => n + ("retain" in change ? change.retain : "delete" in change ? change.delete : 0), 0);
+  if (consumed < before.length) changes.push({ retain: before.length - consumed });
+  return changes;
+}
+
 export function randomJson(rng: () => number): JsonValue {
   const roll = rng();
   if (roll < 0.3) return Math.floor(rng() * 100);
@@ -182,7 +209,7 @@ export function randomTx(peer: Peer, rng: () => number): Transaction {
       op = { op: "setField", block: id, key: "tone", value: randomJson(rng) };
     } else if (roll < 0.55) {
       const id = pick(ids)!;
-      op = { op: "textEdit", block: id, replace: randomText(rng) };
+      op = { op: "textEdit", block: id, changes: randomTextChanges(rng, peer.mirror.blocks[id]?.text?.s ?? "") };
     } else if (roll < 0.75) {
       const id = pick(aliveIds);
       if (!id) continue;

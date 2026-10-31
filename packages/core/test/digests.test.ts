@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { applyTransaction, computeDigests, fingerprint, rootDigest } from "../src/index.ts";
-import { buildFixture, rt, tx } from "./helpers.ts";
+import { applyTransaction, computeDigests, fingerprint, replaceChanges, rootDigest } from "../src/index.ts";
+import { buildFixture, tx } from "./helpers.ts";
 
 describe("fingerprints (DM-2)", () => {
   test("known vector: empty object", async () => {
@@ -54,7 +54,7 @@ describe("block digests (DM-6.1)", () => {
 
     const edited = applyTransaction(
       state,
-      tx([{ op: "textEdit", block: p, replace: rt("hello brave world") }], 5),
+      tx([{ op: "textEdit", block: p, changes: replaceChanges("hello world", "hello brave world") }], 5),
     );
     const afterRoot = await rootDigest(edited);
     const after = (await computeDigests(edited)).get(section)!;
