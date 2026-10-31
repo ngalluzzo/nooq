@@ -18,19 +18,19 @@ export const LAB = process.env.NQ_LAB === "1";
  */
 export const labCapable: boolean = await (async () => {
   if (!LAB) return false;
-  let probe: { close?: () => void } | null = null;
+  let probe: { close?: () => void; navigate?: (url: string) => Promise<unknown> } | null = null;
   try {
-    probe = new Bun.WebView({ backend: { type: "chrome", url: false }, width: 64, height: 64 }) as never;
+    probe = new Bun.WebView({ backend: { type: "chrome", url: false }, width: 64, height: 64 }) as unknown as { close?: () => void; navigate: (url: string) => Promise<unknown> };
     // A constructor that succeeds while the pipe dies is not a capability:
     // require a real handshake.
     await Promise.race([
-      probe.navigate("about:blank") as Promise<unknown>,
+      probe.navigate!("about:blank"),
       new Promise((_resolve, reject) => setTimeout(() => reject(new Error("probe timeout")), 5_000)),
     ]);
     probe.close?.();
     return true;
   } catch {
-    (probe as { close?: () => void } | null)?.close?.();
+    probe?.close?.();
     console.warn("[lab] Bun.WebView chrome backend cannot run here — EB gates skip rather than lie (needs a spawnable Chrome/Chromium; BUN_CHROME_PATH).");
     return false;
   }
