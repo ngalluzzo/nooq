@@ -61,13 +61,17 @@ export interface Grant {
   actorId: ActorId;
   /** base64 raw Ed25519 public key bound to the actor (DM-13). */
   key: string;
+  /** The kind this actor's transactions must claim (DM-13, Draft 1.7). */
+  kind: ActorKind;
   role: Role;
 }
 
 export interface Access {
-  owner: { actorId: ActorId; key: string };
-  /** Append-only in v1 (DM-13); revocation is a fork (DM-10). */
+  owner: { actorId: ActorId; key: string; kind: ActorKind };
+  /** Append-only in v1 (DM-13); revocation is a fork (DM-10.6). */
   grants: Grant[];
+  /** With `owner`, fingerprints into a secured document's ID (DM-13). */
+  nonce: string;
 }
 
 export interface DocState {

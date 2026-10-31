@@ -43,3 +43,30 @@ Role matrix; adoption equality; pending grants; forged signatures;
 tampered updates; hostile-peer storms (forged actors, suggester
 overreach, tampered bytes) where every honest peer drops the same
 envelopes and converges to the same `evaluate()`.
+
+## Amendments during the comment period
+
+**Draft 1.7 (DOCUMENT-MODEL DM-12/13).** An in-memory probe against
+`admitEnvelope` found Draft 1.6's rules could be bypassed:
+
+| Attack | Draft 1.6 verdict |
+| --- | --- |
+| Suggester deletes the `access` header | allow — the document reverts to open mode |
+| Suggester appends a log entry attributed to the owner | allow |
+| Writer signs a transaction whose `tx.actor` is the owner | allow |
+| Suggester deletes characters inside a writer's paragraph | allow (mid-item delete unclassified) |
+
+Root causes: the intent log and unknown roots were exempt from
+classification; deletes matched only an item's first clock; unresolved
+parents were silently ignored, so verdicts could differ by arrival order;
+nothing bound the signer or kind to the transaction; and "no `access`"
+could not tell a stripped document from an open one.
+
+Changes: signer and kind binding; exactly one log entry equal to `tx`;
+bookkeeping and unknown roots are document state; deletes resolve every
+covered item; unresolved envelopes hold; secured documents are decided
+by their ID (`nooq:` + fingerprint of `{owner, nonce}`), so open documents
+never gain `access` and arrival order never decides ownership; access
+writes are append-only, enforced.
+
+Each attack above is a gating test.

@@ -8,6 +8,8 @@ import {
   type Access,
 } from "@nooq/core";
 import { readState } from "@nooq/yjs";
+import { commitSigned, newDocument } from "@nooq/yjs";
+import { createSecuredDocument, newBlockId } from "@nooq/core";
 import { NooqRelay, settled } from "@nooq/sync";
 import { Editor } from "../src/controller.ts";
 import { createSurface } from "../src/dom.ts";
@@ -19,15 +21,18 @@ async function keySet() {
   const alice = await createActorKey();
   const bob = await createActorKey();
   const ai = await createActorKey();
+  const ownerParty = { actorId: "human:owner", key: toBase64(owner.publicBytes), kind: "human" as const };
+  const { docId, nonce } = await createSecuredDocument(ownerParty);
   const access: Access = {
-    owner: { actorId: "human:owner", key: toBase64(owner.publicBytes) },
+    owner: ownerParty,
+    nonce,
     grants: [
-      { actorId: "human:alice", key: toBase64(alice.publicBytes), role: "writer" },
-      { actorId: "human:bob", key: toBase64(bob.publicBytes), role: "writer" },
-      { actorId: "ai:reference", key: toBase64(ai.publicBytes), role: "suggester" },
+      { actorId: "human:alice", key: toBase64(alice.publicBytes), kind: "human", role: "writer" },
+      { actorId: "human:bob", key: toBase64(bob.publicBytes), kind: "human", role: "writer" },
+      { actorId: "ai:reference", key: toBase64(ai.publicBytes), kind: "ai", role: "suggester" },
     ],
   };
-  return { owner, alice, bob, ai, access };
+  return { owner, alice, bob, ai, access, docId };
 }
 
 function signedEditor(
@@ -38,21 +43,39 @@ function signedEditor(
   const actorId = who === "owner" ? "human:owner" : who === "alice" ? "human:alice" : "human:bob";
   const key = who === "owner" ? keys.owner : who === "alice" ? keys.alice : keys.bob;
   return new Editor({
-    docId: DOC,
+    docId: keys.docId,
     actor: { actorId, name: who },
-    transport: relay.connect(DOC),
+    transport: relay.connect(keys.docId),
     key,
     aiKey: keys.ai, // the simulated model plugin ships with every editor
   });
+}
+
+/** Genesis + grants: the owner's single access lineage, shipped once. */
+async function openForBusiness(relay: NooqRelay, keys: Awaited<ReturnType<typeof keySet>>): Promise<void> {
+  const ownerDoc = newDocument(keys.docId);
+  const genesisTx: import("@nooq/core").Transaction = {
+    id: newBlockId(),
+    actor: { actorId: "human:owner", kind: "human" },
+    lamport: 1,
+    causality: {},
+    ops: [{ op: "setAccess", access: keys.access }],
+  };
+  const committed = await commitSigned(ownerDoc, genesisTx, keys.owner, "human:owner");
+  const transport = relay.connect(keys.docId);
+  const replies: string[] = [];
+  transport.onMessage((raw) => replies.push(raw));
+  transport.send(JSON.stringify({ v: 1, t: "update", doc: keys.docId, update: Buffer.from(committed.update).toString("base64"), envelope: committed.envelope }));
+  await settled(6);
 }
 
 describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", () => {
   test("typed text flows as sealed envelopes and converges", async () => {
     const relay = new NooqRelay();
     const keys = await keySet();
+    await openForBusiness(relay, keys);
 
     const owner = signedEditor(relay, keys, "owner");
-    owner.setAccess?.(keys.access);
     const alice = signedEditor(relay, keys, "alice");
     const bob = signedEditor(relay, keys, "bob");
     await settled();
@@ -63,7 +86,7 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     expect(canonicalJson(readState(alice.ydoc))).toBe(canonicalJson(readState(bob.ydoc)));
     expect(readState(bob.ydoc).blocks[paragraph]!.text!.s).toBe("typed on alice");
     // Every shipped update is in the relay's envelope log (SW-3).
-    expect(relay.envelopesOf(DOC).length).toBeGreaterThan(0);
+    expect(relay.envelopesOf(keys.docId).length).toBeGreaterThan(0);
 
     owner.close();
     alice.close();
@@ -73,28 +96,24 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
   test("a hostile unsigned update is dropped by the relay; peers never see it", async () => {
     const relay = new NooqRelay();
     const keys = await keySet();
+    await openForBusiness(relay, keys);
     const owner = signedEditor(relay, keys, "owner");
-    owner.setAccess?.(keys.access);
     const alice = signedEditor(relay, keys, "alice");
     const bob = signedEditor(relay, keys, "bob");
     await settled();
     const before = canonicalJson(readState(bob.ydoc));
 
     // An attacker with a raw transport sends a bare update into a signed doc.
-    const hostileTransport = relay.connect(DOC);
-    const hostileDoc = readState(alice.ydoc);
-    void hostileDoc;
-    const maliciousBlock = makeBlock({ type: "nooq.paragraph/v1", text: { s: "evil", marks: ["", "", "", ""].map(() => []) } }, "human:attacker");
-    // Build a plausible update payload claim; the relay must refuse it
-    // regardless of content because it is unsigned in an access-controlled doc.
+    const hostileTransport = relay.connect(keys.docId);
+    // The relay must refuse a bare update regardless of content: unsigned
+    // state cannot bypass the rules of a secured document.
     hostileTransport.send(
-      JSON.stringify({ v: 1, t: "update", doc: DOC, update: Buffer.from("garbage-but-irrelevant").toString("base64") }),
+      JSON.stringify({ v: 1, t: "update", doc: keys.docId, update: Buffer.from("garbage-but-irrelevant").toString("base64") }),
     );
     await settled();
 
     expect(canonicalJson(readState(bob.ydoc))).toBe(before);
     expect(canonicalJson(readState(alice.ydoc))).toBe(before);
-    void maliciousBlock;
 
     owner.close();
     alice.close();
@@ -104,8 +123,8 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
   test("an AI suggestion ships sealed; overreach dies at the relay (SW-6)", async () => {
     const relay = new NooqRelay();
     const keys = await keySet();
+    await openForBusiness(relay, keys);
     const owner = signedEditor(relay, keys, "owner");
-    owner.setAccess?.(keys.access);
     const alice = signedEditor(relay, keys, "alice");
     const bob = signedEditor(relay, keys, "bob");
     await settled();
@@ -124,9 +143,6 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     // The suggestion reached bob as a sealed suggester envelope.
     expect(readState(bob.ydoc).blocks[suggestionId]).toBeDefined();
 
-    // The AI tries to edit the paragraph directly through alice's own
-    // editor path (a hostile plugin would do the same): denied at the
-    // relay, so bob never receives it.
     const before = canonicalJson(readState(bob.ydoc));
     const aiTx = {
       id: crypto.randomUUID(),
@@ -141,8 +157,8 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     const captured = applyCaptured(alice.ydoc, aiTx, keys.ai, "ai:reference");
     const sealed = await sealEnvelope(alice.ydoc, aiTx, captured.update, keys.ai, "ai:reference");
     // Send through a raw transport as if a hostile client emitted it.
-    const attacker = relay.connect(DOC);
-    attacker.send(JSON.stringify({ v: 1, t: "update", doc: DOC, update: Buffer.from(captured.update).toString("base64"), envelope: sealed }));
+    const attacker = relay.connect(keys.docId);
+    attacker.send(JSON.stringify({ v: 1, t: "update", doc: keys.docId, update: Buffer.from(captured.update).toString("base64"), envelope: sealed }));
     await settled(6);
 
     expect(canonicalJson(readState(bob.ydoc))).toBe(before);
@@ -159,15 +175,15 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
   test("a fresh signed peer bootstraps through the verified envelope log", async () => {
     const relay = new NooqRelay();
     const keys = await keySet();
+    await openForBusiness(relay, keys);
     const owner = signedEditor(relay, keys, "owner");
-    owner.setAccess?.(keys.access);
     const alice = signedEditor(relay, keys, "alice");
     await settled();
     const paragraph = alice.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "before bob joined" });
     await settled();
 
     const bob = signedEditor(relay, keys, "bob");
-    await settled(6);
+    await settled(8);
     expect(bob.synced).toBe(true);
     expect(readState(bob.ydoc).blocks[paragraph]!.text!.s).toBe("before bob joined");
     expect(readState(bob.ydoc).access?.owner.actorId).toBe("human:owner");

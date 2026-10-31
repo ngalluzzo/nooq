@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.6 — pre-implementation.** This spec converts
+**Status: Draft 1.7 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -339,6 +339,11 @@ The proposal payload:
    (per-run) evidence would reduce false staleness.
 5. **Suggestion UX for structural conflicts** — the data model distinguishes
    `stale` from `conflicted`; whether writers care is an open question.
+6. **Grant revocation and key rotation** — grants are append-only in v1
+   (DM-13); removing an actor means forking to a new secured document.
+7. **Bounded holds** — an envelope held for an ungranted signer or an
+   unresolved base (DM-12) may wait indefinitely; peers need an eviction
+   policy that does not change any verdict.
 
 ## DM-11. What this spec is for
 
@@ -370,6 +375,30 @@ actor and its exact effects:
   the update bytes: an update that does not match its envelope is
   tampered and MUST be dropped.
 - Its delete set may target only blocks the access rules (DM-13) allow.
+  Deletes are resolved against every retained item they cover, not only
+  items whose first clock they name.
+- **Signer binding.** An envelope's signer MUST be the transaction's
+  author: `tx.adoptedBy` for an adoption, otherwise `tx.actor.actorId`.
+  In an adoption, `tx.actor` MUST be the proposing actor recorded in the
+  settled suggestion block. A transaction that names `adoptedBy` without
+  settling a suggestion is malformed.
+- **One log entry.** The update's only write to the intent log is exactly
+  one entry, canonically equal to `tx`. No envelope deletes or rewrites a
+  log entry, and no envelope writes outside the document's own roots
+  (`blocks`, `roots`, `placement`, `access`, `log`). Bookkeeping is
+  document state: provenance (DM-5) is only as strong as the log.
+- **Causal readiness.** A struct or delete the receiver cannot resolve
+  against the update itself or its local store has an unknown target.
+  Such an envelope is **held**, exactly like an ungranted signer, and
+  re-evaluated as admissions arrive. It is never authorized on a partial
+  view, so every peer reaches the same verdict.
+
+*(Draft 1.7 amendment, proposals/0001 comment period: Draft 1.6 left the
+log, unknown roots, mid-item deletes and unresolved parents outside
+classification, and bound neither signer nor kind to the transaction. A
+probe showed a suggester could delete `access` (reverting to open mode)
+or forge log entries, and a writer could sign as another actor. Doc
+changed before code, per DM-11.)*
 
 ## DM-13. Access rules
 
@@ -377,14 +406,29 @@ The document header gains an optional `access` value:
 
 ```json
 {
-  "owner": { "actorId": "…", "key": "<base64 Ed25519 public key>" },
-  "grants": [ { "actorId": "…", "key": "<base64>", "role": "writer" } ]
+  "owner": { "actorId": "…", "key": "<base64 Ed25519 public key>", "kind": "human" },
+  "grants": [ { "actorId": "…", "key": "<base64>", "kind": "human", "role": "writer" } ],
+  "nonce": "…"
 }
 ```
 
-- `access` is written only by owner-signed envelopes (DM-12). Grants are
-  append-only in v1; revocation means forking the document to a new
-  access set (DM-10 open problems).
+- **Secured at genesis.** A document is secured or open from its first
+  byte, decided by its ID alone: a secured document's ID is
+  `nooq:` + the fingerprint (DM-2) of `{owner, nonce}`. Its first access
+  write is the genesis envelope, signed by that owner. Until a peer has
+  admitted genesis, every other envelope is held. An open document (any
+  other ID) never gains `access`; securing it means forking to a new
+  secured document. Absence of `access` therefore never turns a secured
+  document open, and no arrival order decides who owns a document.
+- `access` is written only by owner-signed envelopes (DM-12). The owner
+  and nonce never change, and each write's grants MUST extend the
+  current grants unchanged (append-only in v1; revocation means forking,
+  DM-10.6). Deleting or rewriting `access` any other way is an access
+  write and is denied.
+- **Kinds are granted.** Each grant (and the owner) binds a `kind`. An
+  envelope's `tx.actor.kind` MUST equal its signer's granted kind; in an
+  adoption, the proposer's kind MUST equal the proposer's grant when one
+  exists. An AI cannot write as a human by relabeling itself.
 - Roles:
   - **writer** — any op.
   - **suggester** — may create and attach `nooq.suggestion/v1` blocks
@@ -399,9 +443,10 @@ The document header gains an optional `access` value:
 - An envelope whose signer is validly signed but not yet granted is
   **held pending** and re-evaluated when grants arrive. An envelope that
   fails verification or authorization is never applied or relayed.
-- A document without `access` behaves exactly as before: open,
-  single-player or trusted-peers mode. Existing documents and tests are
-  unaffected.
+- An open document behaves exactly as before: single-player or
+  trusted-peers mode, with no rules but the CRDT's.
 
-*(Draft 1.6, per proposals/0001.)*
+*(Draft 1.6, per proposals/0001. Draft 1.7: secured-at-genesis IDs, kind
+binding, append-only enforcement and access deletes, per the same
+comment period.)*
 

@@ -16,6 +16,8 @@
 import * as Y from "yjs";
 import {
   authorize,
+  isGenesisFor,
+  isSecuredDocId,
   updateDigestOf,
   verifyEnvelope,
   type ActorKey,
@@ -129,6 +131,10 @@ export function inspectUpdate(
 
   const blockTouches = new Map<string, BlockTouch>();
   const accessWrites = { value: false };
+  const accessValues: unknown[] = [];
+  const logEntries: unknown[] = [];
+  const bookkeeping = { value: false };
+  const unresolved = { value: false };
   const foreignClients = new Set<number>();
   let from = Number.POSITIVE_INFINITY;
   let to = Number.NEGATIVE_INFINITY;
@@ -156,15 +162,36 @@ export function inspectUpdate(
     return (existing as string | undefined) ?? null;
   };
 
+  const KNOWN_ROOTS = new Set(["blocks", "roots", "placement", "access", "log"]);
+
   const classify = (struct: StructItem): void => {
     from = Math.min(from, struct.id.clock);
     to = Math.max(to, struct.id.clock);
     const chain = resolveRoot(doc, struct, byId);
-    if (!chain) return;
+    if (!chain) {
+      unresolved.value = true; // DM-12: never authorize on a partial view
+      return;
+    }
     const { root, blockId, viaBlockItem } = chain;
-    if (root === "log" || root === "header") return; // bookkeeping, not content
+    if (root === "?") {
+      unresolved.value = true;
+      return;
+    }
+    if (root === "log") {
+      // DM-12: log appends are collected; exactly one, equal to tx, or deny.
+      const entry = struct.content?.arr?.[0];
+      if (entry !== undefined) logEntries.push(entry);
+      return;
+    }
+    if (!KNOWN_ROOTS.has(root)) {
+      // DM-12: writes outside the document's own roots.
+      bookkeeping.value = true;
+      return;
+    }
     if (root === "access") {
       accessWrites.value = true;
+      const value = struct.content?.arr?.[0];
+      if (value !== undefined) accessValues.push(value);
       return;
     }
     if (root === "blocks" && struct.parent === "blocks") {
@@ -195,20 +222,41 @@ export function inspectUpdate(
 
   for (const struct of structs) classify(struct);
 
-  // Deletes: resolve each deleted item to its block via the store.
+  // Deletes: resolve every covered clock against the store (mid-item
+  // coverage included), and classify by root.
   const dsClients = (decoded.ds?.clients as Map<number, Array<{ clock: number; len: number } | [number, number]>> | undefined);
   if (dsClients) {
-    for (const ranges of dsClients.values()) {
+    for (const [client, ranges] of dsClients.entries()) {
       for (const range of ranges ?? []) {
         const clock = Array.isArray(range) ? range[0]! : range.clock;
-        const len = Array.isArray(range) ? range[1]! : range.len;
-        for (let i = 0; i < (Number(len) || 1); i++) {
-          const touched = deletedItemTouches(doc, clock + i, dsClientIdOf(dsClients, range));
-          for (const blockId of touched) {
+        const len = Number(Array.isArray(range) ? range[1]! : range.len) || 1;
+        for (let i = 0; i < len; i++) {
+          const item = storeItem(doc, { client, clock: clock + i });
+          if (!item) {
+            unresolved.value = true; // deleting something we cannot see
+            continue;
+          }
+          const chain = resolveRoot(doc, item, new Map());
+          if (!chain || chain.root === "?") {
+            unresolved.value = true;
+            continue;
+          }
+          if (chain.root === "log" || !KNOWN_ROOTS.has(chain.root)) {
+            bookkeeping.value = true; // DM-12: log deletes / unknown-root deletes
+            continue;
+          }
+          if (chain.root === "access") {
+            accessWrites.value = true; // DM-13: deleting access is an access write
+            continue;
+          }
+          const blockId = chain.root === "blocks" ? chain.blockId : chain.root === "placement" ? item.parentSub : firstBlockIdIn(item);
+          if (blockId) {
             const touch = ensureTouch(blockId);
             touch.deleted = true;
             touch.placement = true;
             if (touch.type === null) touch.type = blockTypeOf(blockId, undefined);
+          } else if (chain.root === "roots" || chain.root === "placement") {
+            unresolved.value = true;
           }
         }
       }
@@ -223,6 +271,10 @@ export function inspectUpdate(
     otherContentOps: [...blockTouches.entries()].some(([id, t]) => (t.fieldsOrText || t.insert) && !isSuggestion(t, id, doc)),
     accessWrites: accessWrites.value,
     deletedBlocks: [...blockTouches.entries()].filter(([, t]) => t.deleted).map(([id]) => id),
+    unresolved: unresolved.value,
+    bookkeepingWrites: bookkeeping.value,
+    logEntries,
+    accessValues,
   };
   return { touched, blockTouches, foreignClients, clockRange: { from: from === Number.POSITIVE_INFINITY ? 0 : from, to: to === Number.NEGATIVE_INFINITY ? -1 : to } };
 }
@@ -279,13 +331,13 @@ function resolveRoot(
     }
     if (parent !== null && parent !== undefined) {
       if (looksLikeId(parent)) {
-        // Unapplied item: parent is the creating item's ID.
+        // Unapplied item: parent is the creating item's ID. The parent item
+        // carries the blockId in its parentSub (applied or decoded alike).
         const parentStruct = byId.get(idKey(parent as { client: number; clock: number })) ?? storeItem(doc, parent as { client: number; clock: number });
         if (!parentStruct) return { root: "?", blockId: null, viaBlockItem };
         const asItem = parentStruct as StructItem;
-        if (asItem.parent === "blocks" && asItem.parentSub) {
+        if (asItem.parentSub && asItem.parentSub !== "text" && asItem.parentSub !== "fields" && asItem.parentSub !== "children" && asItem.parentSub !== "type" && asItem.parentSub !== "createdBy" && asItem.parentSub !== "textBy") {
           blockId = asItem.parentSub;
-          viaBlockItem = true;
         }
         current = asItem;
         continue;
@@ -320,6 +372,7 @@ function looksLikeId(value: unknown): value is { client: number; clock: number }
 
 /** Resolve a live Yjs type instance to our layout's root name and block. */
 function rootOfType(doc: Y.Doc, type: object): { root: string; blockId: string | null } | null {
+  if (type === (doc.getMap("blocks") as unknown as object)) return { root: "blocks", blockId: null };
   if (type === (doc.getMap("access") as unknown as object)) return { root: "access", blockId: null };
   if (type === (doc.getMap("placement") as unknown as object)) return { root: "placement", blockId: null };
   if (type === (doc.getArray("log") as unknown as object)) return { root: "log", blockId: null };
@@ -377,6 +430,30 @@ export async function admitEnvelope(
     }
   }
 
+  // Self-admission / echo: every declared struct is already integrated
+  // locally (the committer applies before sealing; duplicates arrive from
+  // rebroadcast). Idempotent allow — the rules govern replication, and a
+  // malicious committer's own doc was never anyone else's problem.
+  let alreadyIntegrated = true;
+  for (const struct of (Y.decodeUpdate(update) as unknown as { structs: Array<{ id: { client: number; clock: number }; length: number }> }).structs) {
+    const present = storeItem(doc, struct.id) as (StructItem & { length?: number }) | undefined;
+    if (!present) {
+      alreadyIntegrated = false;
+      break;
+    }
+    // Span coverage: the stored item must CONTAIN this clock, not merely
+    // precede it (a peer with clocks 0..1 does not have clock 2).
+    const start = present.id.clock;
+    const span = present.length ?? 1;
+    if (struct.id.clock < start || struct.id.clock >= start + span) {
+      alreadyIntegrated = false;
+      break;
+    }
+  }
+  if (alreadyIntegrated && (Y.decodeUpdate(update) as unknown as { structs: unknown[] }).structs.length > 0) {
+    return { verdict: "allow", reason: "duplicate", touched: inspected.touched };
+  }
+
   // DM-13: an adoption's ops must canonically equal the proposal's ops —
   // verified here, not promised by the accept path.
   if (envelope.tx.adoptedBy) {
@@ -384,26 +461,57 @@ export async function admitEnvelope(
     if (settlement === false) return { verdict: "deny", reason: "adoption ops diverge from the proposal" };
   }
 
-  const access = readState(doc).access;
-  if (access) {
-    const key = keyFor(access, envelope.signer);
-    if (key) {
-      const valid = await verifyEnvelope(envelope, documentHeader(doc).docId, key);
-      if (!valid) return { verdict: "deny", reason: "signature" };
-      const verdict = authorize(access, { tx: envelope.tx, signer: envelope.signer, signerKey: toB64(key) }, inspected.touched);
-      if (verdict !== "allow") return { verdict, reason: verdict === "hold" ? "signer not granted yet" : "role", touched: inspected.touched };
-    } else {
-      const verdict = authorize(access, { tx: envelope.tx, signer: envelope.signer }, inspected.touched);
-      if (verdict !== "hold") return { verdict, reason: "unknown signer" };
-      return { verdict, reason: "signer not granted yet", touched: inspected.touched };
+  const docId = documentHeader(doc).docId;
+
+  // DM-13 Draft 1.7: secured or open is decided by the document's ID alone.
+  if (isSecuredDocId(docId)) {
+    const access = readState(doc).access;
+    if (!access) {
+      // Before genesis, only the genesis envelope admits: one access value
+      // whose owner and nonce derive this document's ID (isGenesisFor).
+      const genesis = inspected.touched.accessValues[0];
+      if (
+        inspected.touched.accessWrites &&
+        inspected.touched.accessValues.length === 1 &&
+        (await isGenesisFor(docId, genesis))
+      ) {
+        const owner = (genesis as import("@nooq/core").Access).owner;
+        if (envelope.signer !== owner.actorId) return { verdict: "deny", reason: "genesis signer is not the owner" };
+        const valid = await verifyEnvelope(envelope, docId, fromB64(owner.key));
+        if (!valid) return { verdict: "deny", reason: "genesis signature" };
+        Y.applyUpdate(doc, update, ADMIT_ORIGIN);
+        return { verdict: "allow", touched: inspected.touched };
+      }
+      return { verdict: "hold", reason: "awaiting genesis", touched: inspected.touched };
     }
-  } else if (options.openKeys) {
+    // Secured and past genesis.
+    const party = keyFor(access, envelope.signer);
+    if (party) {
+      const valid = await verifyEnvelope(envelope, docId, party);
+      if (!valid) return { verdict: "deny", reason: "signature", touched: inspected.touched };
+      const verdict = authorize(access, { tx: envelope.tx, signer: envelope.signer, signerKey: toB64(party) }, inspected.touched);
+      if (verdict !== "allow") {
+        return { verdict, reason: verdict === "hold" ? "unresolved or ungranted" : "rules", touched: inspected.touched };
+      }
+    } else {
+      // Unknown signer: cannot verify against a grant — hold, never deny on
+      // a partial view (a later grant may name them).
+      return { verdict: "hold", reason: "signer not granted yet", touched: inspected.touched };
+    }
+    Y.applyUpdate(doc, update, ADMIT_ORIGIN);
+    return { verdict: "allow", touched: inspected.touched };
+  }
+
+  // Open documents: no rules but the CRDT's — and never access (DM-13).
+  if (inspected.touched.accessWrites) {
+    return { verdict: "deny", reason: "an open document never gains access" };
+  }
+  if (options.openKeys) {
     const key = options.openKeys.get(envelope.signer);
-    if (key && !(await verifyEnvelope(envelope, documentHeader(doc).docId, key))) {
+    if (key && !(await verifyEnvelope(envelope, docId, key))) {
       return { verdict: "deny", reason: "signature" };
     }
   }
-
   Y.applyUpdate(doc, update, ADMIT_ORIGIN);
   return { verdict: "allow", touched: inspected.touched };
 }

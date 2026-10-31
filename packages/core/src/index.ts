@@ -21,10 +21,16 @@ export {
   type Envelope,
 } from "./actor.ts";
 export {
+  accessExtends,
   adoptionMatches,
   authorize,
+  createSecuredDocument,
+  isGenesisFor,
+  isSecuredDocId,
   keyMismatch,
   roleOf,
+  securedDocId,
+  wellFormedAccess,
   SUGGESTION_TYPE as ACCESS_SUGGESTION_TYPE,
   type Touched,
   type Verdict,

@@ -8,6 +8,7 @@
     "test": "bun test",
     "test:stories": "bun run --cwd packages/design test:stories",
     "lab": "bun run --cwd packages/editor lab",
+    "plugin-agent": "bun packages/plugin-agent/src/cli.ts",
     "storybook": "bun run --cwd packages/design storybook",
     "typecheck": "tsc --noEmit"
   },

@@ -161,7 +161,8 @@ A hosted nooq sync service is a peer that:
 Wire v2 carries identity where the document demands it: envelope
 signatures (DM-12) are actor identity, verified by every peer; transport
 authentication remains about *who may connect*, never about *what may
-sync*. Open documents (no `access`) still carry no identity. Payloads
+sync*. Open documents (IDs without the secured `nooq:` form, DM-13)
+still carry no identity. Payloads
 contain everything the document contains; peers that must not see
 content must not be peers.
 

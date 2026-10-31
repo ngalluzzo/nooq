@@ -17,6 +17,7 @@ import type {
 } from "./model.ts";
 import { liveTree, subtreeOf } from "./tree.ts";
 import { applyTextChanges, type TextChange } from "./text.ts";
+import { wellFormedAccess } from "./access.ts";
 
 export function emptyDocument(docId: string): DocState {
   return { docId, schemaVersion: 1, roots: [], blocks: {}, log: [] };
@@ -177,9 +178,7 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       return;
     }
     case "setAccess": {
-      if (!op.access?.owner?.actorId || !Array.isArray(op.access.grants)) {
-        throw new Error("malformed access (DM-13)");
-      }
+      if (!wellFormedAccess(op.access)) throw new Error("malformed access (DM-13)");
       state.access = structuredClone(op.access);
       return;
     }

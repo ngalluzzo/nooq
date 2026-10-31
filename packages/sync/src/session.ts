@@ -25,6 +25,8 @@ import {
 import type { SyncTransport } from "./transport.ts";
 
 export const REMOTE_ORIGIN = "nooq-remote";
+/** Updates applied by admitEnvelope already carried their envelope. */
+export const ADMIT_ORIGIN = "nooq-admit";
 /** Updates sealed by commitSigned carry this origin and are shipped by their committer. */
 export const COMMIT_ORIGIN = "nooq-commit";
 
@@ -60,8 +62,9 @@ export class SyncSession {
     this.options = options;
     this.handleTransportMessage = (raw) => this.receive(raw);
     this.handleDocUpdate = (update, origin) => {
-      if (origin === REMOTE_ORIGIN || origin === COMMIT_ORIGIN || this.closed) return;
-      // COMMIT_ORIGIN updates are sealed and shipped by their committer.
+      if (origin === REMOTE_ORIGIN || origin === COMMIT_ORIGIN || origin === ADMIT_ORIGIN || this.closed) return;
+      // COMMIT_ORIGIN updates are sealed and shipped by their committer;
+      // ADMIT_ORIGIN updates arrived through envelopes and already ship.
       // Bare per-transaction increments (SW-4): idempotent, unordered,
       // and — since the header left the CRDT (SYNC Draft 1.2) — items
       // start at clock 0, so even a peer that missed our base integrates

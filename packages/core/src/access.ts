@@ -3,13 +3,15 @@
  *
  * authorize() is PURE: every peer — relays included — applies it
  * identically before applying an update (SW-1.2). No peer applies any
- * other content policy. A document without `access` is open mode and
- * everything is allowed (existing behavior).
+ * other content policy. Open documents have no rules but the CRDT's;
+ * secured documents are decided by their ID (securedDocId), never by
+ * whether an `access` header happens to be present.
  */
 
 import type { Envelope } from "./actor.ts";
 import { canonicalJson } from "./canonical.ts";
-import type { Access, Role } from "./model.ts";
+import { fingerprint } from "./digest.ts";
+import type { Access, ActorKind, Grant, Role } from "./model.ts";
 
 export const SUGGESTION_TYPE = "nooq.suggestion/v1";
 
@@ -21,21 +23,47 @@ export interface Touched {
   structuralOps: boolean;
   /** Any op other than suggestion-block creation/attachment. */
   otherContentOps: boolean;
-  /** Writes to the access header itself. */
+  /** Writes or deletes in the access header itself. */
   accessWrites: boolean;
   /** Blocks whose placement is deleted (tombstones). */
   deletedBlocks: string[];
+  /** A struct or delete whose target the receiver cannot resolve yet (DM-12). */
+  unresolved: boolean;
+  /** Log deletes/rewrites, or writes outside the document's own roots (DM-12). */
+  bookkeepingWrites: boolean;
+  /** Intent-log entries the update appends; exactly one, equal to tx (DM-12). */
+  logEntries: unknown[];
+  /** New `access` values the update writes (DM-13 append-only check). */
+  accessValues: unknown[];
 }
 
 export type Verdict = "allow" | "hold" | "deny";
 
-export function roleOf(access: Access | undefined, actorId: string, key: string): Role | "none" {
-  if (!access) return "writer"; // open document: everything is allowed
-  if (access.owner.actorId === actorId && keysEqual(access.owner.key, key)) return "writer";
-  for (const grant of access.grants) {
-    if (grant.actorId === actorId && keysEqual(grant.key, key)) return grant.role;
-  }
-  return "none";
+const KINDS: readonly ActorKind[] = ["human", "ai", "importer", "migration", "system"];
+const ROLES: readonly Role[] = ["writer", "suggester", "reader"];
+
+/** Shape check shared by the engine and the append-only rule. */
+export function wellFormedAccess(value: unknown): value is Access {
+  const access = value as Access | null;
+  const party = (item: unknown) => {
+    const p = item as { actorId?: unknown; key?: unknown; kind?: unknown } | null;
+    return !!p && typeof p.actorId === "string" && p.actorId !== "" && typeof p.key === "string" && p.key !== "" && KINDS.includes(p.kind as ActorKind);
+  };
+  return !!access && party(access.owner) && typeof access.nonce === "string" && access.nonce !== "" && Array.isArray(access.grants)
+    && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role));
+}
+
+/** The owner or grant naming this actor, if any (owner first). */
+function partyOf(access: Access, actorId: string): (Pick<Grant, "actorId" | "key" | "kind"> & { role: Role; owner: boolean }) | undefined {
+  if (access.owner.actorId === actorId) return { ...access.owner, role: "writer", owner: true };
+  const grant = access.grants.find((candidate) => candidate.actorId === actorId);
+  return grant ? { ...grant, owner: false } : undefined;
+}
+
+export function roleOf(access: Access | undefined, actorId: string, key: string | undefined): Role | "none" {
+  if (!access) return "writer"; // open document: no rules but the CRDT's
+  const party = partyOf(access, actorId);
+  return party && key !== undefined && party.key === key ? party.role : "none";
 }
 
 /**
@@ -45,47 +73,59 @@ export function roleOf(access: Access | undefined, actorId: string, key: string)
  */
 export function keyMismatch(access: Access | undefined, actorId: string, key: string | undefined): boolean {
   if (!access || key === undefined) return false;
-  if (access.owner.actorId === actorId) return !keysEqual(access.owner.key, key);
-  for (const grant of access.grants) {
-    if (grant.actorId === actorId) return !keysEqual(grant.key, key);
-  }
-  return false;
+  const party = partyOf(access, actorId);
+  return party !== undefined && party.key !== key;
 }
 
-function keysEqual(a: string, b: string): boolean {
-  return a === b;
+/** DM-13: an access write keeps owner and nonce and extends grants unchanged. */
+export function accessExtends(current: Access, next: unknown): boolean {
+  if (!wellFormedAccess(next)) return false;
+  if (canonicalJson(next.owner) !== canonicalJson(current.owner) || next.nonce !== current.nonce) return false;
+  if (next.grants.length < current.grants.length) return false;
+  if (canonicalJson(next.grants.slice(0, current.grants.length)) !== canonicalJson(current.grants)) return false;
+  const ids = new Set([current.owner.actorId]);
+  return next.grants.every((grant) => !ids.has(grant.actorId) && ids.add(grant.actorId));
 }
 
 /**
- * Pure authorization. Signature verification happens before this
- * (verifyEnvelope with the key bound to the signer's grant); authorize
- * decides what a verified actor may do, and whether a not-yet-granted
- * actor pends.
+ * Pure authorization of a secured document's envelope. Signature
+ * verification happens before this, with the key bound to the signer;
+ * `signerKey` is that key, or undefined when the signer is not granted.
  */
 export function authorize(
   access: Access | undefined,
-  envelope: Pick<Envelope, "tx" | "signer"> & { signerKey?: string },
+  envelope: Pick<Envelope, "tx" | "signer"> & { signerKey: string | undefined },
   touched: Touched,
 ): Verdict {
-  if (!access) return "allow"; // open mode (DM-13)
+  if (!access) return "allow"; // open document (DM-13)
+  // Never decide on a partial view: every peer must reach the same verdict.
+  if (touched.unresolved) return "hold";
+  if (touched.bookkeepingWrites) return "deny";
 
-  // Access writes are owner-only, regardless of other grants.
+  const { tx, signer, signerKey } = envelope;
+  // DM-12: the signer is the transaction's author.
+  if (signer !== (tx.adoptedBy ?? tx.actor.actorId)) return "deny";
+  // DM-12: exactly one log entry, and it is this transaction.
+  if (touched.logEntries.length !== 1 || !sameJson(touched.logEntries[0], tx)) return "deny";
+
+  if (keyMismatch(access, signer, signerKey)) return "deny";
+  const party = partyOf(access, signer);
+  if (!party || signerKey === undefined) return "hold"; // validly signed, not granted yet
+
+  // DM-13: kinds are granted, not claimed.
+  if (!tx.adoptedBy && tx.actor.kind !== party.kind) return "deny";
+  if (tx.adoptedBy) {
+    const proposer = partyOf(access, tx.actor.actorId);
+    if (proposer && proposer.kind !== tx.actor.kind) return "deny";
+  }
+
   if (touched.accessWrites) {
-    if (access.owner.actorId === envelope.signer && (!envelope.signerKey || keysEqual(access.owner.key, envelope.signerKey))) {
-      return "allow";
-    }
-    return "deny";
+    if (!party.owner || touched.accessValues.length !== 1) return "deny";
+    return accessExtends(access, touched.accessValues[0]) ? "allow" : "deny";
   }
 
-  if (keyMismatch(access, envelope.signer, envelope.signerKey)) return "deny";
-  const role = roleOf(access, envelope.signer, envelope.signerKey ?? access.owner.key);
-  if (role === "none") {
-    // Validly signed, unknown actor: hold pending grants (DM-13).
-    return "hold";
-  }
-  if (role === "writer") return "allow";
-  if (role === "reader") return "deny";
-  if (role === "suggester") {
+  if (party.role === "writer") return "allow";
+  if (party.role === "suggester" && !tx.adoptedBy) {
     const onlySuggestions =
       touched.inserts.every((type) => type === SUGGESTION_TYPE) &&
       !touched.structuralOps &&
@@ -101,9 +141,36 @@ export function adoptionMatches(
   adoptionOps: ReadonlyArray<unknown>,
   proposalOps: ReadonlyArray<unknown>,
 ): boolean {
-  return canonicalJsonSafe(adoptionOps) === canonicalJsonSafe(proposalOps);
+  return sameJson(adoptionOps, proposalOps);
 }
 
-function canonicalJsonSafe(value: unknown): string {
-  return canonicalJson(value);
+function sameJson(a: unknown, b: unknown): boolean {
+  try {
+    return canonicalJson(a) === canonicalJson(b);
+  } catch {
+    return false;
+  }
+}
+
+const SECURED = /^nooq:sha256:[0-9a-f]{64}$/;
+
+/** DM-13: a secured document's ID commits to its owner and nonce. */
+export async function securedDocId(owner: Access["owner"], nonce: string): Promise<string> {
+  return "nooq:" + (await fingerprint({ owner: { actorId: owner.actorId, key: owner.key, kind: owner.kind }, nonce }));
+}
+
+/** Secured or open is decided by the ID alone, before any byte arrives. */
+export function isSecuredDocId(docId: string): boolean {
+  return SECURED.test(docId);
+}
+
+/** A fresh secured document identity for an owner. */
+export async function createSecuredDocument(owner: Access["owner"]): Promise<{ docId: string; nonce: string }> {
+  const nonce = crypto.randomUUID();
+  return { docId: await securedDocId(owner, nonce), nonce };
+}
+
+/** DM-13 genesis: an access value whose owner and nonce derive this ID. */
+export async function isGenesisFor(docId: string, value: unknown): Promise<boolean> {
+  return isSecuredDocId(docId) && wellFormedAccess(value) && (await securedDocId(value.owner, value.nonce)) === docId;
 }
