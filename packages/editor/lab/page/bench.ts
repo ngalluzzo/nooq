@@ -100,6 +100,16 @@ const lab = {
   textOf: (block: BlockId) => editor.view.blocks[block]?.text?.s ?? null,
   totalChars: () => Array.from(surface.element.querySelectorAll("textarea")).reduce((n, t) => n + t.value.length, 0),
   focusLosses: () => focusLosses,
+  /** Characters the local writer has in the document: the target block plus every block they created (Enter). */
+  localChars: (target: BlockId) => {
+    const view = editor.view;
+    let n = view.blocks[target]?.text?.s.length ?? 0;
+    for (const id of lab.blockIds()) {
+      const block = view.blocks[id];
+      if (id !== target && block?.attribution.created.actor === "human:lab") n += block.text?.s.length ?? 0;
+    }
+    return n;
+  },
   hiddenCount: () => hiddenCount,
   /** The block at the top of the viewport: what scroll anchoring keeps in place (EB-7). */
   topVisibleBlock: () => {
@@ -172,11 +182,21 @@ const lab = {
       const pick = () => others[Math.floor(rand() * others.length)]!;
       const roll = rand();
       let op: Op;
+      let expected: (number | null)[] | null = selection;
       if (roll < 0.3 || others.length < 5) {
         const s = `remote ${i}`;
         op = { op: "insert", block: { id: newBlockId(), type: "nooq.paragraph/v1", fields: {}, text: unmarked(s), children: [], attribution: { created: { actor: remoteActor.actorId }, fields: {} } }, parent: null, index: Math.floor(rand() * (order.length + 1)) };
-      } else if (roll < 0.5) {
-        op = { op: "textEdit", block: pick(), replace: unmarked(`edited ${i}`) };
+      } else if (roll < 0.4) {
+        op = { op: "textEdit", block: pick(), changes: [{ insert: `e${i} ` }] }; // DM-4.3: single-splice remote edits
+      } else if (roll < 0.5 && selection && selection[0] === selection[1]) {
+        // Inside the caret's own block: the caret must stay on the same characters.
+        const length = editor.view.blocks[options.caret]?.text?.s.length ?? 0;
+        const caretAt = selection[0]!;
+        let at = Math.floor(rand() * (length + 1));
+        if (at === caretAt) at = caretAt === 0 ? 1 : caretAt - 1;
+        at = Math.min(at, length);
+        expected = at < caretAt ? [caretAt + 2, caretAt + 2] : [caretAt, caretAt];
+        op = { op: "textEdit", block: options.caret, changes: [...(at ? [{ retain: at }] : []), { insert: "··" }] };
       } else if (roll < 0.8) {
         op = { op: "delete", block: pick() };
       } else {
@@ -193,7 +213,10 @@ const lab = {
         continue;
       }
       const after = [now!.selectionStart, now!.selectionEnd];
-      if (JSON.stringify(after) !== JSON.stringify(selection)) record(i, "selection", `${op.op}: selection ${JSON.stringify(selection)} → ${JSON.stringify(after)}`);
+      if (JSON.stringify(after) !== JSON.stringify(expected)) {
+        const where = op.op === "textEdit" && op.block === options.caret ? " in the caret's block" : "";
+        record(i, "selection", `${op.op}${where}: expected selection ${JSON.stringify(expected)}, got ${JSON.stringify(after)}`);
+      }
       const anchorRow = anchor ? rowOf(anchor) : null;
       if (anchorRow && anchorTop !== null) {
         const moved = anchorRow.getBoundingClientRect().top - anchorTop;

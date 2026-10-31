@@ -46,16 +46,37 @@ export interface Placement {
 }
 
 export interface YjsLayout {
-  header: Y.Map<unknown>;
   blocks: Y.Map<Y.Map<unknown>>;
   roots: Y.Array<BlockId>;
   placement: Y.Map<Placement>;
   log: Y.Array<unknown>;
 }
 
+/**
+ * Document header (docId, schemaVersion) is SIDE-CHANNEL metadata, never
+ * CRDT content (SYNC.md Draft 1.2): writing it into the document consumed
+ * clock numbers 0–1, so every real item started at clock 2 and Yjs
+ * correctly pended increments on peers that had not seen the base.
+ * Registered by newDocument; peers that only receive updates project a
+ * docId of "" (digests never cover it — DM-6.1 digests roots and blocks).
+ */
+export interface DocumentHeader {
+  docId: string;
+  schemaVersion: number;
+}
+
+const headers = new WeakMap<Y.Doc, DocumentHeader>();
+
+export function registerHeader(doc: Y.Doc, header: DocumentHeader): void {
+  headers.set(doc, header);
+}
+
+export function documentHeader(doc: Y.Doc): DocumentHeader {
+  return headers.get(doc) ?? { docId: "", schemaVersion: 1 };
+}
+
 export function layout(doc: Y.Doc): YjsLayout {
   return {
-    header: doc.getMap("header"),
     blocks: doc.getMap<Y.Map<unknown>>("blocks"),
     roots: doc.getArray<BlockId>("roots"),
     placement: doc.getMap<Placement>("placement"),

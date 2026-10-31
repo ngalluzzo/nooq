@@ -19,17 +19,13 @@ import {
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
-import { REGISTER, layout } from "./layout.ts";
+import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
 
 export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
   const doc = new Y.Doc();
-  doc.transact(() => {
-    const { header } = layout(doc);
-    header.set("docId", docId);
-    header.set("schemaVersion", schemaVersion);
-  });
+  registerHeader(doc, { docId, schemaVersion }); // side-channel: clocks 0+ stay for real content
   return doc;
 }
 

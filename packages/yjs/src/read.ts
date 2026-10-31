@@ -23,14 +23,15 @@ import type {
   RenderedText,
   Transaction,
 } from "@nooq/core";
-import { REGISTER, layout, type Register } from "./layout.ts";
+import { REGISTER, documentHeader, layout, type Register } from "./layout.ts";
 
 function isRegister(raw: unknown): raw is Register {
   return typeof raw === "object" && raw !== null && (raw as { nooq?: unknown }).nooq === REGISTER;
 }
 
 export function readState(doc: Y.Doc): DocState {
-  const { header, blocks: yblocks, roots: yroots, placement, log } = layout(doc);
+  const header = documentHeader(doc);
+  const { blocks: yblocks, roots: yroots, placement, log } = layout(doc);
 
   const containerOf = new Map<BlockId, BlockId | null>();
   for (const id of yblocks.keys()) {
@@ -66,8 +67,8 @@ export function readState(doc: Y.Doc): DocState {
   }
 
   return {
-    docId: (header.get("docId") as string) ?? "",
-    schemaVersion: (header.get("schemaVersion") as number) ?? 1,
+    docId: header.docId,
+    schemaVersion: header.schemaVersion,
     roots: childrenOf(null),
     blocks,
     log: log.toArray() as unknown as Transaction[],

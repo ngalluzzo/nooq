@@ -11,7 +11,7 @@
 
 import * as Y from "yjs";
 import { rootDigest } from "@nooq/core";
-import { readState } from "@nooq/yjs";
+import { documentHeader, readState } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import {
   BACKEND,
@@ -52,19 +52,14 @@ export class SyncSession {
   constructor(options: SyncSessionOptions) {
     this.options = options;
     this.handleTransportMessage = (raw) => this.receive(raw);
-    this.handleDocUpdate = (_update, origin) => {
+    this.handleDocUpdate = (update, origin) => {
       if (origin === REMOTE_ORIGIN || this.closed) return;
-      // v1: ship FULL STATE per update. A full state is a valid idempotent
-      // update payload (SW-4) and always integrates; bare incremental
-      // updates of nested-type inserts currently do not (@nooq/yjs bug,
-      // tracked in SW-10). Efficiency is deferred with SW-10 already.
+      // Bare per-transaction increments (SW-4): idempotent, unordered,
+      // and — since the header left the CRDT (SYNC Draft 1.2) — items
+      // start at clock 0, so even a peer that missed our base integrates
+      // or pends-until-base, both correct.
       this.options.transport.send(
-        encodeMessage({
-          v: WIRE_VERSION,
-          t: "update",
-          doc: this.docId,
-          update: toBase64(Y.encodeStateAsUpdate(this.options.doc)),
-        }),
+        encodeMessage({ v: WIRE_VERSION, t: "update", doc: this.docId, update: toBase64(update) }),
       );
     };
     options.transport.onMessage(this.handleTransportMessage);
@@ -72,7 +67,7 @@ export class SyncSession {
   }
 
   private get docId(): string {
-    return (this.options.doc.getMap("header").get("docId") as string | undefined) ?? "";
+    return documentHeader(this.options.doc).docId;
   }
 
   get synced(): boolean {

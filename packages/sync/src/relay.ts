@@ -9,7 +9,7 @@
 
 import * as Y from "yjs";
 import { rootDigest } from "@nooq/core";
-import { readState } from "@nooq/yjs";
+import { readState, registerHeader } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import { BACKEND, decodeMessage, encodeMessage, errorFor } from "./messages.ts";
 import type { SyncTransport } from "./transport.ts";
@@ -77,8 +77,17 @@ export class NooqRelay {
         const doc = this.docs.get(docId) ?? this.open(docId);
         // Draft 1.1: apply the client's full state BEFORE computing the
         // reply, so the handshake alone converges both directions (SW-3).
+        // Draft 1.2: the hello's payload is an update like any other —
+        // relay it to existing sessions so they learn the joiner's base
+        // (clocks 0..n); without it, the joiner's later increments would
+        // pend on peers that never saw them (SW-6).
         if (message.update) {
           Y.applyUpdate(doc, fromBase64(message.update), "relay-store");
+          for (const peer of this.connections.get(docId)!) {
+            if (peer !== server) {
+              peer.send(encodeMessage({ v: 1, t: "update", doc: docId, update: message.update }));
+            }
+          }
         }
         const sv = message.sv === null ? undefined : fromBase64(message.sv);
         const delta = toBase64(Y.encodeStateAsUpdate(doc, sv));
@@ -129,6 +138,7 @@ export class NooqRelay {
 
   private open(docId: string): Y.Doc {
     const doc = new Y.Doc();
+    registerHeader(doc, { docId, schemaVersion: 1 }); // side-channel header (SYNC Draft 1.2)
     this.docs.set(docId, doc);
     this.connections.set(docId, this.connections.get(docId) ?? new Set());
     return doc;
