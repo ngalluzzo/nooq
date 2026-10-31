@@ -59,6 +59,13 @@ falsifiable principles, each with a "broken when" test, derived from four
 founding stances: framework first, local-first as architecture, AI as
 substrate, designed for the people writing in it.
 
+The document semantics those principles imply are specified in
+[`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md) — identity, the CRDT block tree,
+the one-transaction protocol, provenance, and AI suggestions as
+content-addressed proposals with deterministic revalidation-on-merge
+(identity discipline adapted from the [gooi](https://github.com/ngalluzzo)
+project, lineage stated in the spec).
+
 5. **Sustainability without capture.** Maintainers must eat, so nooq will
    earn money — from what operations genuinely cost: hosted collaboration
    infrastructure, professional support, deployment and integration work.
