@@ -283,14 +283,15 @@ The proposal payload:
 ## DM-8. Sync and snapshots
 
 - Peers exchange transactions (or state vectors + deltas). Any conformant
-  transport works; the wire format is a separate spec. A server, including
-  a hosted nooq service, is a peer with no special authority
-  (PHILOSOPHY §2).
-- A **snapshot** is a deterministic serialization of converged state plus
-  a compacted intent log. The **root digest** of a snapshot supports O(1)
-  staleness checks between peers.
+  transport works. The wire envelope, handshake, bootstrap verification,
+  and the server-as-peer contract are specified in [`SYNC.md`](SYNC.md)
+  (SW-1..SW-11). A server, including a hosted nooq service, is a peer
+  with no special authority (PHILOSOPHY §2).
+- A **snapshot** is a full-history delta plus its claimed root digest
+  (SW-3/SW-5); the **root digest** supports O(1) staleness checks between
+  peers and local verification of bootstrap data.
 - Presence, cursors, and selection are ephemeral **awareness**, never
-  document state.
+  document state; cursors anchor to block identity (SW-7, per DM-4).
 
 ## DM-9. Reference implementation mapping (informative)
 
