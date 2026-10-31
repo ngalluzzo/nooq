@@ -64,7 +64,10 @@ The document semantics those principles imply are specified in
 the one-transaction protocol, provenance, and AI suggestions as
 content-addressed proposals with deterministic revalidation-on-merge
 (identity discipline adapted from the [gooi](https://github.com/ngalluzzo)
-project, lineage stated in the spec).
+project, lineage stated in the spec). The sync wire protocol is specified
+in [`SYNC.md`](SYNC.md) — transport-agnostic envelope, verified
+bootstrap, and the server-as-peer contract (a hosted nooq service is a
+peer, never an authority).
 
 5. **Sustainability without capture.** Maintainers must eat, so nooq will
    earn money — from what operations genuinely cost: hosted collaboration
