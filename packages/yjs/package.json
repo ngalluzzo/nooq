@@ -1,0 +1,17 @@
+{
+  "name": "@nooq/yjs",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "nooq CRDT adapter: Yjs-backed replication of the nooq document model (DM-4.7/4.8). See DOCUMENT-MODEL.md DM-9.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@nooq/core": "workspace:*",
+    "yjs": "^13.6.0"
+  }
+}

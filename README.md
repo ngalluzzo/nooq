@@ -83,10 +83,14 @@ project, lineage stated in the spec).
 
 ## Status
 
-Pre-everything — except the spec and the core that embarrasses it.
-`packages/core` implements DM-2..DM-6 of the document model (canonical
-bytes, digests, the sequential transaction engine, suggestion
-revalidation) with zero runtime dependencies. Bun + TypeScript:
+Pre-everything — except the spec, the core that embarrasses it, and the
+CRDT adapter that beats both up. `packages/core` implements DM-2..DM-6
+(canonical bytes, digests, the sequential transaction engine, suggestion
+revalidation) with zero runtime dependencies. `packages/yjs` replicates
+the same model over Yjs: DM-4.7 concurrent-move resolution via a
+placement register, DM-4.8 edit-vs-delete, cycle-safe projection — proven
+by seeded random op storms that must converge and agree on `evaluate()`
+across peers. Bun + TypeScript:
 
     bun install
     bun test
