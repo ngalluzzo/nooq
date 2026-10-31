@@ -1,0 +1,14 @@
+import { Markdown, Meta } from "@storybook/addon-docs/blocks";
+import brandBook from "../docs/brand-book.md?raw";
+
+<Meta title="Introduction" />
+
+# nooq design system
+
+<div className="nq-display" style={{ margin: "8px 0 24px" }}>Every feature. One license. Forever.</div>
+
+This is the living version of the system: every page here is built from `tokens.json` and the components in `src/`, and every story runs as a browser test in both themes. The brand book below is `docs/brand-book.md`.
+
+**Using it.** Import `@nooq/design/tokens.css`, `@nooq/design/nooq.css` and, for the self-hosted faces, `@nooq/design/fonts.css`. Light is the default. Set `data-nq-theme="dark"` on any element to switch that subtree, or `data-nq-theme="system"` to follow the OS. Components are plain functions that return DOM nodes, so they work in ProseMirror node views and in any framework.
+
+<Markdown>{brandBook}</Markdown>

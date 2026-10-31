@@ -1,0 +1,29 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+import tokens from "../../tokens.json";
+
+<Meta title="Foundations/Typography" />
+
+# Typography
+
+Three faces, each with one job. Literata sets the document, because the writing surface is what nooq is designed around. Atkinson Hyperlegible Next sets the chrome; it keeps I, l and 1 apart for low-vision readers (§9). Atkinson Hyperlegible Mono sets anything a machine wrote and a person compares. All three are self-hosted through `@nooq/design/fonts.css`, so type survives airplane mode (§2).
+
+Each style is a class: `.nq-<name>`.
+
+{tokens.type.groups.map((g) => (
+  <section key={g.name} style={{ marginBottom: 40 }}>
+    <h2>{g.name}</h2>
+    <p>{g.note}</p>
+    {g.styles.map((s) => (
+      <div key={s.name} style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "baseline", padding: "12px 0", borderTop: "1px solid var(--nq-rule)" }}>
+        <div>
+          <code>.nq-{s.name}</code>
+          <div style={{ fontSize: 12, color: "var(--nq-graphite-muted)", marginTop: 4 }}>
+            {s.fontSize} / {s.lineHeight} · {s.fontWeight}{s.fontStyle === "italic" ? " italic" : ""}{s.letterSpacing ? ` · ${s.letterSpacing}` : ""}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--nq-graphite-muted)" }}>{s.usage}</div>
+        </div>
+        <div className={`nq-${s.name}`} style={{ color: "var(--nq-graphite)", overflowWrap: "anywhere" }}>{s.sample}</div>
+      </div>
+    ))}
+  </section>
+))}

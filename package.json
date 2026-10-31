@@ -4,6 +4,8 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "test": "bun test",
+    "test:stories": "bun run --cwd packages/design test:stories",
+    "storybook": "bun run --cwd packages/design storybook",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

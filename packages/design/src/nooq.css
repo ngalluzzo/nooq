@@ -1,0 +1,109 @@
+/*
+ * nooq reference theme. Every value is a token from tokens.css; class names
+ * are the contract. Nothing here styles elements outside .nq-* classes.
+ */
+
+.nq-surface { background: var(--nq-paper); color: var(--nq-graphite); font-family: var(--nq-font-sans); }
+.nq-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.nq-glyph { flex: none; display: block; }
+
+/* Button */
+.nq-btn { display: inline-flex; align-items: center; gap: var(--nq-space-2); height: 32px; padding: 0 var(--nq-space-3); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; }
+.nq-btn:hover { background: var(--nq-paper-sunken); }
+.nq-btn:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-btn-primary { border-color: var(--nq-ink-fill); background: var(--nq-ink-fill); color: var(--nq-on-ink); }
+.nq-btn-primary:hover { background: var(--nq-ink-fill); filter: brightness(1.1); }
+.nq-btn-quiet { border-color: transparent; background: transparent; }
+.nq-btn-danger { border-color: var(--nq-stamp); color: var(--nq-stamp); }
+.nq-btn:disabled { cursor: default; opacity: .5; }
+.nq-kbd { padding: 0 var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-xs); background: var(--nq-paper-sunken); color: var(--nq-graphite-muted); font-family: var(--nq-font-mono); font-weight: 500; }
+.nq-btn-primary .nq-kbd { border-color: transparent; background: transparent; color: inherit; }
+
+/* ActorChip */
+.nq-actor { display: inline-flex; align-items: center; gap: var(--nq-space-1); min-width: 0; color: var(--nq-graphite); }
+.nq-actor-mark { flex: none; width: 10px; height: 10px; border-radius: var(--nq-radius-xs); background: var(--nq-peer, var(--nq-ink)); }
+.nq-actor-ai .nq-actor-mark { background: repeating-linear-gradient(135deg, var(--nq-pencil-text) 0 1.5px, var(--nq-pencil) 1.5px 3.5px); }
+.nq-actor-importer .nq-actor-mark, .nq-actor-migration .nq-actor-mark, .nq-actor-system .nq-actor-mark { box-sizing: border-box; border: 1.5px solid var(--nq-machine); background: transparent; }
+.nq-actor-model { color: var(--nq-graphite-muted); }
+.nq-actor-kind { padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-xs); background: var(--nq-paper-sunken); color: var(--nq-graphite-muted); }
+.nq-actor-ai .nq-actor-kind { background: var(--nq-pencil); color: var(--nq-on-pencil); }
+
+/* StateTag */
+.nq-state { display: inline-flex; align-items: center; gap: var(--nq-space-1); height: 20px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--nq-radius-sm); white-space: nowrap; }
+.nq-state-fresh { background: var(--nq-pencil); color: var(--nq-on-pencil); }
+.nq-state-stale { border: 1px dashed var(--nq-pencil-text); color: var(--nq-pencil-text); }
+.nq-state-conflicted { background: var(--nq-stamp); color: var(--nq-on-stamp); }
+.nq-state-accepted { background: var(--nq-ink-soft); color: var(--nq-ink); }
+.nq-state-rejected { border-color: var(--nq-rule); color: var(--nq-graphite-muted); }
+
+/* Digest */
+.nq-digest-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 22px; padding: 0 6px; border: 0; border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); color: var(--nq-graphite); cursor: copy; }
+.nq-digest-chip:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-digest-kind { color: var(--nq-graphite-muted); }
+.nq-digest-algo { color: var(--nq-graphite-muted); }
+
+/* SuggestionCard */
+.nq-sugg { display: flex; flex-direction: column; gap: var(--nq-space-3); width: 100%; max-width: 440px; box-sizing: border-box; padding: var(--nq-space-4); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); color: var(--nq-graphite); }
+.nq-sugg-stale { border: 1px dashed var(--nq-pencil-text); }
+.nq-sugg-conflicted { border-color: var(--nq-stamp); }
+.nq-sugg-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+.nq-sugg-intent { color: var(--nq-graphite-muted); }
+.nq-sugg-diff { margin: 0; font-family: var(--nq-font-serif); font-size: 16px; line-height: 26px; }
+.nq-sugg-diff ins, .nq-block ins { background: var(--nq-pencil-soft); color: var(--nq-graphite); text-decoration: underline dashed var(--nq-pencil-text); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.nq-sugg-diff del { color: var(--nq-graphite-muted); text-decoration-thickness: 1.5px; }
+.nq-sugg:not(.nq-sugg-accepted) .nq-sugg-diff del + ins { margin-left: .25em; }
+.nq-sugg-stale .nq-sugg-diff, .nq-sugg-conflicted .nq-sugg-diff { color: var(--nq-graphite-muted); }
+.nq-sugg-reason { margin: 0; padding: var(--nq-space-2) var(--nq-space-3); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
+.nq-sugg-conflicted .nq-sugg-reason { background: var(--nq-stamp-soft); }
+.nq-sugg-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+.nq-sugg-label { color: var(--nq-graphite-muted); }
+.nq-sugg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+.nq-sugg-settled { color: var(--nq-graphite-muted); }
+/* Accepting inks the text in: it reads as ordinary text. */
+.nq-sugg-accepted .nq-sugg-diff ins { background: transparent; text-decoration: none; }
+.nq-sugg-accepted .nq-sugg-diff del { display: none; }
+.nq-sugg-rejected .nq-sugg-diff ins { background: transparent; color: var(--nq-graphite-muted); text-decoration: line-through; }
+.nq-sugg-rejected .nq-sugg-diff del { color: var(--nq-graphite-muted); text-decoration: none; }
+
+/* BlockRow */
+.nq-doc { width: 100%; max-width: calc(var(--nq-measure) + var(--nq-gutter)); display: flex; flex-direction: column; gap: var(--nq-block-gap); }
+.nq-block { position: relative; display: grid; grid-template-columns: var(--nq-gutter) minmax(0, 1fr); color: var(--nq-graphite); }
+.nq-gutter { position: relative; display: flex; justify-content: flex-end; gap: 10px; padding-right: 12px; }
+.nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: 30px; padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; opacity: 0; }
+.nq-block:hover .nq-handle, .nq-block.is-active .nq-handle, .nq-handle:focus-visible { opacity: 1; }
+.nq-handle:hover { background: var(--nq-paper-sunken); }
+.nq-handle:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-bar { flex: none; width: var(--nq-change-bar); border-radius: var(--nq-radius-xs); background: var(--nq-peer, var(--nq-ink)); }
+.nq-bar-ai { background: repeating-linear-gradient(180deg, var(--nq-pencil-text) 0 6px, transparent 6px 10px); }
+.nq-bar-machine { background: repeating-linear-gradient(180deg, var(--nq-machine) 0 2px, transparent 2px 5px); }
+.nq-block-body { min-width: 0; margin: 0; }
+.nq-block-heading .nq-block-body { padding-top: var(--nq-space-2); }
+.nq-block-deleted .nq-block-body > del { color: var(--nq-graphite-muted); text-decoration-thickness: 1.5px; }
+.nq-tomb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); margin-top: var(--nq-space-1); color: var(--nq-graphite-muted); font-family: var(--nq-font-sans); font-style: normal; }
+
+/* Carets. Nothing on the input path animates except the blink (§3). */
+.nq-caret { display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-caret); animation: nq-blink 1.06s steps(1) infinite; }
+@keyframes nq-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .nq-caret { animation: none; } }
+.nq-surface ::selection, .nq-selection { background: var(--nq-selection); }
+.nq-peer { position: relative; }
+.nq-peer-sel { background: color-mix(in srgb, var(--nq-peer) 22%, transparent); }
+.nq-peer-caret { position: relative; display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-peer); }
+.nq-peer-flag { position: absolute; bottom: 100%; left: 0; padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-xs) var(--nq-radius-xs) var(--nq-radius-xs) 0; background: var(--nq-peer); color: var(--nq-on-peer); font-family: var(--nq-font-sans); font-size: 12px; font-weight: 600; font-style: normal; line-height: 16px; white-space: nowrap; }
+
+/* SlashMenu */
+.nq-menu { width: 320px; max-width: 100%; box-sizing: border-box; padding: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); }
+.nq-menu-query { margin: 0 0 var(--nq-space-1); padding: var(--nq-space-1) var(--nq-space-2); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
+.nq-menu-list { border-radius: var(--nq-radius-sm); }
+.nq-menu-list:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-menu-item { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: var(--nq-space-2); padding: 6px var(--nq-space-2); border-radius: var(--nq-radius-sm); cursor: pointer; }
+.nq-menu-item:hover { background: var(--nq-paper-sunken); }
+.nq-menu-item.is-active { background: var(--nq-ink-soft); }
+.nq-menu-glyph { display: grid; place-items: center; width: 32px; height: 32px; box-sizing: border-box; border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); background: var(--nq-paper); color: var(--nq-graphite); font-family: var(--nq-font-serif); font-size: 15px; font-weight: 600; }
+.nq-menu-glyph.is-ai { border-color: var(--nq-pencil-text); background: repeating-linear-gradient(135deg, var(--nq-pencil-soft) 0 3px, var(--nq-paper) 3px 6px); color: var(--nq-pencil-text); }
+.nq-menu-text { display: flex; flex-direction: column; min-width: 0; }
+.nq-menu-type { overflow: hidden; color: var(--nq-graphite-muted); text-overflow: ellipsis; white-space: nowrap; }
+.nq-menu-foot { margin-top: var(--nq-space-1); padding: var(--nq-space-2) var(--nq-space-2) var(--nq-space-1); border-top: 1px solid var(--nq-rule); color: var(--nq-graphite-muted); }
+
+/* SyncStatus */
+.nq-sync { display: inline-flex; align-items: center; gap: 6px; color: var(--nq-graphite-muted); }

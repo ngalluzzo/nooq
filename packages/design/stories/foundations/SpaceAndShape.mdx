@@ -1,0 +1,62 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+import tokens from "../../tokens.json";
+
+<Meta title="Foundations/Space and shape" />
+
+# Space and shape
+
+## Spacing
+
+{tokens.spacing.note}
+
+{tokens.spacing.tokens.map((t) => (
+  <div key={t.name} style={{ display: "grid", gridTemplateColumns: "140px 60px 1fr", gap: 16, alignItems: "center", padding: "6px 0" }}>
+    <code>--nq-{t.name}</code>
+    <span>{t.value}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ width: t.value, height: 16, flex: "none", background: "var(--nq-ink)", borderRadius: 2 }} />
+      <span style={{ fontSize: 13, color: "var(--nq-graphite-muted)" }}>{t.usage}</span>
+    </div>
+  </div>
+))}
+
+## Radius
+
+{tokens.radius.note}
+
+<div style={{ display: "flex", flexWrap: "wrap", gap: 24, margin: "16px 0" }}>
+  {tokens.radius.tokens.map((t) => (
+    <div key={t.name} style={{ width: 160 }}>
+      <div style={{ width: t.name === "radius-full" ? 48 : 96, height: 48, border: "2px solid var(--nq-graphite)", borderRadius: t.value, marginBottom: 8 }} />
+      <code>--nq-{t.name}</code> · {t.value}
+      <div style={{ fontSize: 13, color: "var(--nq-graphite-muted)" }}>{t.usage}</div>
+    </div>
+  ))}
+</div>
+
+## Editor geometry
+
+{tokens.editor.note}
+
+<table>
+  <thead><tr><th>Token</th><th>Value</th><th>Use</th></tr></thead>
+  <tbody>
+    {tokens.editor.tokens.map((t) => (
+      <tr key={t.name}><td><code>--nq-{t.name}</code></td><td>{t.value}</td><td>{t.usage}</td></tr>
+    ))}
+  </tbody>
+</table>
+
+## Shadows
+
+{tokens.shadow.note}
+
+<div style={{ display: "flex", flexWrap: "wrap", gap: 32, margin: "16px 0", padding: 24, background: "var(--nq-paper)" }}>
+  {tokens.shadow.tokens.map((t) => (
+    <div key={t.name} style={{ width: 220 }}>
+      <div style={{ height: 64, background: "var(--nq-paper-raised)", borderRadius: 8, boxShadow: t.value.light, marginBottom: 12 }} />
+      <code>--nq-{t.name}</code>
+      <div style={{ fontSize: 13, color: "var(--nq-graphite-muted)" }}>{t.usage}</div>
+    </div>
+  ))}
+</div>

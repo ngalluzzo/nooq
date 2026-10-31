@@ -1,0 +1,173 @@
+/* nooq — generated from tokens.json by scripts/build-tokens.ts. Do not edit. */
+
+:root {
+  --nq-paper: #f7f8fa;
+  --nq-paper-raised: #ffffff;
+  --nq-paper-sunken: #eceef3;
+  --nq-rule: #dadde5;
+  --nq-rule-strong: #80869a;
+  --nq-graphite: #15171c;
+  --nq-graphite-muted: #555b6a;
+  --nq-ink: #2343d1;
+  --nq-ink-fill: var(--nq-ink);
+  --nq-ink-soft: #dfe5ff;
+  --nq-pencil: #f5c518;
+  --nq-pencil-soft: #fdf0c2;
+  --nq-pencil-text: #765300;
+  --nq-stamp: #c12f1c;
+  --nq-stamp-soft: #fbe3de;
+  --nq-peer-teal: #0b7369;
+  --nq-peer-violet: #7438bd;
+  --nq-peer-green: #2c7a30;
+  --nq-peer-sepia: #8a4a1a;
+  --nq-peer-magenta: #b0256c;
+  --nq-peer-slate: #46627c;
+  --nq-on-ink: #ffffff;
+  --nq-on-pencil: #1f1800;
+  --nq-on-stamp: #ffffff;
+  --nq-on-peer: #ffffff;
+  --nq-caret: var(--nq-ink);
+  --nq-selection: var(--nq-ink-soft);
+  --nq-machine: var(--nq-graphite-muted);
+  --nq-shadow-pop: 0 1px 2px #15171c14, 0 8px 24px -4px #15171c29;
+  --nq-focus-ring: 0 0 0 2px #f7f8fa, 0 0 0 4px #2343d1;
+}
+
+[data-nq-theme="light"], [data-nq-theme="system"] {
+  color-scheme: light;
+  --nq-paper: #f7f8fa;
+  --nq-paper-raised: #ffffff;
+  --nq-paper-sunken: #eceef3;
+  --nq-rule: #dadde5;
+  --nq-rule-strong: #80869a;
+  --nq-graphite: #15171c;
+  --nq-graphite-muted: #555b6a;
+  --nq-ink: #2343d1;
+  --nq-ink-fill: var(--nq-ink);
+  --nq-ink-soft: #dfe5ff;
+  --nq-pencil: #f5c518;
+  --nq-pencil-soft: #fdf0c2;
+  --nq-pencil-text: #765300;
+  --nq-stamp: #c12f1c;
+  --nq-stamp-soft: #fbe3de;
+  --nq-peer-teal: #0b7369;
+  --nq-peer-violet: #7438bd;
+  --nq-peer-green: #2c7a30;
+  --nq-peer-sepia: #8a4a1a;
+  --nq-peer-magenta: #b0256c;
+  --nq-peer-slate: #46627c;
+  --nq-on-ink: #ffffff;
+  --nq-on-pencil: #1f1800;
+  --nq-on-stamp: #ffffff;
+  --nq-on-peer: #ffffff;
+  --nq-caret: var(--nq-ink);
+  --nq-selection: var(--nq-ink-soft);
+  --nq-machine: var(--nq-graphite-muted);
+  --nq-shadow-pop: 0 1px 2px #15171c14, 0 8px 24px -4px #15171c29;
+  --nq-focus-ring: 0 0 0 2px #f7f8fa, 0 0 0 4px #2343d1;
+}
+
+[data-nq-theme="dark"] {
+  color-scheme: dark;
+  --nq-paper: #111318;
+  --nq-paper-raised: #1a1d24;
+  --nq-paper-sunken: #0b0c10;
+  --nq-rule: #2b303b;
+  --nq-rule-strong: #6b7387;
+  --nq-graphite: #eceef2;
+  --nq-graphite-muted: #a3a9b7;
+  --nq-ink: #93a6ff;
+  --nq-ink-fill: #3554f0;
+  --nq-ink-soft: #1f2a5e;
+  --nq-pencil: #e9b913;
+  --nq-pencil-soft: #3a3112;
+  --nq-pencil-text: #f2cd4b;
+  --nq-stamp: #ff7b66;
+  --nq-stamp-soft: #401a14;
+  --nq-peer-teal: #4fcfc2;
+  --nq-peer-violet: #c3a0ff;
+  --nq-peer-green: #7fd185;
+  --nq-peer-sepia: #e3a574;
+  --nq-peer-magenta: #ff8dc5;
+  --nq-peer-slate: #a3bad0;
+  --nq-on-ink: #ffffff;
+  --nq-on-pencil: #1f1800;
+  --nq-on-stamp: #1a0703;
+  --nq-on-peer: #111318;
+  --nq-caret: var(--nq-ink);
+  --nq-selection: var(--nq-ink-soft);
+  --nq-machine: var(--nq-graphite-muted);
+  --nq-shadow-pop: 0 1px 2px #00000066, 0 12px 28px -4px #000000b3;
+  --nq-focus-ring: 0 0 0 2px #111318, 0 0 0 4px #93a6ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-nq-theme="system"] {
+    color-scheme: dark;
+    --nq-paper: #111318;
+    --nq-paper-raised: #1a1d24;
+    --nq-paper-sunken: #0b0c10;
+    --nq-rule: #2b303b;
+    --nq-rule-strong: #6b7387;
+    --nq-graphite: #eceef2;
+    --nq-graphite-muted: #a3a9b7;
+    --nq-ink: #93a6ff;
+    --nq-ink-fill: #3554f0;
+    --nq-ink-soft: #1f2a5e;
+    --nq-pencil: #e9b913;
+    --nq-pencil-soft: #3a3112;
+    --nq-pencil-text: #f2cd4b;
+    --nq-stamp: #ff7b66;
+    --nq-stamp-soft: #401a14;
+    --nq-peer-teal: #4fcfc2;
+    --nq-peer-violet: #c3a0ff;
+    --nq-peer-green: #7fd185;
+    --nq-peer-sepia: #e3a574;
+    --nq-peer-magenta: #ff8dc5;
+    --nq-peer-slate: #a3bad0;
+    --nq-on-ink: #ffffff;
+    --nq-on-pencil: #1f1800;
+    --nq-on-stamp: #1a0703;
+    --nq-on-peer: #111318;
+    --nq-caret: var(--nq-ink);
+    --nq-selection: var(--nq-ink-soft);
+    --nq-machine: var(--nq-graphite-muted);
+    --nq-shadow-pop: 0 1px 2px #00000066, 0 12px 28px -4px #000000b3;
+    --nq-focus-ring: 0 0 0 2px #111318, 0 0 0 4px #93a6ff;
+  }
+}
+
+:root {
+  --nq-space-1: 4px;
+  --nq-space-2: 8px;
+  --nq-space-3: 12px;
+  --nq-space-4: 16px;
+  --nq-space-6: 24px;
+  --nq-space-8: 32px;
+  --nq-space-12: 48px;
+  --nq-radius-xs: 2px;
+  --nq-radius-sm: 4px;
+  --nq-radius-md: 8px;
+  --nq-radius-full: 9999px;
+  --nq-measure: 680px;
+  --nq-gutter: 44px;
+  --nq-change-bar: 3px;
+  --nq-caret-width: 2px;
+  --nq-block-gap: 8px;
+  --nq-font-serif: "Literata Variable", "Literata", "Iowan Old Style", Georgia, serif;
+  --nq-font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --nq-font-mono: "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.nq-doc-title { font-family: var(--nq-font-serif); font-size: 40px; line-height: 48px; font-weight: 700; letter-spacing: -0.015em; font-variation-settings: "opsz" 40; }
+.nq-doc-h1 { font-family: var(--nq-font-serif); font-size: 30px; line-height: 38px; font-weight: 650; letter-spacing: -0.01em; font-variation-settings: "opsz" 30; }
+.nq-doc-h2 { font-family: var(--nq-font-serif); font-size: 23px; line-height: 31px; font-weight: 650; font-variation-settings: "opsz" 24; }
+.nq-doc-body { font-family: var(--nq-font-serif); font-size: 18px; line-height: 30px; font-weight: 400; font-variation-settings: "opsz" 18; }
+.nq-doc-quote { font-family: var(--nq-font-serif); font-size: 18px; line-height: 30px; font-weight: 400; font-style: italic; font-variation-settings: "opsz" 18; }
+.nq-ui-heading { font-family: var(--nq-font-sans); font-size: 16px; line-height: 22px; font-weight: 700; }
+.nq-ui-body { font-family: var(--nq-font-sans); font-size: 14px; line-height: 20px; font-weight: 400; }
+.nq-ui-label { font-family: var(--nq-font-sans); font-size: 14px; line-height: 20px; font-weight: 600; }
+.nq-ui-caption { font-family: var(--nq-font-sans); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em; }
+.nq-code { font-family: var(--nq-font-mono); font-size: 14px; line-height: 22px; font-weight: 400; }
+.nq-digest { font-family: var(--nq-font-mono); font-size: 12px; line-height: 16px; font-weight: 500; }
+.nq-display { font-family: var(--nq-font-serif); font-size: 64px; line-height: 60px; font-weight: 800; letter-spacing: -0.03em; font-variation-settings: "opsz" 72; }

@@ -1,0 +1,42 @@
+{
+  "name": "@nooq/design",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "nooq design system: tokens, the reference theme, and framework-agnostic DOM components for the writing surface and the protocol-visible UI (DM-5, DM-6). Living docs in Storybook.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.json": "./tokens.json",
+    "./tokens.css": "./src/tokens.css",
+    "./nooq.css": "./src/nooq.css",
+    "./fonts.css": "./src/fonts.css"
+  },
+  "scripts": {
+    "tokens": "bun scripts/build-tokens.ts",
+    "tokens:check": "bun scripts/build-tokens.ts --check",
+    "test": "bun test",
+    "test:stories": "vitest run",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-mono": "5.3.0",
+    "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource-variable/literata": "5.3.0",
+    "@nooq/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@storybook/addon-a11y": "10.6.5",
+    "@storybook/addon-docs": "10.6.5",
+    "@storybook/addon-vitest": "10.6.5",
+    "@storybook/html-vite": "10.6.5",
+    "@vitest/browser": "5.0.5",
+    "@vitest/browser-playwright": "5.0.5",
+    "happy-dom": "21.0.4",
+    "playwright": "1.64.1",
+    "storybook": "10.6.5",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

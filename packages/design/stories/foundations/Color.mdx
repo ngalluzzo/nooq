@@ -1,0 +1,48 @@
+import { ColorItem, ColorPalette, Meta } from "@storybook/addon-docs/blocks";
+import tokens from "../../tokens.json";
+import { resolveColor } from "../../src/tokens.ts";
+import { checkContrast } from "../../src/contrast.ts";
+
+<Meta title="Foundations/Color" />
+
+# Color
+
+Color in nooq means an actor. The document is graphite on paper; hue only appears where something says who did what. Each swatch shows the light and dark value of `--nq-<name>`. Edit `tokens.json`, then run `bun run tokens`.
+
+<ColorPalette>
+  {tokens.color.tokens.map((t) => (
+    <ColorItem
+      key={t.name}
+      title={`--nq-${t.name}`}
+      subtitle={t.usage}
+      colors={{ Light: resolveColor(tokens, t.name, "light"), Dark: resolveColor(tokens, t.name, "dark") }}
+    />
+  ))}
+</ColorPalette>
+
+## Contrast, enforced
+
+Every pair below is a promise made in a usage note, and `test/contrast.test.ts` fails the build if any drops under its minimum: 4.5:1 for text, 3:1 for control borders and marks that carry meaning.
+
+export const pairs = (() => {
+  const results = checkContrast(tokens);
+  const light = results.filter((r) => r.theme === "light");
+  return light.map((r) => ({ ...r, dark: results.find((d) => d.theme === "dark" && d.fg === r.fg && d.bg === r.bg && d.min === r.min) }));
+})();
+
+<table>
+  <thead>
+    <tr><th>Foreground</th><th>Background</th><th>Minimum</th><th>Light</th><th>Dark</th></tr>
+  </thead>
+  <tbody>
+    {pairs.map((p) => (
+      <tr key={`${p.fg}-${p.bg}-${p.min}`}>
+        <td><code>{p.fg}</code></td>
+        <td><code>{p.bg}</code></td>
+        <td>{p.min}:1</td>
+        <td>{p.ratio.toFixed(2)}{p.pass ? "" : " ✕"}</td>
+        <td>{p.dark.ratio.toFixed(2)}{p.dark.pass ? "" : " ✕"}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>

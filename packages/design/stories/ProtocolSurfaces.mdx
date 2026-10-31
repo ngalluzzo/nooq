@@ -1,0 +1,16 @@
+import { Canvas, Markdown, Meta } from "@storybook/addon-docs/blocks";
+import surfaces from "../docs/protocol-surfaces.md?raw";
+import * as SuggestionCardStories from "./SuggestionCard.stories";
+import * as BlockRowStories from "./BlockRow.stories";
+
+<Meta title="Protocol surfaces" />
+
+<Markdown>{surfaces}</Markdown>
+
+## Live: a proposal degrading in place (DM-6.5)
+
+<Canvas of={SuggestionCardStories.DegradesInPlace} />
+
+## Live: attribution in the margin (DM-5)
+
+<Canvas of={BlockRowStories.Document} />

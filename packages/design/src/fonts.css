@@ -1,0 +1,10 @@
+/*
+ * Self-hosted faces (SIL OFL 1.1). Bundled rather than fetched from a font
+ * CDN, so the editor's type survives airplane mode (§2). Optional: hosts that
+ * bring their own fonts skip this file and override --nq-font-*.
+ */
+@import "@fontsource-variable/literata/opsz.css";
+@import "@fontsource-variable/literata/opsz-italic.css";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght.css";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
+@import "@fontsource-variable/atkinson-hyperlegible-mono";
