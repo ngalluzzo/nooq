@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.4 — pre-implementation.** This spec converts
+**Status: Draft 1.5 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -125,8 +125,22 @@ Operations (all reference block IDs, never positions):
 - **DM-4.1 Insert** — `{op:"insert", block:{…full block…}, parent, index?}`
 - **DM-4.2 SetField** — `{op:"setField", block, key, value}` (LWW register
   write; carries `(lamport, actorId)` implicitly from the transaction).
-- **DM-4.3 TextEdit** — `{op:"textEdit", block, …sequence CRDT ops…,
-  marks…}` — splice and mark changes against the sequence CRDT.
+- **DM-4.3 TextEdit** — `{op:"textEdit", block, changes}` where `changes`
+  is a list of splice steps applied left to right against the block's
+  sequence CRDT (DM-3.3):
+  - `{retain: n}` — advance n characters without changing them
+  - `{retain: n, setMarks: [names] | null}` — also set (or, with null,
+    clear) the marks on those n characters
+  - `{insert: s, marks?: [names]}` — insert `s` at the current position,
+    carrying the given marks
+  - `{delete: n}` — delete the next n characters
+  Trailing retains MAY be omitted; an empty `changes` list is a no-op.
+  Keystroke cost is proportional to the edit, not the block or document;
+  and because edits are positioned splices, "the selection covers the
+  same characters" is well-defined under remote edits (EB-7).
+  *(Draft 1.5: the interim whole-block replacement form is retired; this
+  is the shape DM-4.3 always described. Doc changed before code, per
+  DM-11.)*
 - **DM-4.4 Move** — `{op:"move", block, newParent, newIndex}`. Applied as
   removal from the current parent and insertion at the target within the
   same transaction.
