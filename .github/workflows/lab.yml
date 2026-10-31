@@ -1,0 +1,56 @@
+# Experience budgets (EXPERIENCE-BUDGETS.md): the lab runs on this change and
+# on its base commit, on the same runner in the same job, and the regression
+# gate compares the two (EB-6). Absolute budgets run in report mode
+# (NQ_LAB_GATE=report) until the reference editor first meets them; switch to
+# enforce by removing that variable.
+name: lab
+
+on:
+  pull_request:
+    paths: ["packages/**", "EXPERIENCE-BUDGETS.md", "bun.lock", ".github/workflows/lab.yml"]
+  push:
+    branches: [main]
+
+jobs:
+  budgets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NQ_LAB_GATE: report
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4 # Bun.WebView is experimental: a Bun bump is a rig change (EB-2.1)
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install the Chromium the story tests use
+        working-directory: packages/design
+        run: |
+          bunx playwright install --with-deps chromium
+          echo "BUN_CHROME_PATH=$(bun -e 'console.log(require("playwright").chromium.executablePath())')" >> "$GITHUB_ENV"
+
+      - name: Lab on this change
+        run: bun run --cwd packages/editor lab
+
+      - name: Lab on the base commit
+        if: github.event_name == 'pull_request'
+        run: |
+          git worktree add ../base "${{ github.event.pull_request.base.sha }}"
+          cd ../base
+          bun install --frozen-lockfile
+          if [ -f packages/editor/lab/compare.ts ]; then bun run --cwd packages/editor lab || true; fi
+
+      - name: Regression gate
+        if: github.event_name == 'pull_request'
+        run: bun packages/editor/lab/compare.ts ../base/packages/editor/lab/results packages/editor/lab/results
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-results
+          path: packages/editor/lab/results
