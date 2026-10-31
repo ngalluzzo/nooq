@@ -6,11 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, summarize, writeResult } from "./harness.ts";
-import { ENFORCE, LAB, labSession } from "./session.ts";
+import { ENFORCE, LAB, labSession, labCapable } from "./session.ts";
 
 const SAMPLES = 5;
 
-describe.skipIf(!LAB)("EB-5 time to editable", () => {
+describe.skipIf(!LAB || !labCapable)("EB-5 time to editable", () => {
   test(
     "ref-small: editable within one frame of becoming visible, with fonts delayed 2s",
     async () => {

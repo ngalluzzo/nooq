@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { writeResult } from "./harness.ts";
-import { ENFORCE, LAB, labSession, rowSelector } from "./session.ts";
+import { ENFORCE, LAB, labSession, rowSelector, labCapable } from "./session.ts";
 
 const OPS = Number(process.env.NQ_LAB_EB7_OPS ?? 10_000);
 /** EB-7: a fixed seed set, plus one fresh seed printed on failure. */
@@ -26,7 +26,7 @@ interface FuzzResult {
   blocksAtEnd: number;
 }
 
-describe.skipIf(!LAB)("EB-7 remote changes never move the caret or viewport", () => {
+describe.skipIf(!LAB || !labCapable)("EB-7 remote changes never move the caret or viewport", () => {
   for (const seed of SEEDS) {
     test(
       `ref-small, seed ${seed}: ${OPS} remote transactions, zero violations`,

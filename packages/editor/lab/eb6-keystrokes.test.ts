@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, keystrokeLatencies, summarize, writeResult, type Lab } from "./harness.ts";
 import type { RefDocName } from "./refdocs.ts";
-import { ENFORCE, LAB, labSession, rowSelector } from "./session.ts";
+import { ENFORCE, LAB, labSession, rowSelector, labCapable } from "./session.ts";
 
 type Condition = "idle" | "sync-storm";
 
@@ -112,7 +112,7 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
   };
 }
 
-describe.skipIf(!LAB)("EB-6 keystroke to paint", () => {
+describe.skipIf(!LAB || !labCapable)("EB-6 keystroke to paint", () => {
   for (const [doc, condition, middle, count] of [
     ["ref-small", "idle", 25, 500],
     ["ref-small", "sync-storm", 25, 500],

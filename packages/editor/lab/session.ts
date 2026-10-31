@@ -10,6 +10,33 @@ import { startLabServer } from "./server.ts";
 export const LAB = process.env.NQ_LAB === "1";
 
 /**
+ * EB-2.2: the lab needs a spawnable Bun.WebView chrome backend. Some
+ * environments cannot dlopen it (ubuntu runners, confined checkouts —
+ * ERR_DLOPEN_FAILED / "Failed to spawn Chrome"). The lab SKIPS there
+ * rather than fail — an unmeasured environment is not a measured one,
+ * and a red gate that never ran is a lie. Probed once, lazily.
+ */
+export const labCapable: boolean = await (async () => {
+  if (!LAB) return false;
+  let probe: { close?: () => void } | null = null;
+  try {
+    probe = new Bun.WebView({ backend: { type: "chrome", url: false }, width: 64, height: 64 }) as never;
+    // A constructor that succeeds while the pipe dies is not a capability:
+    // require a real handshake.
+    await Promise.race([
+      probe.navigate("about:blank") as Promise<unknown>,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("probe timeout")), 5_000)),
+    ]);
+    probe.close?.();
+    return true;
+  } catch {
+    (probe as { close?: () => void } | null)?.close?.();
+    console.warn("[lab] Bun.WebView chrome backend cannot run here — EB gates skip rather than lie (needs a spawnable Chrome/Chromium; BUN_CHROME_PATH).");
+    return false;
+  }
+})();
+
+/**
  * NQ_LAB_GATE=report writes every result but skips the absolute budget
  * assertions, for CI while the editor is being rebuilt to meet them. The
  * regression gate (compare.ts) still applies. Default: enforce.
