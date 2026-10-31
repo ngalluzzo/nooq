@@ -1,0 +1,13 @@
+{
+  "name": "@nooq/core",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "nooq document model: canonical bytes (DM-2), digests, transactions (DM-4), provenance (DM-5), suggestion evaluation (DM-6). See DOCUMENT-MODEL.md.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

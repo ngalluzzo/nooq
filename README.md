@@ -83,8 +83,15 @@ project, lineage stated in the spec).
 
 ## Status
 
-Pre-everything. This document is the first commit. If you're reading this
-and want to help, the answer is yes.
+Pre-everything — except the spec and the core that embarrasses it.
+`packages/core` implements DM-2..DM-6 of the document model (canonical
+bytes, digests, the sequential transaction engine, suggestion
+revalidation) with zero runtime dependencies. Bun + TypeScript:
+
+    bun install
+    bun test
+
+If you're reading this and want to help, the answer is yes.
 
 ## License
 

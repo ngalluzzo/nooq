@@ -1,0 +1,104 @@
+import { describe, expect, test } from "bun:test";
+import { applyTransaction, emptyDocument, liveTree, makeBlock } from "../src/index.ts";
+import { buildFixture, rt, tx } from "./helpers.ts";
+
+describe("applyTransaction (DM-4, sequential v0)", () => {
+  test("builds a document and maintains order", async () => {
+    const { state, section, q, p, h } = await buildFixture();
+    expect(state.roots).toEqual([section]);
+    expect(state.blocks[section]!.children).toEqual([q, p, h]);
+    expect(state.log).toHaveLength(4);
+  });
+
+  test("move repositions within and across parents", async () => {
+    const { state, section, q, p, h } = await buildFixture();
+    const moved = applyTransaction(state, tx([{ op: "move", block: h, newParent: section, index: 0 }], 5));
+    expect(moved.blocks[section]!.children).toEqual([h, q, p]);
+
+    const other = makeBlock({ type: "nooq.section/v1" }, "human:1");
+    const out = applyTransaction(moved, tx([{ op: "insert", block: other, parent: null }, { op: "move", block: p, newParent: other.id }], 6));
+    expect(out.blocks[other.id]!.children).toEqual([p]);
+    expect(out.blocks[section]!.children).toEqual([h, q]);
+    expect(out.roots).toEqual([section, other.id]);
+  });
+
+  test("delete tombstones; the map entry survives (DM-3.4)", async () => {
+    const { state, section, q, p, h } = await buildFixture();
+    const deleted = applyTransaction(state, tx([{ op: "delete", block: p }], 5));
+    expect(deleted.blocks[section]!.children).toEqual([q, h]);
+    expect(deleted.blocks[p]).toBeDefined();
+    expect(liveTree(deleted).alive.has(p)).toBe(false);
+  });
+
+  test("restore reattaches a tombstone with its content (DM-4.6)", async () => {
+    const { state, section, q, p, h } = await buildFixture();
+    const deleted = applyTransaction(state, tx([{ op: "delete", block: p }], 5));
+    const restored = applyTransaction(deleted, tx([{ op: "restore", block: p, parent: section }], 6));
+    expect(restored.blocks[section]!.children).toEqual([q, h, p]);
+    expect(restored.blocks[p]!.text!.s).toBe("hello world");
+  });
+
+  test("rejects duplicate block ids", async () => {
+    const { state, q } = await buildFixture();
+    const again = structuredClone(state.blocks[q]!);
+    expect(() => applyTransaction(state, tx([{ op: "insert", block: again, parent: null }], 5))).toThrow(/already exists/);
+  });
+
+  test("rejects moving a block into its own subtree (DM-3.1)", async () => {
+    const { state, section, p } = await buildFixture();
+    expect(() => applyTransaction(state, tx([{ op: "move", block: section, newParent: p }], 5))).toThrow(/own subtree/);
+  });
+
+  test("rejects operations on tombstoned blocks", async () => {
+    const { state, section, q, p, h } = await buildFixture();
+    const deleted = applyTransaction(state, tx([{ op: "delete", block: p }], 5));
+    expect(() => applyTransaction(deleted, tx([{ op: "delete", block: p }], 6))).toThrow(/tombstoned/);
+    expect(() => applyTransaction(deleted, tx([{ op: "insert", block: makeBlock({ type: "nooq.paragraph/v1" }, "human:1"), parent: p }], 6))).toThrow(/tombstoned/);
+    void section; void q; void h;
+  });
+
+  test("rejects malformed rendered text (DM-3.3)", async () => {
+    const { state, p } = await buildFixture();
+    expect(() =>
+      applyTransaction(state, tx([{ op: "textEdit", block: p, replace: { s: "ab", marks: [] } }], 5)),
+    ).toThrow(/marks length/);
+    expect(() =>
+      applyTransaction(state, tx([{ op: "textEdit", block: p, replace: { s: "ab", marks: [["bold"], ["bold"]] } }], 5)),
+    ).not.toThrow();
+  });
+
+  test("immutability: the input state is untouched", async () => {
+    const { state, p } = await buildFixture();
+    const before = structuredClone(state);
+    applyTransaction(state, tx([{ op: "setField", block: p, key: "tone", value: "urgent" }], 5));
+    expect(state).toEqual(before);
+  });
+
+  test("attribution records writers per field and text (DM-5)", async () => {
+    const { state, p } = await buildFixture();
+    const edited = applyTransaction(
+      state,
+      tx([{ op: "setField", block: p, key: "tone", value: "urgent" }], 7, "human:2"),
+    );
+    expect(edited.blocks[p]!.attribution.fields["tone"]).toEqual({ actor: "human:2", lamport: 7 });
+
+    const retyped = applyTransaction(
+      edited,
+      tx([{ op: "textEdit", block: p, replace: rt("hello world!") }], 8, "ai:1"),
+    );
+    expect(retyped.blocks[p]!.attribution.text).toEqual({ actor: "ai:1", lamport: 8 });
+    expect(retyped.blocks[p]!.attribution.created).toEqual({ actor: "human:1" });
+  });
+
+  test("a failing transaction logs nothing", async () => {
+    const { state, p } = await buildFixture();
+    const logLength = state.log.length;
+    expect(() =>
+      applyTransaction(state, tx([
+        { op: "setField", block: p, key: "tone", value: "urgent" },
+        { op: "setField", block: "nope", key: "x", value: 1 },
+      ], 5)),
+    ).toThrow(/no such block/);
+    expect(state.log).toHaveLength(logLength);
+  });
+});
