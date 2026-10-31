@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Callout — plugin review</title>
+<style>body{font:17px/1.6 system-ui;max-width:760px;margin:4rem auto;padding:0 1.5rem;color:#24312e;background:#faf9f4}article{border:1px solid #b8c9c1;border-left:5px solid #33765f;padding:1.5rem;border-radius:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eeeee7;padding:1rem}small{color:#53675f}li{margin:.4rem 0}</style>
+<main><small>NOOQ · GENERATED PLUGIN REVIEW</small><h1>Callout</h1><p>Candidate has unresolved checks.</p>
+<article aria-label="Generic block preview"><strong>seed.callout/v1</strong><p>Empty text block</p><pre aria-label="Stored fields">{
+  &quot;tone&quot;: &quot;info&quot;
+}</pre></article>
+<h2>Validation</h2><ul><li>Fail: manifest and contribution identity<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  [
+    &#39;seed.callout.cycle-tone&#39;,
+-   &#39;seed.callout.insert&#39;
+  ]
+</pre></li><li>Pass: creation defaults and fresh data</li><li>Pass: diagnostics 1: pure and repeatable</li><li>Pass: diagnostics 2: pure and repeatable</li><li>Pass: diagnostics 3: pure and repeatable</li><li>Fail: diagnostics 4: pure and repeatable<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ []
+- [
+-   &#39;tone&#39;
+- ]
+</pre></li><li>Fail: diagnostics 5: pure and repeatable<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ []
+- [
+-   &#39;tone&#39;
+- ]
+</pre></li><li>Fail: diagnostics 6: pure and repeatable<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ []
+- [
+-   &#39;tone&#39;
+- ]
+</pre></li><li>Pass: seed.callout.cycle-tone: invalid args 1</li><li>Pass: seed.callout.cycle-tone: invalid args 2</li><li>Pass: seed.callout.cycle-tone: invalid args 3</li><li>Pass: seed.callout.cycle-tone: invalid args 4</li><li>Pass: seed.callout.cycle-tone: missing target declines</li><li>Pass: seed.callout.cycle-tone: deleted target declines</li><li>Pass: seed.callout.cycle-tone: wrong-type target declines</li><li>Fail: seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;ready&#39;
+</pre></li><li>Fail: seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;ready&#39;
+</pre></li><li>Fail: seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;ready&#39;
+</pre></li><li>Pass: seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip</li><li>Pass: seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip</li><li>Fail: runtime: insertion preview, fresh IDs, atomic slash consumption and selection<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+&#39;failed&#39; !== &#39;ready&#39;
+</pre></li><li>Fail: runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;applied&#39;
+</pre></li><li>Fail: runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;applied&#39;
+</pre></li><li>Fail: runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;not-applicable&#39;
+- &#39;applied&#39;
+</pre></li><li>Pass: runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer</li><li>Pass: runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer</li><li>Fail: runtime: editor isolation and disposed dispatch<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ &#39;failed&#39;
+- &#39;applied&#39;
+</pre></li><li>Fail: runtime: reader and missing-genesis denial without mutation; signed writer admission<pre>AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+&#39;failed&#39; !== &#39;denied&#39;
+</pre></li></ul>
+<p>This is a static generic fallback preview, not a plugin DOM renderer. [{&quot;name&quot;:&quot;types&quot;,&quot;status&quot;:&quot;passed&quot;},{&quot;name&quot;:&quot;headless&quot;,&quot;status&quot;:&quot;failed&quot;},{&quot;name&quot;:&quot;runtime&quot;,&quot;status&quot;:&quot;failed&quot;},{&quot;name&quot;:&quot;browser&quot;,&quot;status&quot;:&quot;not-run&quot;},{&quot;name&quot;:&quot;storybook&quot;,&quot;status&quot;:&quot;not-run&quot;}]. Export adapters, native IME and performance budgets are separate gates.</p><small>Source SHA-256: 78b22981cc2c0d864e8d8dca899277b4ceb6df4e6caf6b571d34cb4f6d604bcf</small></main></html>

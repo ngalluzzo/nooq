@@ -78,10 +78,12 @@ never move your caret.
 The proposed extension boundary is drafted in
 [`proposals/0002-plugin-api.md`](proposals/0002-plugin-api.md):
 developer-bundled plugins, explicit composition, atomic commands, optional
-views, and background jobs over the existing document protocol. This API
-remains a design proposal. An experimental headless authoring subset and
-[local Pi plugin agent](packages/plugin-agent/README.md) now exercise text
-blocks and field commands; editor integration is still pending.
+views, and background jobs over the existing document protocol. The
+[implemented plugin API](packages/plugins/README.md) now powers editor
+dispatch, surface views, and proposal jobs. The
+[local Pi plugin agent](packages/plugin-agent/README.md) uses that API for
+bounded generation of plugin logic, a working DOM view, and Storybook
+interaction tests, checked against real editors and Chromium.
 
 5. **Sustainability without capture.** Maintainers must eat, so nooq will
    earn money — from what operations genuinely cost: hosted collaboration

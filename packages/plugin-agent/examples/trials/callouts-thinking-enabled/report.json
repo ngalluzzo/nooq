@@ -1,0 +1,277 @@
+{
+  "status": "failed",
+  "model": "Qwen3.8-27B-Q8_0",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "piVersion": "0.85.1",
+  "bunVersion": "1.4.4",
+  "contractHash": "ce21bd0f41e3b82fba12611aeed1fe70067128ef9dba1846c1b46d2c09385a9f",
+  "apiHash": "f13e6b38c150bc0efbfe5e20ea51a38af4595b0f4bb447642ed444c8cec2d410",
+  "briefHash": "3861f795b73bb11b2d7840dc8b238d8145ccaf48dbd9f1533392b8df584ba922",
+  "elapsedMs": 293335,
+  "revisions": 0,
+  "toolCalls": 7,
+  "completedRounds": 2,
+  "gaps": [],
+  "failure": "SDK or oracle changed during the run; rerun against a stable tree",
+  "events": [
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2085,
+        "output": 262,
+        "cacheRead": 32,
+        "cacheWrite": 0,
+        "reasoning": 57,
+        "totalTokens": 2379,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 6526
+    },
+    {
+      "event": "model",
+      "stopReason": "length",
+      "usage": {
+        "input": 5595,
+        "output": 8192,
+        "cacheRead": 2112,
+        "cacheWrite": 0,
+        "reasoning": 8192,
+        "totalTokens": 15899,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 163057
+    },
+    {
+      "event": "model",
+      "stopReason": "aborted",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 292511
+    }
+  ],
+  "bounds": {
+    "rounds": 3,
+    "roundTimeoutMs": 240000,
+    "toolCalls": 32,
+    "sourceRevisions": 12,
+    "modelChecks": 6,
+    "runtimeTimeoutMs": 20000,
+    "browserTimeoutMs": 90000
+  },
+  "remainingGates": [
+    "human source review",
+    "native IME coverage beyond composition-event simulation",
+    "browser performance budgets",
+    "HTML/PDF export adapters"
+  ],
+  "validation": {
+    "ok": false,
+    "complete": false,
+    "sourceHash": "78b22981cc2c0d864e8d8dca899277b4ceb6df4e6caf6b571d34cb4f6d604bcf",
+    "files": {
+      "src/index.ts": "c9bc1d4f62dbdb1a48a73a1293ff08ac6eddb63ecdc436a19327f094eb7d6c48",
+      "src/dom.ts": "d8c9f2bd2b08ceafe68db1005a3fe0501e6e66b71ba436f43cd423a1519433f4",
+      "src/plugin.stories.ts": "ae8427edb4894c24ab36b8efd008721e08fe31c6c2fc74943f09629c1f6aa8e4"
+    },
+    "errors": [],
+    "sandbox": "macos-seatbelt",
+    "gates": [
+      {
+        "name": "types",
+        "status": "passed"
+      },
+      {
+        "name": "headless",
+        "status": "failed"
+      },
+      {
+        "name": "runtime",
+        "status": "failed"
+      },
+      {
+        "name": "browser",
+        "status": "not-run"
+      },
+      {
+        "name": "storybook",
+        "status": "not-run"
+      }
+    ],
+    "conformance": {
+      "checks": [
+        {
+          "name": "manifest and contribution identity",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    'seed.callout.cycle-tone',\n-   'seed.callout.insert'\n  ]\n"
+        },
+        {
+          "name": "creation defaults and fresh data",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 1: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 2: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 3: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 4: pure and repeatable",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ []\n- [\n-   'tone'\n- ]\n"
+        },
+        {
+          "name": "diagnostics 5: pure and repeatable",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ []\n- [\n-   'tone'\n- ]\n"
+        },
+        {
+          "name": "diagnostics 6: pure and repeatable",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ []\n- [\n-   'tone'\n- ]\n"
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 1",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 2",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 3",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 4",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: missing target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: deleted target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: wrong-type target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'ready'\n"
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'ready'\n"
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'ready'\n"
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+          "ok": true
+        }
+      ],
+      "preview": {
+        "id": "0bf17f47-aefc-4fdd-86aa-3fbb2e52f023",
+        "type": "seed.callout/v1",
+        "fields": {
+          "tone": "info"
+        },
+        "text": {
+          "s": "",
+          "marks": []
+        },
+        "children": [],
+        "attribution": {
+          "created": {
+            "actor": "test-human"
+          },
+          "fields": {}
+        }
+      }
+    },
+    "runtime": {
+      "checks": [
+        {
+          "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'failed' !== 'ready'\n"
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'applied'\n"
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'applied'\n"
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'not-applicable'\n- 'applied'\n"
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: editor isolation and disposed dispatch",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'failed'\n- 'applied'\n"
+        },
+        {
+          "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+          "ok": false,
+          "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'failed' !== 'denied'\n"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,383 @@
+{
+  "status": "passed",
+  "model": "Qwen3.8-27B-Q8_0",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "piVersion": "0.85.1",
+  "apiHash": "5be59f957d05ac19673779af57b36a5e9de1941d0a006d65e4dc8fcfa292a9fb",
+  "briefHash": "89bb3e16f4a96631c4215aafe69bea22e8c5adc58dee44153cb3e10d4502eedb",
+  "elapsedMs": 61966,
+  "revisions": 1,
+  "toolCalls": 3,
+  "completedRounds": 1,
+  "gaps": [],
+  "events": [
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1441,
+        "output": 32,
+        "cacheRead": 32,
+        "cacheWrite": 0,
+        "reasoning": 16,
+        "totalTokens": 1505,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 3262
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 3165,
+        "output": 3072,
+        "cacheRead": 1440,
+        "cacheWrite": 0,
+        "reasoning": 2506,
+        "totalTokens": 7677,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 48126
+    },
+    {
+      "event": "write",
+      "revision": 1,
+      "sourceHash": "46402815c8fae0400156eb1a7d0ddf00474c8da22cd85594f3240c4bb275aa86",
+      "elapsedMs": 48128
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 3183,
+        "output": 38,
+        "cacheRead": 4576,
+        "cacheWrite": 0,
+        "reasoning": 21,
+        "totalTokens": 7797,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 55176
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "sourceHash": "46402815c8fae0400156eb1a7d0ddf00474c8da22cd85594f3240c4bb275aa86",
+        "errors": [],
+        "sandbox": "macos-seatbelt",
+        "conformance": {
+          "checks": [
+            {
+              "name": "manifest and contribution identity",
+              "ok": true
+            },
+            {
+              "name": "creation defaults and fresh data",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 1: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 2: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 3: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 4: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 5: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 6: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 1",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 2",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 3",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 4",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: missing target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: deleted target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: wrong-type target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+              "ok": true
+            }
+          ],
+          "preview": {
+            "id": "8cedb111-b52d-4113-9915-7531ed78487a",
+            "type": "seed.callout/v1",
+            "fields": {
+              "tone": "info",
+              "futureField": {
+                "preserved": true
+              }
+            },
+            "text": {
+              "s": "A😀B!",
+              "marks": [
+                [],
+                [
+                  "future-mark"
+                ],
+                [
+                  "future-mark"
+                ],
+                [],
+                []
+              ]
+            },
+            "children": [
+              "fixture-child"
+            ],
+            "attribution": {
+              "created": {
+                "actor": "test-human"
+              },
+              "fields": {
+                "tone": {
+                  "actor": "test-human",
+                  "lamport": 21
+                }
+              },
+              "text": {
+                "actor": "test-human",
+                "lamport": 22
+              }
+            }
+          }
+        }
+      },
+      "elapsedMs": 55480
+    },
+    {
+      "event": "model",
+      "stopReason": "stop",
+      "usage": {
+        "input": 643,
+        "output": 319,
+        "cacheRead": 7744,
+        "cacheWrite": 0,
+        "reasoning": 54,
+        "totalTokens": 8706,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 61620
+    }
+  ],
+  "bounds": {
+    "rounds": 3,
+    "roundTimeoutMs": 120000,
+    "toolCalls": 24,
+    "sourceRevisions": 8,
+    "modelChecks": 6,
+    "validationTimeoutMs": 15000
+  },
+  "remainingGates": [
+    "human source review",
+    "editor integration and secured local authorization",
+    "custom DOM/a11y/caret behavior",
+    "HTML/PDF export adapters"
+  ],
+  "validation": {
+    "ok": true,
+    "sourceHash": "46402815c8fae0400156eb1a7d0ddf00474c8da22cd85594f3240c4bb275aa86",
+    "errors": [],
+    "sandbox": "macos-seatbelt",
+    "conformance": {
+      "checks": [
+        {
+          "name": "manifest and contribution identity",
+          "ok": true
+        },
+        {
+          "name": "creation defaults and fresh data",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 1: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 2: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 3: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 4: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 5: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 6: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 1",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 2",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 3",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 4",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: missing target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: deleted target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: wrong-type target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+          "ok": true
+        }
+      ],
+      "preview": {
+        "id": "62f940c7-8175-42b1-aaac-2f56369f5317",
+        "type": "seed.callout/v1",
+        "fields": {
+          "tone": "info",
+          "futureField": {
+            "preserved": true
+          }
+        },
+        "text": {
+          "s": "A😀B!",
+          "marks": [
+            [],
+            [
+              "future-mark"
+            ],
+            [
+              "future-mark"
+            ],
+            [],
+            []
+          ]
+        },
+        "children": [
+          "fixture-child"
+        ],
+        "attribution": {
+          "created": {
+            "actor": "test-human"
+          },
+          "fields": {
+            "tone": {
+              "actor": "test-human",
+              "lamport": 21
+            }
+          },
+          "text": {
+            "actor": "test-human",
+            "lamport": 22
+          }
+        }
+      }
+    }
+  }
+}

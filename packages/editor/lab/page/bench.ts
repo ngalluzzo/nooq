@@ -12,6 +12,7 @@ import { newBlockId, type BlockId, type Op } from "@nooq/core";
 import { NooqRelay } from "@nooq/sync";
 import { Editor } from "../../src/controller.ts";
 import { createSurface } from "../../src/dom.ts";
+import { referencePlugins, referenceDOM, referenceJobBindings } from "../../src/reference.ts";
 
 const params = new URLSearchParams(location.search);
 const docName = params.get("doc") ?? "ref-small";
@@ -20,6 +21,7 @@ const DOC_ID = `lab-${docName}`;
 
 const relay = condition === "sync-storm" ? new NooqRelay() : null;
 const editor = new Editor({
+  plugins: referencePlugins, jobBindings: referenceJobBindings(),
   docId: DOC_ID,
   actor: { actorId: "human:lab", name: "Lab writer" },
   ...(relay ? { transport: relay.connect(DOC_ID) } : {}),
@@ -27,7 +29,7 @@ const editor = new Editor({
 const update = new Uint8Array(await (await fetch(`/doc/${docName}?id=${DOC_ID}`)).arrayBuffer());
 Y.applyUpdate(editor.ydoc, update);
 const peer = relay ? new Editor({ docId: DOC_ID, actor: { actorId: "human:storm", name: "Storm" }, transport: relay.connect(DOC_ID) }) : null;
-const surface = createSurface(editor);
+const surface = createSurface(editor, { plugins: referenceDOM });
 document.getElementById("root")!.append(surface.element);
 
 /**

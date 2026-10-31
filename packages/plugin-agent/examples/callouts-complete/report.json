@@ -1,0 +1,1143 @@
+{
+  "status": "passed",
+  "model": "Qwen3.8-27B-Q8_0",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "piVersion": "0.85.1",
+  "bunVersion": "1.4.4",
+  "contractHash": "bef9b5472a628dedf204a0044a56f5b5fc2d8cfc63cd9fe3d5f8b4bd12426140",
+  "apiHash": "19cc58189b9a46147db2a45b94931fe880ca97287e20fb937f6439dd8274f5e9",
+  "briefHash": "3861f795b73bb11b2d7840dc8b238d8145ccaf48dbd9f1533392b8df584ba922",
+  "elapsedMs": 138753,
+  "revisions": 8,
+  "toolCalls": 20,
+  "completedRounds": 1,
+  "gaps": [],
+  "events": [
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2083,
+        "output": 119,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 2202,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 5310
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 5230,
+        "output": 92,
+        "cacheRead": 2048,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 7370,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 16378
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 821,
+        "output": 1283,
+        "cacheRead": 7264,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 9368,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 31776
+    },
+    {
+      "event": "write",
+      "revision": 1,
+      "path": "src/index.ts",
+      "sourceHash": "d760c3b529218adffe1c8a1b8ec3008631aca6b38bf2f292ac25581107282a42",
+      "elapsedMs": 31777
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1386,
+        "output": 1205,
+        "cacheRead": 8064,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 10655,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 44410
+    },
+    {
+      "event": "write",
+      "revision": 2,
+      "path": "src/index.ts",
+      "sourceHash": "70613161632b2403dc591dd720f3d8ef26a74809d44b69fd3e14f9843a62646b",
+      "elapsedMs": 44412
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1301,
+        "output": 810,
+        "cacheRead": 9440,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 11551,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 57082
+    },
+    {
+      "event": "write",
+      "revision": 3,
+      "path": "src/dom.ts",
+      "sourceHash": "e4e08e26ae465b22746a10f9b954b34bc07f7bc267eb99abfbb4cdda37982a44",
+      "elapsedMs": 57084
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 914,
+        "output": 935,
+        "cacheRead": 10720,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 12569,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 68791
+    },
+    {
+      "event": "write",
+      "revision": 4,
+      "path": "src/plugin.stories.ts",
+      "sourceHash": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71",
+      "elapsedMs": 68792
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1036,
+        "output": 27,
+        "cacheRead": 11616,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 12679,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 71823
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "d425acd7882b1c8adc030ab4e97b1088d0827266cf0f7dbcba9cc69a7e64de47",
+        "files": {
+          "src/index.ts": "70613161632b2403dc591dd720f3d8ef26a74809d44b69fd3e14f9843a62646b",
+          "src/dom.ts": "e4e08e26ae465b22746a10f9b954b34bc07f7bc267eb99abfbb4cdda37982a44",
+          "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+        },
+        "errors": [
+          "src/dom.ts:3: Module '\"@nooq/plugins/dom\"' declares 'Immutable' locally, but it is not exported.",
+          "src/index.ts:16: Type '(block: { fields: Record<string, JsonValue>; }) => readonly Diagnostic[]' is not assignable to type '(block: { readonly id: string; readonly type: string; readonly fields: { readonly [x: string]: ImmutableJsonValue; }; readonly text?: { readonly s: string; readonly marks: readonly (readonly string[])[]; } | undefined; readonly children: readonly string[]; readonly attribution: { ...; }; }) => readonly Diagnostic[]'.\n  Types of parameters 'block' and 'block' are incompatible.\n    Type '{ readonly id: string; readonly type: string; readonly fields: { readonly [x: string]: ImmutableJsonValue; }; readonly text?: { readonly s: string; readonly marks: readonly (readonly string[])[]; } | undefined; readonly children: readonly string[]; readonly attribution: { ...; }; }' is not assignable to type '{ fields: Record<string, JsonValue>; }'.\n      Types of property 'fields' are incompatible.\n        Type '{ readonly [x: string]: ImmutableJsonValue; }' is not assignable to type 'Record<string, JsonValue>'.\n          'string' index signatures are incompatible.\n            Type 'ImmutableJsonValue' is not assignable to type 'JsonValue'.\n              Type 'readonly ImmutableJsonValue[]' is not assignable to type 'JsonValue'.\n                The type 'readonly ImmutableJsonValue[]' is 'readonly' and cannot be assigned to the mutable type 'JsonValue[]'."
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 72718
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 710,
+        "output": 1959,
+        "cacheRead": 12640,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 15309,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 93677
+    },
+    {
+      "event": "write",
+      "revision": 6,
+      "path": "src/dom.ts",
+      "sourceHash": "55176412ef0971bda9b15d6ab76abf092d81cc4f583049a7eb94562341dec767",
+      "elapsedMs": 93679
+    },
+    {
+      "event": "write",
+      "revision": 6,
+      "path": "src/index.ts",
+      "sourceHash": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+      "elapsedMs": 93679
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2159,
+        "output": 27,
+        "cacheRead": 13312,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 15498,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 98769
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "8306e9269f0699c5e94fe92222a9b03c0f3477ec8f973f221cb199dfa4c81226",
+        "files": {
+          "src/index.ts": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+          "src/dom.ts": "55176412ef0971bda9b15d6ab76abf092d81cc4f583049a7eb94562341dec767",
+          "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+        },
+        "errors": [
+          "src/dom.ts:3: Module '\"@nooq/plugins\"' has no exported member 'BlockViewContext'.",
+          "src/dom.ts:3: Module '\"@nooq/plugins\"' has no exported member 'BlockView'."
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 99435
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 417,
+        "output": 770,
+        "cacheRead": 15456,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 16643,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 106554
+    },
+    {
+      "event": "write",
+      "revision": 7,
+      "path": "src/dom.ts",
+      "sourceHash": "4f13fdc2024f00aadcc6835aa8241311bb50585b44d7ac364863ae8800c71367",
+      "elapsedMs": 106557
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 890,
+        "output": 27,
+        "cacheRead": 15840,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 16757,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 109051
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "e1540eada240d582c8697969e66443aa65165c8830c632a14e35db433ed4d9a9",
+        "files": {
+          "src/index.ts": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+          "src/dom.ts": "4f13fdc2024f00aadcc6835aa8241311bb50585b44d7ac364863ae8800c71367",
+          "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+        },
+        "errors": [
+          "src/dom.ts:1: Module '\"@nooq/plugins/dom\"' declares 'Immutable' locally, but it is not exported."
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 109688
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 406,
+        "output": 780,
+        "cacheRead": 16704,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 17890,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 116879
+    },
+    {
+      "event": "write",
+      "revision": 8,
+      "path": "src/dom.ts",
+      "sourceHash": "b2a43a4263b93326ca0326b22beec1f3dfa7ddc98bd6bb40f037aecffd445ccb",
+      "elapsedMs": 116880
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 887,
+        "output": 27,
+        "cacheRead": 17088,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 18002,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 119296
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "complete": false,
+        "sourceHash": "863fb6b94a46e4fbb8382b0f467c0c63ab04c150dec6862489b6b345eb6cc0f9",
+        "files": {
+          "src/index.ts": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+          "src/dom.ts": "b2a43a4263b93326ca0326b22beec1f3dfa7ddc98bd6bb40f037aecffd445ccb",
+          "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+        },
+        "errors": [],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 119892
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 368,
+        "output": 27,
+        "cacheRead": 17952,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 18347,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 121355
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "complete": true,
+        "sourceHash": "863fb6b94a46e4fbb8382b0f467c0c63ab04c150dec6862489b6b345eb6cc0f9",
+        "files": {
+          "src/index.ts": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+          "src/dom.ts": "b2a43a4263b93326ca0326b22beec1f3dfa7ddc98bd6bb40f037aecffd445ccb",
+          "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+        },
+        "errors": [],
+        "sandbox": "macos-seatbelt",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "passed"
+          },
+          {
+            "name": "runtime",
+            "status": "passed"
+          },
+          {
+            "name": "browser",
+            "status": "passed"
+          },
+          {
+            "name": "storybook",
+            "status": "passed"
+          }
+        ],
+        "conformance": {
+          "checks": [
+            {
+              "name": "manifest and contribution identity",
+              "ok": true
+            },
+            {
+              "name": "creation defaults and fresh data",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 1: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 2: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 3: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 4: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 5: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 6: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 1",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 2",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 3",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 4",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: missing target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: deleted target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: wrong-type target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+              "ok": true
+            }
+          ],
+          "preview": {
+            "id": "716779ca-3aa2-49a2-9ad0-020029d52821",
+            "type": "seed.callout/v1",
+            "fields": {
+              "tone": "info",
+              "futureField": {
+                "preserved": true
+              }
+            },
+            "text": {
+              "s": "A😀B!",
+              "marks": [
+                [],
+                [
+                  "future-mark"
+                ],
+                [
+                  "future-mark"
+                ],
+                [],
+                []
+              ]
+            },
+            "children": [
+              "fixture-child"
+            ],
+            "attribution": {
+              "created": {
+                "actor": "test-human"
+              },
+              "fields": {
+                "tone": {
+                  "actor": "test-human",
+                  "lamport": 21
+                }
+              },
+              "text": {
+                "actor": "test-human",
+                "lamport": 22
+              }
+            }
+          }
+        },
+        "runtime": {
+          "checks": [
+            {
+              "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+              "ok": true
+            },
+            {
+              "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: editor isolation and disposed dispatch",
+              "ok": true
+            },
+            {
+              "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+              "ok": true
+            }
+          ]
+        },
+        "browser": {
+          "checks": [
+            {
+              "name": "browser: real view mounts, labelled text/controls and nested content",
+              "ok": true
+            },
+            {
+              "name": "browser: native keyboard activation dispatches exactly one field command",
+              "ok": true
+            },
+            {
+              "name": "browser: typing and remote splice preserve text controller and caret",
+              "ok": true
+            },
+            {
+              "name": "browser: composition event sequence rebases over a concurrent insertion",
+              "ok": true
+            },
+            {
+              "name": "browser: missing-plugin peer retains identical data and fallback",
+              "ok": true
+            },
+            {
+              "name": "browser: slash menu inserts atomically and focuses its new text",
+              "ok": true
+            },
+            {
+              "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+              "ok": true
+            },
+            {
+              "name": "browser: view disposal exactly once per mount",
+              "ok": true
+            },
+            {
+              "name": "storybook: required CSF stories exported",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "browser: no uncaught errors or network requests",
+              "ok": true
+            }
+          ],
+          "version": "156.0.8078.4",
+          "stories": 12,
+          "previewHash": "abaee72ef2d4a0537558cf53d54e11be1fad17db30af80da563a1b9560af9dd7"
+        }
+      },
+      "elapsedMs": 124322
+    },
+    {
+      "event": "model",
+      "stopReason": "stop",
+      "usage": {
+        "input": 1515,
+        "output": 304,
+        "cacheRead": 18304,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 20123,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 133014
+    }
+  ],
+  "bounds": {
+    "rounds": 3,
+    "roundTimeoutMs": 240000,
+    "toolCalls": 32,
+    "sourceRevisions": 12,
+    "modelChecks": 6,
+    "runtimeTimeoutMs": 20000,
+    "browserTimeoutMs": 90000
+  },
+  "remainingGates": [
+    "human source review",
+    "native IME coverage beyond composition-event simulation",
+    "browser performance budgets",
+    "HTML/PDF export adapters"
+  ],
+  "validation": {
+    "ok": true,
+    "complete": true,
+    "sourceHash": "863fb6b94a46e4fbb8382b0f467c0c63ab04c150dec6862489b6b345eb6cc0f9",
+    "files": {
+      "src/index.ts": "ac94c7fb7e9fed7163d75d06e4cdcefbb42d778cbfe54cbab89a214245fdceff",
+      "src/dom.ts": "b2a43a4263b93326ca0326b22beec1f3dfa7ddc98bd6bb40f037aecffd445ccb",
+      "src/plugin.stories.ts": "dca07d5d0368bbfacc9a55a67d1def04a9149b56ae78bc5e3c89666484957a71"
+    },
+    "errors": [],
+    "sandbox": "macos-seatbelt",
+    "gates": [
+      {
+        "name": "types",
+        "status": "passed"
+      },
+      {
+        "name": "headless",
+        "status": "passed"
+      },
+      {
+        "name": "runtime",
+        "status": "passed"
+      },
+      {
+        "name": "browser",
+        "status": "passed"
+      },
+      {
+        "name": "storybook",
+        "status": "passed"
+      }
+    ],
+    "conformance": {
+      "checks": [
+        {
+          "name": "manifest and contribution identity",
+          "ok": true
+        },
+        {
+          "name": "creation defaults and fresh data",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 1: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 2: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 3: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 4: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 5: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 6: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 1",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 2",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 3",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 4",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: missing target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: deleted target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: wrong-type target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+          "ok": true
+        }
+      ],
+      "preview": {
+        "id": "045da293-e35e-455e-90df-8888ec11847a",
+        "type": "seed.callout/v1",
+        "fields": {
+          "tone": "info",
+          "futureField": {
+            "preserved": true
+          }
+        },
+        "text": {
+          "s": "A😀B!",
+          "marks": [
+            [],
+            [
+              "future-mark"
+            ],
+            [
+              "future-mark"
+            ],
+            [],
+            []
+          ]
+        },
+        "children": [
+          "fixture-child"
+        ],
+        "attribution": {
+          "created": {
+            "actor": "test-human"
+          },
+          "fields": {
+            "tone": {
+              "actor": "test-human",
+              "lamport": 21
+            }
+          },
+          "text": {
+            "actor": "test-human",
+            "lamport": 22
+          }
+        }
+      }
+    },
+    "runtime": {
+      "checks": [
+        {
+          "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+          "ok": true
+        },
+        {
+          "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: editor isolation and disposed dispatch",
+          "ok": true
+        },
+        {
+          "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+          "ok": true
+        }
+      ]
+    },
+    "browser": {
+      "checks": [
+        {
+          "name": "browser: real view mounts, labelled text/controls and nested content",
+          "ok": true
+        },
+        {
+          "name": "browser: native keyboard activation dispatches exactly one field command",
+          "ok": true
+        },
+        {
+          "name": "browser: typing and remote splice preserve text controller and caret",
+          "ok": true
+        },
+        {
+          "name": "browser: composition event sequence rebases over a concurrent insertion",
+          "ok": true
+        },
+        {
+          "name": "browser: missing-plugin peer retains identical data and fallback",
+          "ok": true
+        },
+        {
+          "name": "browser: slash menu inserts atomically and focuses its new text",
+          "ok": true
+        },
+        {
+          "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+          "ok": true
+        },
+        {
+          "name": "browser: view disposal exactly once per mount",
+          "ok": true
+        },
+        {
+          "name": "storybook: required CSF stories exported",
+          "ok": true
+        },
+        {
+          "name": "storybook: Default / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Warning / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Success / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: InvalidTone / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: KeyboardCycle / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: NestedContent / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Default / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Warning / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Success / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: InvalidTone / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: KeyboardCycle / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: NestedContent / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "browser: no uncaught errors or network requests",
+          "ok": true
+        }
+      ],
+      "version": "156.0.8078.4",
+      "stories": 12,
+      "previewHash": "f8644915f3837f2db28c4da6abc004c5e5f872d8048bf2562a5999bd0c683178",
+      "screenshot": "preview.png"
+    }
+  }
+}

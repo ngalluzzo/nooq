@@ -1,0 +1,52 @@
+$ bun packages/plugin-agent/src/cli.ts run packages/plugin-agent/briefs/callout-complete.json --model "Qwen3.8-27B-Q8_0" --out packages/plugin-agent/examples/callouts-complete
+Model: Qwen3.8-27B-Q8_0
+Run: /Users/ngalluzzo/repos/nooq/packages/plugin-agent/examples/callouts-complete
+  model: toolUse, 105 output tokens, 5s elapsed
+  tool: read_api
+  tool: read_api
+  tool: read_api
+  tool: read_api
+  model: toolUse, 83 output tokens, 15s elapsed
+  tool: read_file
+  tool: read_file
+  tool: read_file
+  model: toolUse, 27 output tokens, 18s elapsed
+  tool: read_api
+  model: toolUse, 1191 output tokens, 38s elapsed
+  tool: write_file
+  model: toolUse, 40 output tokens, 42s elapsed
+  tool: read_api
+  model: toolUse, 27 output tokens, 50s elapsed
+  tool: check_plugin
+  check 1: failed
+  model: toolUse, 1076 output tokens, 64s elapsed
+  tool: write_file
+  model: toolUse, 660 output tokens, 75s elapsed
+  tool: write_file
+  model: toolUse, 937 output tokens, 87s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 90s elapsed
+  tool: check_plugin
+  check 2: failed
+  model: toolUse, 655 output tokens, 98s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 100s elapsed
+  tool: check_plugin
+  check 3: partial pass
+  model: toolUse, 27 output tokens, 103s elapsed
+  tool: check_plugin
+  check 4: failed
+  model: toolUse, 44 output tokens, 107s elapsed
+  tool: read_file
+  model: toolUse, 1162 output tokens, 122s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 125s elapsed
+  tool: read_file
+  model: toolUse, 1090 output tokens, 139s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 142s elapsed
+  tool: check_plugin
+  check 5: failed
+  model: aborted, 0 output tokens, 153s elapsed
+ENOENT: no such file or directory, scandir '/Users/ngalluzzo/repos/nooq/packages/plugins/src'
+error: script "plugin-agent" exited with code 1

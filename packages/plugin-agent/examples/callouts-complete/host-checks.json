@@ -1,0 +1,75 @@
+{
+  "sourceHash": "863fb6b94a46e4fbb8382b0f467c0c63ab04c150dec6862489b6b345eb6cc0f9",
+  "contractHash": "bef9b5472a628dedf204a0044a56f5b5fc2d8cfc63cd9fe3d5f8b4bd12426140",
+  "generatedSourceEditedByHost": false,
+  "checks": [
+    {
+      "command": "bun install --offline --frozen-lockfile",
+      "status": "passed"
+    },
+    {
+      "command": "bun run typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "bun test",
+      "status": "passed",
+      "passed": 476,
+      "skipped": 7,
+      "failed": 0
+    },
+    {
+      "command": "bun run test:stories",
+      "status": "passed",
+      "passed": 116,
+      "failed": 0
+    },
+    {
+      "command": "bun run plugin-agent check packages/plugin-agent/briefs/callout-complete.json packages/plugin-agent/examples/callouts-complete",
+      "status": "passed",
+      "gates": [
+        {
+          "name": "types",
+          "status": "passed"
+        },
+        {
+          "name": "headless",
+          "status": "passed"
+        },
+        {
+          "name": "runtime",
+          "status": "passed"
+        },
+        {
+          "name": "browser",
+          "status": "passed"
+        },
+        {
+          "name": "storybook",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "command": "bun test packages/editor/test/pm.test.ts packages/editor/test/pm-view.test.ts",
+      "status": "passed",
+      "passed": 12,
+      "failed": 0,
+      "note": "Rechecked after the concurrent PM formatting update; affected files remained stable during the check"
+    }
+  ],
+  "previewUi": {
+    "toneChange": "verified",
+    "peerEdit": "verified",
+    "screenshot": "preview-live.jpg"
+  },
+  "integration": {
+    "status": "integrated",
+    "branch": "main",
+    "baseCommit": "72d6d90daa2d67bcfcc53f92cd7330d3394d6b68",
+    "preserved": [
+      "ProseMirror editor changes",
+      "trust-suite CI timeout fixes"
+    ]
+  }
+}

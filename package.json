@@ -15,6 +15,7 @@
   "devDependencies": {
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
+    "@nooq/plugin-agent": "workspace:*",
     "bun-types": "^1.4.4",
     "typescript": "^5.9.0"
   }

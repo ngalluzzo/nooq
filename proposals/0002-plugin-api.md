@@ -1,10 +1,12 @@
 # Proposal 0002: the plugin API
 
-**Status: design draft — 2026-10-31.** Developer-bundled plugins first.
-This is a proposed API, not an implemented or ratified contract. Names in
-the examples are sketches; the existing document and sync protocols remain
-authoritative. A public proposal and review under [GOVERNANCE](../GOVERNANCE.md)
-precede adoption.
+**Status: implementation available for review — 2026-10-31.** Developer-bundled
+plugins first. The [API guide](../packages/plugins/README.md) documents the
+implemented names and limits. Registry/commands, local authorization, DOM
+views, scopes, jobs/capture, and revision-checked acceptance are implemented;
+later protocol/export/history work remains proposed. This does not constitute
+ratification under [GOVERNANCE](../GOVERNANCE.md). Existing document and sync
+protocols remain authoritative.
 
 **Review revision — 2026-10-31.** Clarifies local authorization, acceptance
 races, host-bound job identities, diagnostic scheduling, preview IDs, and
@@ -21,7 +23,7 @@ Keep three boundaries:
 | Layer | Owns | Does not own |
 | --- | --- | --- |
 | Document protocol (`@nooq/core`, CRDT adapter) | Identity, operations, merge, provenance, authorization, proposal evaluation | Installed plugins, DOM, providers |
-| Plugin runtime (proposed `@nooq/plugins`) | Registration, command dispatch, job lifetime, scoped subscriptions | New wire operations or merge policies |
+| Plugin runtime (`@nooq/plugins`) | Registration, command dispatch, job lifetime, scoped subscriptions | New wire operations or merge policies |
 | Surface (`@nooq/editor`, optional adapters) | Views, selection, menus, shortcuts, accessibility | Authoritative document state |
 
 The reference paragraph, heading, quote, and suggestion UI use the same
@@ -810,34 +812,52 @@ into executable format tests. Every later stored-content plugin adds its
 mapping and tests when it lands. Review, AI, and other service contributions
 must also specify the export treatment of the artifacts they produce.
 
-## P-12. Plugin authoring agent pilot
+## P-12. Plugin authoring agent
 
-The experimental [Pi agent](../packages/plugin-agent/README.md) now exercises
-one bounded archetype: inline-text blocks with fields, pure diagnostics,
-and synchronous target-field commands. Its small
-[`@nooq/plugins`](../packages/plugins/README.md) authoring package implements
-definitions and immutable command preparation. It does not implement the
-full composition/runtime contract or install plugins in the editor.
+The experimental [Pi agent](../packages/plugin-agent/README.md) consumes the
+implemented plugin API. Its current recipe generates an inline-text block,
+field commands, an atomic insertion command, a DOM view, and standard
+Storybook CSF3 interaction tests. A human-owned brief defines behavior and
+acceptance cases. The model can edit only three source files; manifests,
+dependencies, fixtures, and the independent test oracle remain host-owned.
+Generated artifacts are not automatically installed, merged, or published.
 
-A human-owned brief defines behavior and acceptance cases. A deterministic
-scaffold and pinned implemented API context reduce model guesswork. The
-model can replace its one source file, run protected checks, and report an
-API gap. Pi runs a local model through an OpenAI-compatible loopback endpoint;
-generated nooq plugins are never Pi extensions. Candidate execution happens
-in a separate macOS sandbox, with bounded repair rounds and preserved source
-revisions. Reports include source/API/brief hashes, model usage, test results,
-API gaps, and remaining review gates. The agent never edits its oracle or
-automatically installs, merges, or publishes a candidate.
+Focused API sections supply the headless, DOM, and Storybook contracts.
+Story guidance requires accessible role/label queries, awaited assertions,
+keyboard interaction, invalid-data preservation, and nested content. Each
+story runs through Storybook's composition and run lifecycle in Chromium in
+light and dark themes, followed by an independent axe scan. Generated tests
+complement rather than replace the protected behavior checks.
 
-The pilot covers core/Yjs agreement, concurrent text edits from a peer without
-the plugin, preservation of unknown fields/marks/children, and native JSON
-roundtrip. Its static generic preview is not an interactive renderer. A green
-pilot report does not satisfy the seed release criteria: authorized editor
-dispatch, DOM and accessibility/caret checks, and actual format exports remain
-separate required work. The existing evidence-coverage restrictions also
-remain; this synchronous pilot does not introduce AI proposal jobs.
+The protected gates cover core/Yjs agreement and unknown-data preservation,
+actual Editor dispatch and provenance, local permission denial without
+mutation, signed admission, peer convergence without the plugin, browser
+text/caret behavior, simulated composition events, insertion selection, and
+view disposal. Partial type/runtime checks do not qualify a run as complete.
+The final source bytes are independently rechecked, and a changing runtime
+or oracle fingerprint invalidates the run.
 
-Extend the supported archetypes only after their API gaps are resolved. First
-measure acceptance and repair cost across varied briefs on exact local model
-versions; then add a job queue and parallel workers. Seed build order in P-11
-is unchanged: the Callout authoring trial is not a release of the second seed.
+Pi runs the selected local model through a loopback endpoint. Candidate
+headless/runtime execution occurs in a macOS sandbox; browser execution uses
+a fresh Chromium context and a sandboxed frame. Reports preserve source
+revisions, contract/brief/package hashes, model usage, per-gate results,
+remaining checks, an interactive preview, and a screenshot. The original
+one-file Callout trial remains historical evidence, distinct from the
+complete-package recipe.
+
+The complete Callouts trial generated all three files using oMLX's
+Qwen3.8-27B-Q8_0 in 138.8 seconds, with eight source revisions and 20 tool
+calls. All five gates passed: 20 headless checks, nine runtime checks, nine
+browser checks, and six stories executed in both themes. The same generated
+stories also passed in the host Storybook suite (116 tests total).
+The [saved report](../packages/plugin-agent/examples/callouts-complete/report.json)
+and unsuccessful earlier trials preserve the evidence; this single recipe run
+does not establish a general acceptance rate or throughput target.
+
+A passing report still does not complete the seed release criteria. Human
+source review, real native IME beyond composition-event simulation, browser
+latency budgets, and actual format exports remain separate gates. The agent
+does not yet generate async jobs, dependency composition, media, layout, or
+tables. Extend recipes as those gates become executable, then measure varied
+briefs on exact model versions before adding a queue and parallel inference.
+Seed build order in P-11 is unchanged.
