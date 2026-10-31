@@ -15,16 +15,16 @@
   "dependencies": {
     "@nooq/core": "workspace:*",
     "@nooq/design": "workspace:*",
-    "@nooq/plugins": "workspace:*",
     "@nooq/sync": "workspace:*",
     "@nooq/yjs": "workspace:*",
+    "prosemirror-keymap": "^1",
     "prosemirror-model": "^1",
     "prosemirror-state": "^1",
     "prosemirror-transform": "^1",
+    "prosemirror-view": "^1",
     "yjs": "^13.6.0"
   },
   "devDependencies": {
-    "@nooq/plugin-callouts": "workspace:*",
     "@happy-dom/global-registrator": "21.0.4"
   }
 }

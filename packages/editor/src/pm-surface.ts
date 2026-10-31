@@ -32,11 +32,31 @@ const TEXT_TYPES: Record<string, string> = {
 
 export const pmSchema = new Schema({
   nodes: {
-    doc: { content: "block+" },
-    section: { content: "block+", attrs: { [BLOCK_ID]: { default: "" } }, group: "block" },
-    paragraph: { content: "inline*", attrs: { [BLOCK_ID]: { default: "" } }, group: "block" },
-    heading: { content: "inline*", attrs: { [BLOCK_ID]: { default: "" } }, group: "block" },
-    quote: { content: "inline*", attrs: { [BLOCK_ID]: { default: "" } }, group: "block" },
+    doc: { content: "block+", toDOM: () => ["div", { class: "nooq-doc" }, 0] },
+    section: {
+      content: "block+",
+      attrs: { [BLOCK_ID]: { default: "" } },
+      group: "block",
+      toDOM: () => ["div", { class: "nooq-section" }, 0],
+    },
+    paragraph: {
+      content: "inline*",
+      attrs: { [BLOCK_ID]: { default: "" } },
+      group: "block",
+      toDOM: () => ["p", 0],
+    },
+    heading: {
+      content: "inline*",
+      attrs: { [BLOCK_ID]: { default: "" } },
+      group: "block",
+      toDOM: () => ["h2", 0],
+    },
+    quote: {
+      content: "inline*",
+      attrs: { [BLOCK_ID]: { default: "" } },
+      group: "block",
+      toDOM: () => ["blockquote", 0],
+    },
     text: { group: "inline" },
   },
   marks: {}, // spike scope: plain text; per-character marks (DM-3.3) follow
@@ -114,18 +134,30 @@ export interface PmSurface {
   selectionAnchor(): { block: BlockId; offset: number } | null;
   /** Map a selection through this surface's transactions (EB-7.1 helper). */
   setCursor(offset: number, blockId?: BlockId): void;
+  /** One-shot caret for the next projection rebuild (structure commands). */
+  requestCaret(anchor: { block: BlockId; offset: number } | null): void;
   destroy(): void;
 }
 
-export function createPmSurface(editor: Editor): PmSurface {
+export interface SurfaceOptions {
+  /** Called after every state change — the EditorView wrapper mounts on it. */
+  onState?: (state: EditorState) => void;
+}
+
+export function createPmSurface(editor: Editor, options: SurfaceOptions = {}): PmSurface {
   let state = EditorState.create({ doc: pmDocFromProjection(editor.view), schema: pmSchema });
   let lastProjection = editor.view;
+  let requestedCaret: { block: BlockId; offset: number } | null = null;
+  const commit = (next: EditorState): void => {
+    state = next;
+    options.onState?.(state);
+  };
 
   const unsubscribe = editor.onChange(() => {
     const next = editor.view;
     // Structure changed: re-derive the whole projection (v1 strategy).
     if (structureSignature(lastProjection) !== structureSignature(next)) {
-      state = safeReplace(state, next);
+      commit(safeReplace(state, next));
       lastProjection = next;
       return;
     }
@@ -160,7 +192,7 @@ export function createPmSurface(editor: Editor): PmSurface {
       changed = true;
     }
     if (changed) {
-      state = state.apply(tr); // selection maps through the steps (EB-7.1)
+      commit(state.apply(tr)); // selection maps through the steps (EB-7.1)
     }
     lastProjection = next;
   });
@@ -173,8 +205,10 @@ export function createPmSurface(editor: Editor): PmSurface {
   }
 
   function safeReplace(current: EditorState, view: DocState): EditorState {
-    // Rebuild, carrying selection by block+offset anchor (SW-7 shape).
-    const anchor = selectionAnchorOf(current);
+    // Rebuild, carrying selection by block+offset anchor (SW-7 shape);
+    // a requested caret (structure command) takes precedence.
+    const anchor = requestedCaret ?? selectionAnchorOf(current);
+    requestedCaret = null;
     const next = EditorState.create({ doc: pmDocFromProjection(view), schema: pmSchema });
     if (!anchor) return next;
     const pos = anchorPos(next.doc, anchor);
@@ -189,7 +223,7 @@ export function createPmSurface(editor: Editor): PmSurface {
     dispatch(transaction: Transaction) {
       const before = state.doc;
       const next = state.apply(transaction);
-      state = next;
+      commit(next);
       // Diff textblocks old→new: identical ids, per-block DM-4.3 splices.
       const oldFlat = textblocksOf(before);
       const newFlat = textblocksOf(next.doc);
@@ -213,7 +247,11 @@ export function createPmSurface(editor: Editor): PmSurface {
       const id = blockId ?? firstTextblockId(state.doc);
       if (id === null) return;
       const pos = anchorPos(state.doc, { block: id, offset });
-      if (pos !== null) state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)));
+      if (pos !== null) commit(state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos))));
+    },
+    /** One-shot caret for the next rebuild — structure commands use it. */
+    requestCaret(anchor: { block: BlockId; offset: number } | null): void {
+      requestedCaret = anchor;
     },
     destroy() {
       unsubscribe();

@@ -314,6 +314,16 @@ export class Editor {
     return block.id;
   }
 
+  /** The local actor's id (blocks the surface creates are attributed to it). */
+  get actorId(): string {
+    return this.options.actor.actorId;
+  }
+
+  /** Ops as ONE nooq transaction — structure keystrokes stay atomic (§1). */
+  applyOps(ops: readonly import("@nooq/core").Op[], intent?: string): void {
+    this.apply(this.tx([...ops], intent));
+  }
+
   /** DM-4.3: splice steps applied directly — keystroke cost proportional to the edit. */
   applyTextChanges(block: BlockId, changes: readonly TextChange[]): void {
     this.apply(this.tx([{ op: "textEdit", block, changes: [...changes] } as Op], "type"));
