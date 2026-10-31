@@ -220,7 +220,7 @@ export class NooqRelay {
   }
 
   private open(docId: string): Y.Doc {
-    const doc = new Y.Doc();
+    const doc = new Y.Doc({ gc: false }); // same classification as every peer (DM-12)
     registerHeader(doc, { docId, schemaVersion: 1 }); // side-channel header (SYNC Draft 1.2)
     this.docs.set(docId, doc);
     this.connections.set(docId, this.connections.get(docId) ?? new Set());

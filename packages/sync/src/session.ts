@@ -212,7 +212,7 @@ export class SyncSession {
     const claimed = message.rootDigest;
     if (claimed !== null) {
       // Verify against a throwaway copy before committing (SW-3).
-      const scratch = new Y.Doc();
+      const scratch = new Y.Doc({ gc: false });
       Y.applyUpdate(scratch, Y.encodeStateAsUpdate(this.options.doc));
       Y.applyUpdate(scratch, fromBase64(message.delta));
       const actual = await rootDigest(readState(scratch));
@@ -228,7 +228,7 @@ export class SyncSession {
     // SW-3: when the envelope log ships with the bootstrap, replay it on a
     // scratch document — every transaction verified back to the first.
     if (message.envelopes && message.envelopes.length > 0) {
-      const scratch = new Y.Doc();
+      const scratch = new Y.Doc({ gc: false }); // same classification as every peer (DM-12)
       registerHeader(scratch, documentHeader(this.options.doc)); // side-channel parity for the comparison
       for (const item of message.envelopes) {
         const admission = await admitEnvelope(scratch, item.envelope, fromBase64(item.update));

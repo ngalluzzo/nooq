@@ -42,6 +42,7 @@ export {
   TextChangeError,
   type TextChange,
 } from "./text.ts";
+export { authorizeLocal, adoptionMatchesState, type LocalPrincipal, type LocalVerdict } from "./local-access.ts";
 export {
   computeDigests,
   rootDigest,

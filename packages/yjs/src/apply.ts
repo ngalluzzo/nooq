@@ -25,7 +25,9 @@ import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
 
 export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
-  const doc = new Y.Doc();
+  // No GC (DM-3.4 keeps tombstones anyway): deleted items keep their parents,
+  // so every peer classifies a delete the same way, whenever it arrives (DM-12).
+  const doc = new Y.Doc({ gc: false });
   registerHeader(doc, { docId, schemaVersion }); // side-channel: clocks 0+ stay for real content
   return doc;
 }
