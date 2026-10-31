@@ -23,6 +23,17 @@ export {
 } from "./engine.ts";
 export { evaluate, type DriftEntry, type DriftReason, type Evaluation, type SuggestionStatus } from "./evaluate.ts";
 export {
+  SUGGESTION_TYPE,
+  STATUS_KEY,
+  StaleSuggestionError,
+  acceptChecked,
+  acceptTransaction,
+  evaluateSuggestion,
+  makeSuggestionBlock,
+  rejectTransaction,
+  type AcceptOptions,
+} from "./suggestion.ts";
+export {
   type ActorDescriptor,
   type ActorId,
   type ActorKind,

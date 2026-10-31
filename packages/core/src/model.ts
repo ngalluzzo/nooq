@@ -81,6 +81,12 @@ export type Op =
 export interface Transaction {
   id: string;
   actor: ActorDescriptor;
+  /**
+   * Present only on suggestion-adoption transactions (DM-6.3): names the
+   * actor who accepted the proposal. The transaction's own actor is the
+   * proposer, so block-level attribution keeps pointing at the proposer.
+   */
+  adoptedBy?: ActorId;
   lamport: number;
   /** Version vector of transactions this one saw (DM-2). */
   causality: Record<ActorId, number>;

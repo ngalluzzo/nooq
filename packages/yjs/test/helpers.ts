@@ -1,22 +1,45 @@
 import * as Y from "yjs";
 import {
   applyTransaction as engineApply,
+  computeDigests,
   emptyDocument,
   liveTree,
   makeBlock,
   newBlockId,
+  rootDigest,
   type BlockId,
   type DocState,
   type JsonValue,
   type Op,
+  type Proposal,
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
-import { applyTransaction as yjsApply, newDocument } from "../src/index.ts";
+import { applyTransaction as yjsApply, newDocument, readState } from "../src/index.ts";
 
 export const P1 = "human:p1";
 export const P2 = "human:p2";
+export const AI = "ai:1";
 export const DOC = "storm-doc";
+
+/** Capture a proposal (evidence + ops) against this exact state. */
+export async function proposalAgainst(
+  state: DocState,
+  ids: readonly BlockId[],
+  ops: Op[] = [],
+): Promise<Proposal> {
+  const digests = await computeDigests(state);
+  return {
+    base: { rootDigest: await rootDigest(state) },
+    ops,
+    evidence: [...ids].sort().map((block) => {
+      const info = digests.get(block)!;
+      return { block, contentDigest: info.contentDigest, structureDigest: info.structureDigest };
+    }),
+    context: { model: "test-model" },
+    actor: AI,
+  };
+}
 
 export function txOf(ops: Op[], lamport: number, actorId: string): Transaction {
   return { id: newBlockId(), actor: { actorId, kind: "human" }, lamport, causality: {}, ops };
@@ -68,7 +91,16 @@ export interface Peer {
 }
 
 export function applyToPeer(peer: Peer, t: Transaction): void {
-  peer.mirror = engineApply(peer.mirror, t);
+  try {
+    peer.mirror = engineApply(peer.mirror, t);
+  } catch {
+    // The local mirror only tracks this peer's own transactions; a tx may
+    // legitimately reference remote blocks known to the merged doc. Fall
+    // back to validating against the authoritative projection, then adopt
+    // it as the mirror. Genuinely invalid txs still throw here.
+    const view = readState(peer.doc);
+    peer.mirror = engineApply(view, t);
+  }
   peer.lamport = Math.max(peer.lamport, t.lamport);
   yjsApply(peer.doc, t);
 }

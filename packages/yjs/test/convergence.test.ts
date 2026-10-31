@@ -1,29 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import {
-  canonicalJson,
-  computeDigests,
-  evaluate,
-  rootDigest,
-  type BlockId,
-  type DocState,
-  type Proposal,
-} from "@nooq/core";
+import { canonicalJson, evaluate, rootDigest } from "@nooq/core";
 import { normalize, readState } from "../src/index.ts";
-import { makePeers, mulberry32, randomTx, sync } from "./helpers.ts";
-
-async function proposalAgainst(state: DocState, ids: readonly BlockId[]): Promise<Proposal> {
-  const digests = await computeDigests(state);
-  return {
-    base: { rootDigest: await rootDigest(state) },
-    ops: [],
-    evidence: ids.map((block) => {
-      const info = digests.get(block)!;
-      return { block, contentDigest: info.contentDigest, structureDigest: info.structureDigest };
-    }),
-    context: null,
-    actor: "ai:1",
-  };
-}
+import { makePeers, mulberry32, proposalAgainst, randomTx, sync } from "./helpers.ts";
 
 describe("convergence under random op storms", () => {
   test(
