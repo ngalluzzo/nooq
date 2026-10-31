@@ -1,5 +1,6 @@
 import "./dom.ts";
 import { describe, expect, test } from "bun:test";
+import { liveTree } from "@nooq/core";
 import { Editor } from "../src/controller.ts";
 import { TextSelection } from "prosemirror-state";
 import { createPmView } from "../src/pm-view.ts";
@@ -143,6 +144,78 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     await flush();
     expect(editor.view.blocks[ids[0]!]!.text!.s).toBe("plain bold");
     expect(editor.view.blocks[ids[0]!]!.text!.marks[7]).toEqual(["strong"]);
+    surface.destroy();
+  });
+
+  test("selectionRange reports ordered block anchors (SW-7 shape)", async () => {
+    const { surface, ids } = mounted("alpha", "beta");
+    const view = surface.view;
+    const from = surface.surface.anchorToPos({ block: ids[0]!, offset: 3 })!;
+    const to = surface.surface.anchorToPos({ block: ids[1]!, offset: 2 })!;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
+    expect(surface.surface.selectionRange()).toEqual({
+      head: { block: ids[0], offset: 3 },
+      tail: { block: ids[1], offset: 2 },
+    });
+    surface.destroy();
+  });
+
+  test("typing over a cross-block selection joins in ONE nooq transaction (§1)", async () => {
+    const { editor, surface, ids } = mounted("make this", "that shine", "third block");
+    // bold the head's KEPT prefix so both preservation and caret-inheritance
+    // are proven through the join ("make " = indices 0..4)
+    editor.applyTextChanges(ids[0]!, [{ retain: 5, setMarks: ["strong"] }]);
+    await flush();
+
+    const view = surface.view;
+    const from = surface.surface.anchorToPos({ block: ids[0]!, offset: 5 })!;
+    const to = surface.surface.anchorToPos({ block: ids[2]!, offset: 6 })!;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
+    const logBefore = editor.view.log.length;
+
+    // The browser's input pipeline calls handleTextInput before mutating; a
+    // synthetic keydown cannot reproduce that, so drive the prop directly
+    // (the same seam PM's own tests use).
+    const handleTextInput = surface.view.someProp("handleTextInput") as ((view: unknown, from: number, to: number, text: string) => boolean) | undefined;
+    const handled = handleTextInput?.(surface.view, from, to, "X");
+    expect(handled).toBe(true);
+    await flush();
+
+    expect(editor.view.log.length).toBe(logBefore + 1);
+    const tx = editor.view.log.at(-1)!;
+    // textEdit head + delete tail + delete middle
+    expect(tx.ops.filter((op) => op.op === "delete")).toHaveLength(2);
+    const editText = tx.ops.find((op) => op.op === "textEdit");
+    expect(editText).toMatchObject({ block: ids[0] });
+
+    // Result: one live joined block; bold prefix intact; the typed X
+    // INHERITED the caret's bold; middle and tail are tombstones.
+    const text = editor.view.blocks[ids[0]!]!.text!;
+    expect(text.s).toBe("make Xblock"); // kept prefix + X + tail remainder (middle gone)
+    expect(text.marks[0]).toEqual(["strong"]); // prefix stayed bold
+    expect(text.marks[5]).toEqual(["strong"]); // X inherited the caret's marks
+    const alive = liveTree(editor.view).alive;
+    expect(alive.has(ids[1]!)).toBe(false); // tombstoned (DM-3.4)
+    expect(alive.has(ids[2]!)).toBe(false);
+    expect(surface.surface.selectionAnchor()).toEqual({ block: ids[0], offset: 6 });
+    surface.destroy();
+  });
+
+  test("Backspace over a cross-block selection deletes and joins (§1)", async () => {
+    const { editor, surface, ids } = mounted("alpha", "beta");
+    const view = surface.view;
+    const from = surface.surface.anchorToPos({ block: ids[0]!, offset: 2 })!;
+    const to = surface.surface.anchorToPos({ block: ids[1]!, offset: 1 })!;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
+    const logBefore = editor.view.log.length;
+
+    key(surface, "Backspace");
+    await flush();
+
+    expect(editor.view.log.length).toBe(logBefore + 1);
+    expect(editor.view.blocks[ids[0]!]!.text!.s).toBe("aleta"); // "al" + remainder "eta"
+    expect(liveTree(editor.view).alive.has(ids[1]!)).toBe(false); // tombstoned, not erased (DM-3.4)
+    expect(surface.surface.selectionAnchor()).toEqual({ block: ids[0], offset: 2 });
     surface.destroy();
   });
 

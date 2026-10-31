@@ -262,6 +262,8 @@ export interface PmSurface {
   anchorToPos(anchor: { block: BlockId; offset: number }): number | null;
   /** Current selection as a SW-7 anchor (block identity, never positions). */
   selectionAnchor(): { block: BlockId; offset: number } | null;
+  /** A cross-block selection as ordered head/tail anchors, else null. */
+  selectionRange(): { head: { block: BlockId; offset: number }; tail: { block: BlockId; offset: number } } | null;
   /** Map a selection through this surface's transactions (EB-7.1 helper). */
   setCursor(offset: number, blockId?: BlockId): void;
   /** One-shot caret for the next projection rebuild (structure commands). */
@@ -396,6 +398,14 @@ export function createPmSurface(editor: Editor, options: SurfaceOptions = {}): P
     selectionAnchor() {
       return selectionAnchorOf(state);
     },
+    selectionRange() {
+      const { from, to, empty } = state.selection;
+      if (empty || from === to) return null;
+      const head = posAnchor(state.doc, Math.min(from, to));
+      const tail = posAnchor(state.doc, Math.max(from, to));
+      if (!head || !tail || head.block === tail.block) return null;
+      return { head, tail };
+    },
     setCursor(offset: number, blockId?: BlockId) {
       const id = blockId ?? firstTextblockId(state.doc);
       if (id === null) return;
@@ -442,7 +452,12 @@ function firstTextblockId(doc: Node): BlockId | null {
 }
 
 function selectionAnchorOf(state: EditorState): { block: BlockId; offset: number } | null {
-  const $pos = state.selection.$from;
+  return posAnchor(state.doc, state.selection.from);
+}
+
+/** Any doc position as a block+offset anchor — SW-7's identity form. */
+export function posAnchor(doc: Node, pos: number): { block: BlockId; offset: number } | null {
+  const $pos = doc.resolve(pos);
   for (let depth = $pos.depth; depth > 0; depth--) {
     const node = $pos.node(depth);
     if (node.isTextblock) {

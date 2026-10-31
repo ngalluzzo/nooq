@@ -55,9 +55,17 @@ export function createPmView(editor: Editor, parent: HTMLElement): PmViewSurface
   view = new EditorView({ mount: parent }, {
     state: surface.state,
     dispatchTransaction: (tr: Transaction) => surface.dispatch(tr),
+    // Typed text replacing a cross-block selection never reaches the text
+    // diff (it would be structural on the PM side); intercept before PM
+    // mutates and route through nooq (§1). Single-block replacements flow
+    // natively into the per-block splice diff.
+    handleTextInput: (_view: EditorView, _from: number, _to: number, text: string): boolean => {
+      return deleteRange(editor, surface, text);
+    },
     handleKeyDown: keydownHandler({
       Enter: () => splitAtCaret(editor, surface),
-      Backspace: () => mergeAtStart(editor, surface),
+      Backspace: () => deleteRange(editor, surface) || mergeAtStart(editor, surface),
+      Delete: () => deleteRange(editor, surface),
       "Mod-b": () => toggleMark(editor, surface, "strong"),
       "Mod-i": () => toggleMark(editor, surface, "em"),
     }),
@@ -103,6 +111,87 @@ function splitAtCaret(editor: Editor, surface: PmSurface): boolean {
 
   surface.requestCaret({ block: fresh.id, offset: 0 });
   editor.applyOps(ops, `split:${block.type}`);
+  return true;
+}
+
+/** All block ids in document order (register walk, DM-3). */
+function documentOrder(editor: Editor): import("@nooq/core").BlockId[] {
+  const view = editor.view;
+  const out: import("@nooq/core").BlockId[] = [];
+  const walk = (ids: readonly import("@nooq/core").BlockId[]): void => {
+    for (const id of ids) {
+      const block = view.blocks[id];
+      if (!block) continue;
+      out.push(id);
+      walk(block.children);
+    }
+  };
+  walk(view.roots);
+  return out;
+}
+
+/**
+ * Delete a cross-block selection and JOIN the edges — ONE nooq transaction
+ * (§1): head is trimmed, middle blocks deleted, tail's remainder is appended
+ * to the head (mark runs preserved), tail deleted. `insert` (typed
+ * replacement text) rides the same transaction, inheriting the marks at the
+ * caret — what writers expect when typing over a selection inside bold text.
+ */
+function deleteRange(editor: Editor, surface: PmSurface, insert?: string): boolean {
+  const range = surface.selectionRange();
+  if (!range) return false;
+  const { head, tail } = range;
+  const headBlock = editor.view.blocks[head.block];
+  const tailBlock = editor.view.blocks[tail.block];
+  if (!headBlock?.text || !tailBlock?.text) return false;
+
+  const order = documentOrder(editor);
+  const headAt = order.indexOf(head.block);
+  const tailAt = order.indexOf(tail.block);
+  if (headAt < 0 || tailAt < 0 || tailAt < headAt) return false;
+  const middles = order.slice(headAt + 1, tailAt);
+
+  const headText = headBlock.text.s;
+  const headMarks = headBlock.text.marks;
+  const tailText = tailBlock.text.s;
+  const tailMarks = tailBlock.text.marks;
+  const inherit = insert !== undefined ? (headMarks[head.offset - 1] ?? []) : [];
+
+  const changes: import("@nooq/core").TextChange[] = [];
+  if (head.offset > 0) changes.push({ retain: head.offset });
+  if (headText.length - head.offset > 0) changes.push({ delete: headText.length - head.offset });
+  if (insert !== undefined && insert.length > 0) {
+    changes.push(inherit.length > 0 ? { insert, marks: inherit } : { insert });
+  }
+  // Tail remainder appended as mark runs.
+  let buf = "";
+  let bufMarks: string[] | null = null;
+  const flush = () => {
+    if (buf.length === 0) return;
+    changes.push(bufMarks && bufMarks.length > 0 ? { insert: buf, marks: bufMarks } : { insert: buf });
+    buf = "";
+    bufMarks = null;
+  };
+  for (let i = tail.offset; i < tailText.length; i++) {
+    const marks = tailMarks[i] ?? [];
+    if (bufMarks === null || (bufMarks.length === marks.length && bufMarks.every((m, k) => m === marks[k]))) {
+      buf += tailText[i]!;
+      bufMarks = marks;
+    } else {
+      flush();
+      buf = tailText[i]!;
+      bufMarks = marks;
+    }
+  }
+  flush();
+
+  const ops: Op[] = [];
+  if (changes.length > 0) ops.push({ op: "textEdit", block: head.block, changes });
+  ops.push({ op: "delete", block: tail.block });
+  for (const middle of middles) ops.push({ op: "delete", block: middle });
+
+  surface.requestCaret({ block: head.block, offset: head.offset + (insert?.length ?? 0) });
+  editor.applyOps(ops, insert !== undefined ? "replace-range" : "delete-range");
   return true;
 }
 
