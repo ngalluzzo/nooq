@@ -10,6 +10,8 @@ export interface SlashMenuItem {
   hint?: string;
   /** The item asks an AI actor for a proposal; its output arrives as a suggestion. */
   ai?: boolean;
+  disabled?: boolean;
+  reason?: string;
 }
 
 export interface SlashMenuProps {
@@ -38,14 +40,18 @@ export function slashMenu({ items, query, active = 0, onSelect, onClose }: Slash
       {
         id: `${id}-opt-${i}`,
         role: "option",
+        "data-nq-action": item.type,
+        "aria-disabled": item.disabled ? "true" : undefined,
+        title: item.reason,
         class: "nq-menu-item",
         onclick: () => {
+          if (item.disabled) return;
           setActive(i);
           onSelect?.(item, i);
         },
       },
       el("span", { class: cx("nq-menu-glyph", item.ai && "is-ai"), "aria-hidden": "true" }, item.glyph ?? item.label.charAt(0)),
-      el("span", { class: "nq-menu-text" }, el("span", { class: "nq-ui-label" }, item.label), el("span", { class: "nq-menu-type nq-digest" }, item.type)),
+      el("span", { class: "nq-menu-text" }, el("span", { class: "nq-ui-label" }, item.label), el("span", { class: "nq-menu-type nq-digest" }, item.reason ?? item.type)),
       item.hint && el("kbd", { class: "nq-kbd nq-ui-caption" }, item.hint),
     ),
   );
@@ -62,7 +68,7 @@ export function slashMenu({ items, query, active = 0, onSelect, onClose }: Slash
         const last = items.length - 1;
         const moves: Record<string, number> = { ArrowDown: current === last ? 0 : current + 1, ArrowUp: current === 0 ? last : current - 1, Home: 0, End: last };
         if (e.key in moves) setActive(moves[e.key]!);
-        else if (e.key === "Enter" && items[current]) onSelect?.(items[current]!, current);
+        else if (e.key === "Enter" && items[current] && !items[current]!.disabled) onSelect?.(items[current]!, current);
         else if (e.key === "Escape") onClose?.();
         else return;
         e.preventDefault();

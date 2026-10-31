@@ -55,3 +55,19 @@ export const PointerSelect: Story = {
     await expect(args.onSelect).toHaveBeenCalledWith(MENU_ITEMS[3], 3);
   },
 };
+
+export const Disabled: Story = {
+  args: { active: 0, items: [
+    { label: "Callout", type: "insert-callout", disabled: true, reason: "Callouts are unavailable here." },
+    { label: "Text", type: "insert-text" },
+  ] },
+  play: async ({ args, canvas, userEvent }) => {
+    const disabled = canvas.getByRole("option", { name: /Callout/ });
+    await expect(disabled).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(disabled);
+    canvas.getByRole("listbox").focus(); await userEvent.keyboard("{Enter}");
+    await expect(args.onSelect).not.toHaveBeenCalled();
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await expect(args.onSelect).toHaveBeenCalledWith(args.items[1], 1);
+  },
+};

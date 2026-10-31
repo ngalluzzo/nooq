@@ -1,6 +1,6 @@
 # Proposal 0004: plugin authoring v2
 
-Status: first implementation slice; additive to plugin API version 1.
+Status: slices 1 and 2 implemented; additive to plugin API version 1.
 Date: 2026-10-31.
 
 ## Decision
@@ -95,6 +95,44 @@ diff. Revision IDs are captured before asynchronous writes and disk writes are
 serialized so the saved evidence cannot overwrite an earlier revision under the
 same index. The final package is independently checked after generation.
 
+## Slice 2: shared actions and host toolbars
+
+`defineAction` names one command or job, an argument factory, optional `slash`
+and `toolbar` placements, keyboard shortcuts, a visibility predicate, and an
+availability predicate returning `true` or a disabled reason. Typed targets infer
+the argument shape. Definitions and placement arrays are copied and frozen.
+`DOMPlugin.actions` registers them; duplicate IDs and ambiguous shortcuts fail
+at surface creation, with explicit `keyOrder` resolving shortcut precedence.
+
+The public `surface.actions` service lists metadata/availability and executes by
+ID for a block. A view receives a lifetime-bound `ctx.actions` service and
+`ctx.mountActionToolbar`. Host toolbars retain stable buttons, update on document
+and selection changes, provide keyboard navigation and accessible disabled
+reasons, and preserve selection during pointer activation. The slash menu uses
+the same availability and execution path, including while it is already open.
+
+Listing never prepares a command or allocates an identity. Availability is
+advisory and predicates are synchronous/read-only. Invocation rechecks block
+liveness and availability, builds current arguments, and uses the selected
+command or job runtime. Authorization still occurs there. Hidden/disabled
+actions, disposed views, and deleted targets cannot invoke stale actions.
+Invalid predicates fail closed and report errors. Job results include the
+host-owned cancellation handle.
+
+Callouts now consumes shared insertion/tone actions and a host toolbar; its
+Ctrl+Shift+Y shortcut uses the same tone action. Invalid stored tones remain
+unchanged and explain why cycling is disabled. Legacy menus, keys, textarea
+views, and manual controls remain compatible. The existing generated artifacts
+remain unchanged as historical evidence; the current agent fixture consumes the
+updated public Callouts package through its independent checks. The agent's
+contract includes the new action types and host implementation.
+
+This slice does not add a built-in palette, asynchronous availability, provider
+state subscriptions, generalized formatting actions, or document-wide selection.
+It completes the shared-action portion of the writing milestone. The next
+surface slice must address text policies and composition across blocks, including
+the browser experience budgets described below.
+
 ## Subsequent slices and acceptance criteria
 
 1. **Writing basics and Callouts:** finish public surface composition, selectable
@@ -128,6 +166,22 @@ Repository checks passed 490 tests (seven opt-in performance tests skipped),
 typechecking, 130 Storybook tests, and a static Storybook build. Three consecutive
 browser runs of the generated package passed after making selection setup
 independent of platform-specific Home-key behavior.
+
+Slice 1 is committed as `a2a3159`. Slice 2 passed the full 502-test suite in its
+isolated checkout, then the relevant 394-test suite after integration with the
+other editor changes (seven opt-in performance tests skipped in each). The
+integrated tree passes typechecking, 142 Storybook tests across both themes,
+and the static Storybook build. Native Chromium keyboard/pointer checks confirm
+the shared shortcut, selection retention on toolbar clicks, and subsequent
+rich-text formatting, with no page errors. The agent's five complete-package
+tests include independent runtime/browser/Storybook gates and negative cases.
+
+The new tests cover fresh arguments and selection, non-mutating discovery,
+hidden/disabled/invalid predicates, open-menu updates, shortcut collisions,
+deletion/disposal, cancellable jobs, and secured authorization denial. These
+checks do not establish performance budgets or native IME compatibility. Slice 2
+was implemented and validated by the host; the earlier oMLX artifacts are not
+presented as a new generation run.
 
 Run repository typechecking and tests, normal host Storybook, and the independent
 rich Callouts validator. Focused tests cover recipe semantics, preservation,

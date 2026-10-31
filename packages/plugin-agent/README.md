@@ -210,6 +210,15 @@ themes, and its static build passes. Repository checks passed typechecking and
 bun run plugin-agent preview packages/plugin-agent/examples/callouts-rich
 ```
 
+## Shared actions
+
+The current DOM contract also includes shared `defineAction` definitions and
+host-owned `ctx.mountActionToolbar`. Agent guidance covers pure availability
+predicates, disabled reasons, and matching Storybook assertions. The independent
+complete-package fixture now consumes these APIs in both plain and rich modes;
+the saved model outputs above remain unchanged historical checkpoints. No new
+model-generation throughput claim is implied by this fixture validation.
+
 ## Legacy pilot
 
 The original [callout source](examples/callout.ts) and

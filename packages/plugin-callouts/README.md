@@ -13,6 +13,13 @@ The headless package needs no DOM and has no editor/Yjs imports.
 It uses `defineBlockSchema`, `field.enum`, and standard insertion/cycling commands;
 the field contract is declared once. The manifest version is 1.1.0 with API 1.
 
+The DOM entry point also exports `insertCalloutAction` and `cycleToneAction`.
+`defineAction` gives the host one tone action for the toolbar and Ctrl+Shift+Y
+shortcut. The toolbar is mounted with `ctx.mountActionToolbar`, so button state,
+disabled reasons, focus navigation, and disposal are host-owned. Unfamiliar tones
+disable cycling with an explanation; explicit field repair remains a command.
+The insertion action uses the same shared action path from the slash menu.
+
 Stored type: `nooq.callout/v1`. Tone cycles through info, warning, and success.
 Diagnostics report invalid tones without rewriting stored fields. Other
 fields and marks survive unchanged. Peers without this plugin see the generic

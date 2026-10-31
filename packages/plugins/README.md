@@ -122,7 +122,8 @@ mapping and composition handling. Bindings update independently of the custom
 view and survive field edits and moves. `ctx.run` dispatches registered
 commands from controls. Menus and keymaps declare command/job references and
 argument factories; references are checked before mount. Shortcut collisions
-require an explicit `keyOrder`. Only `not-applicable` falls through.
+require an explicit `keyOrder`. Unavailable actions and `not-applicable` commands
+fall through; applied, started, denied, and failed results consume the shortcut.
 
 Views can subscribe to changes and use the guarded review/accept/reject
 services. They cannot dispatch from mount/update or after disposal. Disposing a
@@ -144,6 +145,59 @@ Both text bindings retain the same text-command override behavior. The exported
 Rich bindings are currently scoped to individual blocks; document-wide selection,
 collaborative undo, rich clipboard codecs, and arbitrary mark definitions remain
 separate work. See [proposal 0004](../../proposals/0004-plugin-authoring-v2.md).
+
+### Shared actions
+
+Define an action once and reuse it across host placements:
+
+```ts
+import { defineAction, defineDOMPlugin } from "@nooq/plugins/dom";
+const cycleAction = defineAction({
+  id: "example.note.cycle", label: "Cycle tone", command: cycle,
+  args: ctx => ({ block: ctx.block }),
+  placements: ["toolbar"], keys: ["Ctrl+Shift+Y"],
+  when: ctx => ctx.snapshot.blocks[ctx.block]?.type === note.type,
+  enabled: ctx => note.fields.tone.validate(ctx.snapshot.blocks[ctx.block]?.fields.tone)
+    || "Choose a supported tone before cycling.",
+});
+// Register actions: [cycleAction] on defineDOMPlugin.
+// Inside mount(ctx), append ctx.mountActionToolbar({label: "Note actions"}).element.
+```
+
+Use `placements: ["slash"]` and `args: insertAfterSelection` for insertion.
+An action can use both placements and several keys. `command` or `job` accepts a
+typed definition (arguments are inferred) or a registered string ID. Exactly one
+target is required. Keys use the existing exact modifier order
+`Ctrl+Meta+Alt+Shift+<event.key>`; omit unused modifiers. The host's `keyOrder`
+resolves collisions with both legacy and shared shortcuts.
+
+`surface.actions.list(blockId, placement?)` exposes immutable metadata and
+`enabled`, `hidden`, or `disabled` availability (with a reason). Listing does not
+prepare commands, allocate block identities, or authorize operations. `when`
+and `enabled` are synchronous, read-only predicates over a frozen snapshot and
+selection. Throwing or invalid predicates fail closed and report through the
+editor's error channel. External provider/configuration state is not yet an
+observable action dependency; use document and selection state in this slice.
+
+`surface.actions.run(actionId, blockId)` rechecks liveness and availability, builds
+arguments from current state, then dispatches through the normal command/job
+runtime. It returns the command result, `unavailable` with a reason, or `started`
+with the job handle. Enabled UI is advisory: authorization can still deny the
+command. `ctx.actions.list/run` bind these operations to the current view's
+block and lifetime. Disposed views cannot invoke them even after a block returns.
+
+Host toolbars update on document and selection changes, retain stable buttons,
+support arrow/Home/End navigation, expose disabled reasons to assistive technology,
+and preserve text selection on pointer activation. Mounted toolbars clean up with
+their view; calling `destroy()` early is also safe. Open slash menus refresh their
+availability. Every invocation rechecks current state, including clicks made
+before a scheduled render catches up.
+
+The existing `menus`, `keys`, `ctx.run`, and manual controls remain supported.
+Shared action IDs must be unique across the surface, including legacy IDs;
+replace a legacy contribution when migrating that action. The public action list
+contains shared definitions only. Custom palettes can consume this list; a
+built-in palette and portable formatting actions are later work.
 
 ## Jobs and proposals
 
