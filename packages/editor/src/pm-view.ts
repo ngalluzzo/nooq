@@ -58,6 +58,8 @@ export function createPmView(editor: Editor, parent: HTMLElement): PmViewSurface
     handleKeyDown: keydownHandler({
       Enter: () => splitAtCaret(editor, surface),
       Backspace: () => mergeAtStart(editor, surface),
+      "Mod-b": () => toggleMark(editor, surface, "strong"),
+      "Mod-i": () => toggleMark(editor, surface, "em"),
     }),
   });
   view.focus();
@@ -85,10 +87,11 @@ function splitAtCaret(editor: Editor, surface: PmSurface): boolean {
   if (!block || !(block.type in TEXT_BLOCK_PM)) return false;
 
   const text = block.text?.s ?? "";
+  const allMarks = block.text?.marks ?? text.split("").map(() => [] as string[]);
   const tail = text.slice(anchor.offset);
   const head = text.slice(0, anchor.offset);
   const fresh = makeBlock(
-    { type: block.type, ...(tail ? { text: { s: tail, marks: tail.split("").map(() => [] as string[]) } } : {}) },
+    { type: block.type, ...(tail ? { text: { s: tail, marks: allMarks.slice(anchor.offset) } } : {}) },
     surface.editor.actorId,
   );
   const ops: Op[] = [];
@@ -100,6 +103,18 @@ function splitAtCaret(editor: Editor, surface: PmSurface): boolean {
 
   surface.requestCaret({ block: fresh.id, offset: 0 });
   editor.applyOps(ops, `split:${block.type}`);
+  return true;
+}
+
+/** Ctrl-B / Ctrl-I: toggle a mark over the selection — a PM step, diffed into setMarks (§1). */
+function toggleMark(editor: Editor, surface: PmSurface, name: "strong" | "em"): boolean {
+  void editor;
+  const state = surface.state;
+  const markType = state.schema.marks[name];
+  if (!markType || state.selection.empty) return false;
+  const { from, to } = state.selection;
+  const covered = state.doc.rangeHasMark(from, to, markType);
+  surface.dispatch(covered ? state.tr.removeMark(from, to, markType) : state.tr.addMark(from, to, markType.create()));
   return true;
 }
 
@@ -124,13 +139,27 @@ function mergeAtStart(editor: Editor, surface: PmSurface): boolean {
 
   const previousLen = previousBlock.text?.s.length ?? 0;
   const text = block.text?.s ?? "";
+  const textMarks = block.text?.marks ?? text.split("").map(() => [] as string[]);
   const ops: Op[] = [];
   if (text.length > 0) {
-    ops.push({
-      op: "textEdit",
-      block: previous,
-      changes: [...(previousLen ? [{ retain: previousLen }] : []), { insert: text }],
-    });
+    // Insert runs grouped by marks — merged bold text stays bold (DM-3.3).
+    const changes: import("@nooq/core").TextChange[] = [];
+    if (previousLen > 0) changes.push({ retain: previousLen });
+    let buf = "";
+    let bufMarks: string[] | null = null;
+    for (let i = 0; i < text.length; i++) {
+      const marks = textMarks[i] ?? [];
+      if (bufMarks === null || marks.length === bufMarks.length && marks.every((m, k) => m === bufMarks![k])) {
+        buf += text[i]!;
+        bufMarks = marks;
+      } else {
+        changes.push(bufMarks && bufMarks.length > 0 ? { insert: buf, marks: bufMarks } : { insert: buf });
+        buf = text[i]!;
+        bufMarks = marks;
+      }
+    }
+    if (buf.length > 0) changes.push(bufMarks && bufMarks.length > 0 ? { insert: buf, marks: bufMarks } : { insert: buf });
+    ops.push({ op: "textEdit", block: previous, changes });
   }
   ops.push({ op: "delete", block: anchor.block });
   surface.requestCaret({ block: previous, offset: previousLen });

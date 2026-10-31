@@ -59,13 +59,20 @@ export const pmSchema = new Schema({
     },
     text: { group: "inline" },
   },
-  marks: {}, // spike scope: plain text; per-character marks (DM-3.3) follow
+  // DM-3.3: per-character attributes. nooq mark names are PM mark names —
+  // identity mapping, register-equal (no translation table to drift).
+  marks: {
+    strong: { toDOM: () => ["strong", 0], parseDOM: [{ tag: "strong" }] },
+    em: { toDOM: () => ["em", 0], parseDOM: [{ tag: "em" }] },
+  },
 });
 
 interface PmBlock {
   id: BlockId;
   type: string; // pm node type
   text: string;
+  /** Per-character mark names, parallel to text (DM-3.3). */
+  charMarks: string[][];
   children: PmBlock[];
 }
 
@@ -76,36 +83,159 @@ function projectionToBlocks(view: DocState): PmBlock[] {
       const block = view.blocks[id];
       if (!block) return [];
       if (block.type === "nooq.section/v1") {
-        return [{ id, type: "section", text: "", children: walk(block.children) }];
+        return [{ id, type: "section", text: "", charMarks: [] as string[][], children: walk(block.children) }];
       }
       const pmType = TEXT_TYPES[block.type];
       if (!pmType) return []; // non-text blocks are node views, never text (0003)
-      return [{ id, type: pmType, text: block.text?.s ?? "", children: [] }];
+      const text = block.text?.s ?? "";
+      const charMarks: string[][] = block.text?.marks ?? text.split("").map(() => [] as string[]);
+      return [{ id, type: pmType, text, charMarks, children: [] as PmBlock[] }];
     });
   return walk(view.roots);
 }
 
 export function pmDocFromProjection(view: DocState): Node {
+  const runs = (block: PmBlock): Array<{ text: string; marks: string[] }> => {
+    const out: Array<{ text: string; marks: string[] }> = [];
+    for (let i = 0; i < block.text.length; i++) {
+      const marks = block.charMarks[i] ?? [];
+      const last = out.at(-1);
+      if (last && sameMarks(last.marks, marks)) last.text += block.text[i];
+      else out.push({ text: block.text[i]!, marks });
+    }
+    return out;
+  };
   const toContent = (blocks: PmBlock[]): unknown[] =>
     blocks.map((block) => ({
       type: block.type,
       attrs: { [BLOCK_ID]: block.id },
       ...(block.children.length > 0 || block.type === "section"
         ? { content: toContent(block.children) }
-        : block.text
-          ? { content: [{ type: "text", text: block.text }] }
-          : {}),
+        : {
+            content: runs(block).map((run) => ({
+              type: "text",
+              text: run.text,
+              ...(run.marks.length > 0 ? { marks: run.marks.map((type) => ({ type })) } : {}),
+            })),
+          }),
     }));
   return Node.fromJSON(pmSchema, { type: "doc", content: toContent(projectionToBlocks(view)) });
 }
 
+function sameMarks(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((mark, i) => mark === b[i]);
+}
+
+function sameCharMarks(a: { charMarks: string[][] }, b: { charMarks: string[][] }): boolean {
+  return a.charMarks.length === b.charMarks.length && a.charMarks.every((marks, i) => sameMarks(marks, b.charMarks[i] ?? []));
+}
+
+/**
+ * Character diff over (char, marks) pairs: common full-identity prefix and
+ * suffix, then the middle. A text-identical middle emits setMarks runs over
+ * changed spans (a bare Ctrl-B); anything else is delete + insert-with-marks
+ * runs. Plain typing degrades to exactly the prefix/suffix splice shape.
+ */
+export function charDiff(a: { text: string; charMarks: string[][] }, b: { text: string; charMarks: string[][] }): TextChange[] {
+  const oldChars = [...a.text];
+  const newChars = [...b.text];
+  const eq = (i: number, j: number): boolean =>
+    oldChars[i] === newChars[j] && sameMarks(a.charMarks[i] ?? [], b.charMarks[j] ?? []);
+
+  let prefix = 0;
+  while (prefix < oldChars.length && prefix < newChars.length && eq(prefix, prefix)) prefix++;
+  let suffix = 0;
+  while (
+    suffix < oldChars.length - prefix &&
+    suffix < newChars.length - prefix &&
+    eq(oldChars.length - 1 - suffix, newChars.length - 1 - suffix)
+  ) suffix++;
+
+  const oldMid = oldChars.slice(prefix, oldChars.length - suffix);
+  const newMid = newChars.slice(prefix, newChars.length - suffix);
+  const changes: TextChange[] = [];
+  if (prefix > 0) changes.push({ retain: prefix });
+
+  const oldMidText = oldMid.join("");
+  const newMidText = newMid.join("");
+  if (oldMidText === newMidText) {
+    // Marks-only change: {retain: gap} then {retain: len, setMarks} per
+    // changed span — core's setMarks applies at the CUMULATIVE cursor, so
+    // every span is preceded by a retain for the gap since the last one.
+    const spans: Array<{ start: number; len: number; marks: string[] }> = [];
+    let open: { start: number; len: number; marks: string[] } | null = null;
+    for (let i = 0; i < newMid.length; i++) {
+      const marks = b.charMarks[prefix + i] ?? [];
+      const changed = !sameMarks(marks, a.charMarks[prefix + i] ?? []);
+      if (changed && open && sameMarks(open.marks, marks)) {
+        open.len++;
+      } else {
+        if (open) spans.push(open);
+        open = changed ? { start: i, len: 1, marks } : null;
+      }
+    }
+    if (open) spans.push(open);
+
+    let covered = 0; // middle chars already emitted
+    for (const span of spans) {
+      const gap = span.start - covered;
+      if (gap > 0) changes.push({ retain: gap });
+      changes.push({ retain: span.len, setMarks: span.marks });
+      covered = span.start + span.len;
+    }
+    return changes;
+  }
+
+  if (oldMidText.length > 0) changes.push({ delete: oldMidText.length });
+  // Insert runs grouped by marks.
+  let buf = "";
+  let bufMarks: string[] | null = null;
+  const flushInsert = () => {
+    if (buf.length === 0) return;
+    changes.push(bufMarks && bufMarks.length > 0 ? { insert: buf, marks: bufMarks } : { insert: buf });
+    buf = "";
+    bufMarks = null;
+  };
+  for (let i = 0; i < newMid.length; i++) {
+    const marks = b.charMarks[prefix + i] ?? [];
+    if (bufMarks === null || sameMarks(bufMarks, marks)) {
+      buf += newMid[i]!;
+      bufMarks = marks;
+    } else {
+      flushInsert();
+      buf = newMid[i]!;
+      bufMarks = marks;
+    }
+  }
+  flushInsert();
+  return changes;
+}
+
+export interface PmTextBlock {
+  id: BlockId;
+  start: number;
+  end: number;
+  text: string;
+  /** Per-character mark names, parallel to text (DM-3.3). */
+  charMarks: string[][];
+}
+
 /** Textblocks in document order — the diff unit of the binding. */
-function flattenTextBlocks(node: Node, out: Array<{ id: BlockId; start: number; end: number; text: string }>): void {
+function flattenTextBlocks(node: Node, out: PmTextBlock[]): void {
   node.descendants((child, pos) => {
     if (child.isTextblock) {
       const id = child.attrs[BLOCK_ID] as BlockId | undefined;
       if (id !== undefined) {
-        out.push({ id, start: pos + 1, end: pos + 1 + child.content.size, text: child.textContent });
+        const text = child.textContent;
+        const charMarks: string[][] = [];
+        child.forEach((inline) => {
+          if (inline.isText && inline.text) {
+            const names = inline.marks.map((mark) => mark.type.name);
+            for (const _ of inline.text) charMarks.push([...names]);
+          }
+        });
+        void text;
+        out.push({ id, start: pos + 1, end: pos + 1 + child.content.size, text, charMarks });
       }
     }
     return true;
@@ -171,22 +301,42 @@ export function createPmSurface(editor: Editor, options: SurfaceOptions = {}): P
     let tr = state.tr;
     let changed = false;
     for (let i = before.length - 1; i >= 0; i--) {
-      if (before[i]!.text === after[i]!.text) continue;
+      if (before[i]!.text === after[i]!.text && sameCharMarks(before[i]!, after[i]!)) continue;
       const info = textblockAt(tr.doc, before[i]!.id);
       if (!info) continue;
-      const changes = replaceChanges(before[i]!.text, after[i]!.text);
+      const changes = charDiff(before[i]!, after[i]!);
       let cursor = 0; // offset within the ORIGINAL block text
       let delta = 0; // cumulative shift applied by earlier splices
       for (const change of changes) {
-        if ("retain" in change) {
+        if ("setMarks" in change) {
+          const from = info.start + cursor + delta;
+          const to = from + change.retain;
+          const target = change.setMarks ?? [];
+          for (const markType of Object.values(pmSchema.marks)) {
+            tr = tr.removeMark(from, to, markType);
+          }
+          for (const name of target) {
+            const markType = pmSchema.marks[name];
+            if (markType) tr = tr.addMark(from, to, markType.create());
+          }
           cursor += change.retain;
         } else if ("insert" in change) {
-          tr = tr.insertText(change.insert, info.start + cursor + delta);
+          const at = info.start + cursor + delta;
+          tr = tr.insertText(change.insert, at);
+          const marks = change.marks ?? [];
+          if (marks.length > 0) {
+            for (const name of marks) {
+              const markType = pmSchema.marks[name];
+              if (markType) tr = tr.addMark(at, at + change.insert.length, markType.create());
+            }
+          }
           delta += change.insert.length;
         } else if ("delete" in change) {
           tr = tr.delete(info.start + cursor + delta, info.start + cursor + delta + change.delete);
           cursor += change.delete;
           delta -= change.delete;
+        } else if ("retain" in change) {
+          cursor += change.retain;
         }
       }
       changed = true;
@@ -197,8 +347,10 @@ export function createPmSurface(editor: Editor, options: SurfaceOptions = {}): P
     lastProjection = next;
   });
 
-  function collect(view: DocState): PmBlock[] {
-    return projectionToBlocks(view).flatMap((block) => flatten(block));
+  function collect(view: DocState): Array<{ id: BlockId; text: string; charMarks: string[][] }> {
+    return projectionToBlocks(view)
+      .flatMap((block) => flatten(block))
+      .map((block) => ({ id: block.id, text: block.text, charMarks: block.charMarks }));
   }
   function flatten(block: PmBlock): PmBlock[] {
     return block.type === "section" ? block.children.flatMap(flatten) : [block];
@@ -224,15 +376,16 @@ export function createPmSurface(editor: Editor, options: SurfaceOptions = {}): P
       const before = state.doc;
       const next = state.apply(transaction);
       commit(next);
-      // Diff textblocks old→new: identical ids, per-block DM-4.3 splices.
+      // Diff textblocks old→new: identical ids, per-block DM-4.3 splices,
+      // mark-aware at character granularity (DM-3.3).
       const oldFlat = textblocksOf(before);
       const newFlat = textblocksOf(next.doc);
       if (oldFlat.length !== newFlat.length) return; // structure changed on the PM side; onChange re-derives
       for (let i = 0; i < oldFlat.length; i++) {
         const a = oldFlat[i]!;
         const b = newFlat[i]!;
-        if (a.id !== b.id || a.text === b.text) continue;
-        const changes = replaceChanges(a.text, b.text);
+        if (a.id !== b.id || (a.text === b.text && sameCharMarks(a, b))) continue;
+        const changes = charDiff(a, b);
         if (changes.length > 0) editor.applyTextChanges(a.id, changes);
       }
     },
@@ -301,8 +454,8 @@ function selectionAnchorOf(state: EditorState): { block: BlockId; offset: number
 }
 
 /** Exposed for tests: block text-order flattening of a PM doc. */
-export function textblocksOf(doc: Node): Array<{ id: BlockId; start: number; end: number; text: string }> {
-  const out: Array<{ id: BlockId; start: number; end: number; text: string }> = [];
+export function textblocksOf(doc: Node): PmTextBlock[] {
+  const out: PmTextBlock[] = [];
   flattenTextBlocks(doc, out);
   return out;
 }
