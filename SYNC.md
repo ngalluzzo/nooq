@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 1.1 — pre-implementation.** Implements DM-8 of
+**Status: Draft 1.2 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -110,8 +110,9 @@ every full delta.
 A hosted nooq sync service is a peer that:
 
 - MUST apply and store updates per document, serve `hello-reply` deltas
-  from its store, and relay each accepted update to every other
-  connected session of the same document, unchanged.
+  from its store, and relay each accepted update — including the
+  `update` payload of a `hello`, which is an update like any other — to
+  every other connected session of the same document, unchanged.
 - MUST NOT modify, reorder semantically, reject, or gate any update on
   content grounds. Conflict resolution happens in every client's CRDT;
   there is nothing to resolve server-side.
@@ -157,13 +158,19 @@ that must not see content must not be peers.
 
 1. Binary framing (length-prefixed) instead of base64-in-JSON for
    throughput; deferred until measured (PHILOSOPHY §3 budgets).
-1. **Incremental update exchange.** Bare per-transaction updates of
-   nested-type inserts (new blocks) currently fail to integrate into
-   peer documents — observed in @nooq/yjs (full-state updates always
-   integrate; edits to existing blocks replicate fine). Reference v1
-   sessions therefore ship full state per update (a valid idempotent
-   payload, SW-4) at an efficiency cost this deferral shares. Fixing
-   nested-type incremental encoding restores cheap steady-state sync.
+1. ~~Incremental update exchange.~~ **Resolved (Draft 1.2).** Root
+   cause, found by apply-oracle bisection: (a) the document header was
+   written as CRDT content, consuming clock numbers 0–1, so every real
+   item started at clock 2 — and Yjs correctly *pends* structs whose
+   predecessors are missing, so fresh peers silently parked new-block
+   increments as pending; and (b) the relay never rebroadcast a joining
+   peer's hello base, so earlier peers never learned the joiner's
+   clock 0–1. Fixes: the header is side-channel metadata, not CRDT
+   content (real items start at clock 0); a hosted peer MUST relay a
+   hello's `update` payload to existing sessions like any other update
+   (SW-6). Sessions exchange bare per-transaction increments again.
+   Pending-until-base remains correct Yjs behavior for out-of-order
+   delivery and is part of SW-4's semantics.
 2. Awareness piggybacking on `update` to cut message counts.
 3. Compaction/truncation of full-history deltas for very old documents.
 
