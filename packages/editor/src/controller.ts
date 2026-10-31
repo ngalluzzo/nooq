@@ -29,8 +29,10 @@ import {
   type Op,
   type Proposal,
   type RenderedText,
+  type TextChange,
   type Transaction,
 } from "@nooq/core";
+import { replaceChanges } from "@nooq/core";
 import { applyTransaction as applyToDoc, newDocument, readState } from "@nooq/yjs";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
 
@@ -147,11 +149,15 @@ export class Editor {
     return block.id;
   }
 
-  /** Whole-block text replacement (v0 textEdit semantics, DM-4.3). Marks are preserved when length matches. */
+  /** DM-4.3: splice steps applied directly — keystroke cost proportional to the edit. */
+  applyTextChanges(block: BlockId, changes: readonly TextChange[]): void {
+    this.apply(this.tx([{ op: "textEdit", block, changes: [...changes] } as Op], "type"));
+  }
+
+  /** Whole-string editing convenience: diffs old -> new into minimal splices (DM-4.3). */
   editText(block: BlockId, s: string): void {
-    const current = this.view.blocks[block]?.text;
-    const marks = current && current.marks.length === s.length ? current.marks : s.split("").map(() => []);
-    this.apply(this.tx([{ op: "textEdit", block, replace: { s, marks } }], "type"));
+    const before = this.view.blocks[block]?.text?.s ?? "";
+    this.applyTextChanges(block, replaceChanges(before, s));
   }
 
   deleteBlock(block: BlockId): void {
@@ -181,11 +187,18 @@ export class Editor {
       if (!info) throw new Error(`no digests for evidence block ${block}`);
       return { block, contentDigest: info.contentDigest, structureDigest: info.structureDigest };
     });
+    // Display-grade provenance: the exact text each textEdit op was built
+    // against, so the card can render the proposal "as proposed" even after
+    // the document drifts (DM-6 context is free-form).
+    const beforeTexts: Record<string, string> = {};
+    for (const op of options.ops) {
+      if (op.op === "textEdit") beforeTexts[op.block] = view.blocks[op.block]?.text?.s ?? "";
+    }
     const proposal: Proposal = {
       base: { rootDigest: await rootDigest(view) },
       ops: structuredClone(options.ops),
       evidence,
-      context: { model: options.actor.model, name: options.actor.name },
+      context: { model: options.actor.model, name: options.actor.name, before: beforeTexts },
       actor: options.actor.actorId,
     };
     const suggestion = makeSuggestionBlock(proposal, options.actor.actorId);

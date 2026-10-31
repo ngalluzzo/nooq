@@ -4,14 +4,17 @@
  * middle of a reference document, measured from Chrome's EventLatency
  * trace slices: input creation to the frame that shows it.
  *
- * Load condition: idle only in this first version (EB-4 sync storm and
- * AI streaming follow once the editor supports them in the lab page).
+ * Load conditions (EB-4): idle, and a sync storm of 50 remote transactions
+ * a second through an in-page relay. AI streaming waits for a streaming
+ * proposal API in the framework; today a proposal arrives whole.
  */
 
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, keystrokeLatencies, summarize, writeResult, type Lab } from "./harness.ts";
 import type { RefDocName } from "./refdocs.ts";
-import { LAB, labSession, rowSelector } from "./session.ts";
+import { ENFORCE, LAB, labSession, rowSelector } from "./session.ts";
+
+type Condition = "idle" | "sync-storm";
 
 const TEXT = "offline sync merged quietly while the writer kept typing ";
 
@@ -37,10 +40,13 @@ async function typeAt(lab: Lab, keys: string[], perSecond: number): Promise<void
   }
 }
 
-async function measure(doc: RefDocName, middle: number, count: number) {
+const progress = (doc: string, step: string) => process.stderr.write(`[EB-6 ${doc}] ${step}\n`);
+
+async function measure(doc: RefDocName, condition: Condition, middle: number, count: number) {
+  progress(doc, `loading (${condition})`);
   const session = await labSession();
   const { lab } = session;
-  await session.load(doc);
+  await session.load(doc, condition);
   const ids = await lab.evaluate<string[]>("lab.blockIds()");
   const target = ids[middle]!;
   await lab.scrollTo(rowSelector(target));
@@ -51,12 +57,17 @@ async function measure(doc: RefDocName, middle: number, count: number) {
   const keys = typingScript(count);
   const expectedDelta = keys.filter((k) => k.length === 1).length - keys.filter((k) => k === "Backspace").length;
   const charsBefore = await lab.evaluate<number>("lab.totalChars()");
+  progress(doc, `typing ${keys.length} keys`);
+  if (condition === "sync-storm") await lab.evaluate(`lab.startStorm(${JSON.stringify(target)}, 50)`);
   const events = await lab.trace(async () => {
     await typeAt(lab, keys, 10);
     await lab.evaluate("lab.settle()");
   });
+  if (condition === "sync-storm") await lab.evaluate("lab.stopStorm()");
   const charsAfter = await lab.evaluate<number>("lab.totalChars()");
+  progress(doc, `typed; ${events.length} trace events`);
   const focusLosses = await lab.evaluate<number>("lab.focusLosses()");
+  const pageHidden = await lab.evaluate<number>("lab.hiddenCount()");
   const { latencies, missing, vsyncMs } = keystrokeLatencies(events, keys.length);
 
   // If typing stopped landing, also measure the cost of a keystroke when the
@@ -64,6 +75,7 @@ async function measure(doc: RefDocName, middle: number, count: number) {
   let diagnostic: { refocusedKeystrokes: ReturnType<typeof summarize> } | undefined;
   const landed = (charsAfter - charsBefore) / expectedDelta;
   if (landed < 0.9) {
+    progress(doc, `only ${Math.round(landed * 100)}% of characters landed; diagnostic pass`);
     const sample = TEXT.slice(0, 40).split("");
     const diag = await lab.trace(async () => {
       for (const key of sample) {
@@ -80,7 +92,7 @@ async function measure(doc: RefDocName, middle: number, count: number) {
     budget: "EB-6",
     doc,
     browser: lab.browser,
-    condition: "idle",
+    condition,
     throttle: 4,
     keystrokes: keys.length,
     vsyncMs,
@@ -89,21 +101,27 @@ async function measure(doc: RefDocName, middle: number, count: number) {
     charactersExpected: expectedDelta,
     charactersLanded: charsAfter - charsBefore,
     focusLosses,
+    pageHidden,
     ...(diagnostic ? { diagnostic } : {}),
   };
 }
 
 describe.skipIf(!LAB)("EB-6 keystroke to paint", () => {
-  for (const [doc, middle, count] of [
-    ["ref-small", 25, 500],
-    ["ref-large", 1000, 500],
+  for (const [doc, condition, middle, count] of [
+    ["ref-small", "idle", 25, 500],
+    ["ref-small", "sync-storm", 25, 500],
+    ["ref-large", "idle", 1000, 500],
+    ["ref-large", "sync-storm", 1000, 500],
   ] as const) {
     test(
-      `${doc}: p95 within one frame, nothing over 50ms, and every keystroke lands`,
+      `${doc}, ${condition}: p95 within one frame, nothing over 50ms, and every keystroke lands`,
       async () => {
-        const result = await measure(doc, middle, count);
-        await writeResult(`eb6-keystrokes-${doc}`, result);
+        const result = await measure(doc, condition, middle, count);
+        await writeResult(`eb6-keystrokes-${doc}-${condition}`, result);
         console.log(JSON.stringify(result, null, 2));
+        // A hidden page gets no frames: the run measured nothing and is void.
+        expect(result.pageHidden).toBe(0);
+        if (!ENFORCE) return;
         expect(result.charactersLanded).toBe(result.charactersExpected);
         expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(FRAME_MS);
         expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);

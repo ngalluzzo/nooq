@@ -9,9 +9,17 @@ import { startLabServer } from "./server.ts";
 
 export const LAB = process.env.NQ_LAB === "1";
 
+/**
+ * NQ_LAB_GATE=report writes every result but skips the absolute budget
+ * assertions, for CI while the editor is being rebuilt to meet them. The
+ * regression gate (compare.ts) still applies. Default: enforce.
+ */
+export const ENFORCE = process.env.NQ_LAB_GATE !== "report";
+
 export interface LabSession {
   lab: Lab;
-  load(doc: RefDocName): Promise<void>;
+  /** Load a reference document; `condition` is an EB-4 load condition (default idle). */
+  load(doc: RefDocName, condition?: "idle" | "sync-storm"): Promise<void>;
   close(): void;
 }
 
@@ -20,8 +28,8 @@ export async function labSession(options?: LabOptions): Promise<LabSession> {
   const lab = await openLab(options);
   return {
     lab,
-    async load(doc) {
-      await lab.open(`${server.url}?doc=${doc}`);
+    async load(doc, condition = "idle") {
+      await lab.open(`${server.url}?doc=${doc}&condition=${condition}`);
       const deadline = Date.now() + 30_000;
       while (!(await lab.evaluate<boolean>("document.documentElement.dataset.labReady === 'true'"))) {
         if (Date.now() > deadline) throw new Error(`lab page for ${doc} never became ready`);

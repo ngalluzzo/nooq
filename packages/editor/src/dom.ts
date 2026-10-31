@@ -2,16 +2,26 @@
  * DOM surface — the visible half of the reference editor.
  *
  * Built entirely from @nooq/design components and Editor's public API.
- * Every keystroke is a transaction (§1); the surface re-renders from the
- * projection on change (boring v1 — incremental rendering is a later
- * optimization, never an architectural secret).
- *
- * Text editing uses a textarea per focused block with whole-block
- * replacement (v0 textEdit semantics, DM-4.3). This is the seam where
- * the ProseMirror binding lands (DM-9): same transactions, better caret.
+ * Every keystroke is a transaction (§1). Rendering is INCREMENTAL: each
+ * block owns a row element that is reused unless the block's rendered
+ * inputs changed — an untouched textarea is never recreated, so the
+ * caret and selection survive by construction (EB-6, EB-7). A remote
+ * text edit updates the focused textarea's value in place and moves
+ * the selection with DM-4.3 splice math: the caret stays on the same
+ * characters (EB-7.1); a delete covering it collapses it to the splice
+ * point, never beyond.
  */
 
-import { liveTree, type BlockId, type DocState, type Op, type Proposal } from "@nooq/core";
+import {
+  applyTextChanges,
+  caretAfterChanges,
+  liveTree,
+  replaceChanges,
+  type BlockId,
+  type DocState,
+  type Op,
+  type Proposal,
+} from "@nooq/core";
 import {
   blockRow,
   peerInk,
@@ -20,6 +30,7 @@ import {
   suggestionCard,
   syncStatus,
   type DiffSegment,
+  type PeerInk,
   type SlashMenuItem,
   type SuggestionState,
 } from "@nooq/design";
@@ -30,6 +41,14 @@ const TEXT_KINDS: Record<string, "paragraph" | "heading" | "quote"> = {
   "nooq.heading/v1": "heading",
   "nooq.quote/v1": "quote",
 };
+
+interface RowRecord {
+  row: HTMLElement;
+  /** Signature of the row's structure (type, writer, presence): text-only changes take the in-place path. */
+  structure: string;
+  signature: string;
+  value: string; // last text value rendered into the textarea
+}
 
 export interface EditorSurface {
   element: HTMLElement;
@@ -46,14 +65,16 @@ export function createSurface(editor: Editor): EditorSurface {
 
   let focused: BlockId | null = null;
   let focusRequest: { block: BlockId; offset?: number } | null = null;
-  let caretPosition = 0;
   let renderSeq = 0;
   let destroyed = false;
   let menu: { block: BlockId; element: HTMLElement } | null = null;
   /** Derived suggestion states (DM-6.5): recomputed every render, never stored. */
   let suggestionStatus = new Map<BlockId, SuggestionState>();
   /** Peer inks are derived (async sha256), so resolve them per render pass. */
-  let peerInks = new Map<string, import("@nooq/design").PeerInk>();
+  let peerInks = new Map<string, PeerInk>();
+  /** Live rows by block id — reused across renders (incremental rendering). */
+  const rows = new Map<BlockId, RowRecord>();
+  let lastOrder: BlockId[] = [];
 
   const unsubscribe = editor.onChange(scheduleRender);
   scheduleRender();
@@ -72,9 +93,7 @@ export function createSurface(editor: Editor): EditorSurface {
       );
       if (destroyed || seq !== renderSeq) return;
       peerInks = new Map(
-        await Promise.all(
-          [...editor.awareness.keys()].map(async (actor) => [actor, await peerInk(actor)] as const),
-        ),
+        await Promise.all([...editor.awareness.keys()].map(async (actor) => [actor, await peerInk(actor)] as const)),
       );
       if (destroyed || seq !== renderSeq) return;
       render(view);
@@ -82,15 +101,59 @@ export function createSurface(editor: Editor): EditorSurface {
   }
 
   function render(view: DocState): void {
-    body.replaceChildren();
-    settledArea.replaceChildren();
     status.replaceChildren(
       syncStatus({
         state: editor.hasTransport ? (editor.synced ? "synced" : "syncing") : "local",
         count: editor.awareness.size,
       }),
     );
-    for (const id of view.roots) renderBlock(view, id, body);
+
+    // Desired order of renderable blocks: text rows and suggestion cards,
+    // depth-first (§7: every block equal, built-in or not).
+    const order: BlockId[] = [];
+    const walk = (ids: readonly BlockId[]): void => {
+      for (const id of ids) {
+        const block = view.blocks[id];
+        if (!block) continue;
+        if (block.type === "nooq.suggestion/v1" || TEXT_KINDS[block.type]) order.push(id);
+        walk(block.children);
+      }
+    };
+    walk(view.roots);
+
+    const seen = new Set<BlockId>();
+    for (const id of order) {
+      seen.add(id);
+      renderOne(view, id);
+    }
+    for (const id of [...rows.keys()]) {
+      if (!seen.has(id)) {
+        rows.get(id)!.row.remove();
+        rows.delete(id);
+      }
+    }
+
+    // Reorder only when the order actually changed. Rows are reused, but
+    // moving a focused node can blur it — restore focus and selection after.
+    const orderChanged = order.length !== lastOrder.length || order.some((id, i) => lastOrder[i] !== id);
+    if (orderChanged) {
+      const active = document.activeElement as HTMLElement | null;
+      const selection =
+        active instanceof HTMLTextAreaElement
+          ? ([active.selectionStart, active.selectionEnd] as const)
+          : null;
+      for (const id of order) body.append(rows.get(id)!.row);
+      if (active && root.contains(active)) {
+        active.focus();
+        if (active instanceof HTMLTextAreaElement && selection) {
+          active.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
+        }
+      }
+      lastOrder = order;
+    }
+
+    // Settled suggestions (tombstoned with a verdict) render in the history area.
+    settledArea.replaceChildren();
     const alive = liveTree(view).alive;
     for (const block of Object.values(view.blocks)) {
       if (block.type === "nooq.suggestion/v1" && !alive.has(block.id)) {
@@ -100,30 +163,58 @@ export function createSurface(editor: Editor): EditorSurface {
     applyFocus(view);
   }
 
-  function renderBlock(view: DocState, id: BlockId, into: HTMLElement): void {
+  function renderOne(view: DocState, id: BlockId): void {
     const block = view.blocks[id];
     if (!block) return;
     if (block.type === "nooq.suggestion/v1") {
-      into.append(renderSuggestionCard(view, id, undefined));
+      const record = rows.get(id);
+      const signature = JSON.stringify([suggestionStatus.get(id) ?? "fresh", editor.settledBy(id)]);
+      if (record && record.signature === signature) return;
+      const card = renderSuggestionCard(view, id, undefined);
+      if (record) record.row.replaceWith(card);
+      rows.set(id, { row: card, structure: signature, signature, value: "" });
       return;
     }
-    const kind = TEXT_KINDS[block.type];
-    if (!kind) {
-      const group = document.createElement("div");
-      group.className = "nq-group";
-      for (const child of block.children) renderBlock(view, child, group);
-      into.append(group);
-      return;
+    const kind = TEXT_KINDS[block.type]!;
+    const text = block.text?.s ?? "";
+    const marks = block.text?.marks ?? [];
+    const writer = block.attribution.text?.actor ?? block.attribution.created.actor;
+    const remote = [...editor.awareness.values()].filter((entry) => entry.cursor?.block === id);
+    const structure = JSON.stringify([block.type, writer, remote.map((e) => [e.actor, e.cursor?.offset])]);
+    const signature = JSON.stringify([structure, text, marks]);
+
+    const record = rows.get(id);
+    if (record && record.signature === signature) return; // untouched: caret survives by construction
+
+    if (record && record.structure === structure) {
+      const area = record.row.querySelector("textarea");
+      if (area) {
+        if (area.value !== text) {
+          const splice = replaceChanges(record.value, text);
+          if (document.activeElement === area) {
+            // Caret preservation is splice math, not a guess (EB-7.1).
+            const start = caretAfterChanges(splice, area.selectionStart ?? area.value.length);
+            const end = caretAfterChanges(splice, area.selectionEnd ?? area.value.length);
+            area.value = text;
+            area.setSelectionRange(start, end);
+          } else {
+            area.value = text;
+          }
+        }
+        record.value = text;
+        record.signature = signature;
+        return;
+      }
     }
-    into.append(renderTextRow(view, id, kind));
+
+    const row = renderTextRow(view, id, kind);
+    if (record) record.row.replaceWith(row);
+    rows.set(id, { row, structure, signature, value: text });
   }
 
   function renderTextRow(view: DocState, id: BlockId, kind: "paragraph" | "heading" | "quote"): HTMLElement {
     const block = view.blocks[id]!;
     const writer = block.attribution.text?.actor ?? block.attribution.created.actor;
-    // v1: every text block is always a textarea (whole-block replace, DM-4.3).
-    // Remote presence renders as a caret chip at the row's leading edge;
-    // inline-offset carets arrive with the ProseMirror binding (DM-9).
     const content: (Node | string)[] = [];
     const remote = [...editor.awareness.values()].filter((entry) => entry.cursor?.block === id);
     if (remote.length > 0) {
@@ -143,10 +234,9 @@ export function createSurface(editor: Editor): EditorSurface {
     area.value = value;
     area.setAttribute("aria-label", "Text block");
     area.addEventListener("input", () => {
-      caretPosition = area.selectionStart ?? area.value.length;
       if (area.value === "/") openMenu(id);
       else if (menu?.block === id) closeMenu();
-      editor.editText(id, area.value);
+      editor.editText(id, area.value); // diffs to a minimal splice (DM-4.3)
     });
     area.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -216,7 +306,7 @@ export function createSurface(editor: Editor): EditorSurface {
     const text = editor.view.blocks[block]?.text?.s ?? "";
     const rewritten = text === "" ? "Written by a simulated model." : text.charAt(0).toUpperCase() + text.slice(1);
     await editor.propose({
-      ops: [{ op: "textEdit", block, replace: { s: rewritten, marks: rewritten.split("").map(() => []) } }],
+      ops: [{ op: "textEdit", block, changes: replaceChanges(text, rewritten) }],
       evidence: [block, ...ancestorsOf(editor.view, block)],
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",
@@ -239,7 +329,7 @@ export function createSurface(editor: Editor): EditorSurface {
     const proposal = block.fields.proposal as unknown as Proposal;
     const state = (settled ?? suggestionStatus.get(id) ?? "fresh") as SuggestionState;
     const intent = intentFor(view, id);
-    const card = suggestionCard({
+    return suggestionCard({
       state,
       actor: (proposal.context as { name?: string } | null)?.name ?? proposal.actor,
       model: (proposal.context as { model?: string } | null)?.model,
@@ -258,7 +348,6 @@ export function createSurface(editor: Editor): EditorSurface {
         editor.reject(id);
       },
     });
-    return card;
   }
 
   /** DM-4 durable intent: the proposing transaction's intent, shown as written. */
@@ -274,9 +363,15 @@ export function createSurface(editor: Editor): EditorSurface {
     const segments: DiffSegment[] = [];
     for (const op of proposal.ops as Op[]) {
       if (op.op === "textEdit") {
-        const before = view.blocks[op.block]?.text?.s;
-        if (before) segments.push({ del: before });
-        segments.push({ ins: op.replace.s });
+        const before = (proposal.context as { before?: Record<string, string> } | null)?.before?.[op.block]
+          ?? view.blocks[op.block]?.text?.s ?? "";
+        try {
+          const after = applyTextChanges({ s: before, marks: [] }, op.changes).s;
+          if (before) segments.push({ del: before });
+          segments.push({ ins: after });
+        } catch {
+          segments.push({ text: `${before} (changed since proposal)` });
+        }
       } else if (op.op === "setField") {
         segments.push({ ins: `${op.key} = ${JSON.stringify(op.value)}` });
       } else if (op.op === "insert") {

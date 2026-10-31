@@ -1,6 +1,6 @@
 import "./dom.ts";
 import { describe, expect, test } from "bun:test";
-import { liveTree } from "@nooq/core";
+import { liveTree, replaceChanges } from "@nooq/core";
 import { Editor } from "../src/controller.ts";
 import { createSurface } from "../src/dom.ts";
 import { settled } from "@nooq/sync";
@@ -10,6 +10,7 @@ const DOC = "editor-test-doc";
 function editorWith(actorId = "human:writer"): { editor: Editor; surface: ReturnType<typeof createSurface> } {
   const editor = new Editor({ docId: DOC, actor: { actorId, name: actorId === "human:writer" ? "Writer" : actorId } });
   const surface = createSurface(editor);
+  document.body.append(surface.element); // a mounted editor: focus needs the document
   return { editor, surface };
 }
 
@@ -121,7 +122,7 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     await settle();
 
     await editor.propose({
-      ops: [{ op: "textEdit", block: paragraph, replace: { s: "Make this shine", marks: "Make this shine".split("").map(() => []) } }],
+      ops: [{ op: "textEdit", block: paragraph, changes: replaceChanges("make this shine", "Make this shine") }],
       evidence: [paragraph],
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",
@@ -151,7 +152,7 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     await settle();
 
     await editor.propose({
-      ops: [{ op: "textEdit", block: paragraph, replace: { s: "Draft", marks: "Draft".split("").map(() => []) } }],
+      ops: [{ op: "textEdit", block: paragraph, changes: replaceChanges("draft", "Draft") }],
       evidence: [paragraph],
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",
@@ -164,7 +165,10 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     expect(stale.textContent).toContain("Accept anyway");
     clickButton(stale, "Accept anyway");
     await settle();
-    expect(editor.view.blocks[paragraph]!.text!.s).toBe("Draft"); // verbatim wins (DM-6.3)
+    // DM-4.3 splices: "apply verbatim" is positional. The proposal's
+    // [delete "draft", insert "Draft"] lands at its positions on the drifted
+    // text, so the writer's concurrent edit survives: a merge, not a clobber.
+    expect(editor.view.blocks[paragraph]!.text!.s).toBe("Draft, edited");
     surface.destroy();
     editor.close();
   });
@@ -174,7 +178,7 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     const paragraph = editor.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "keep me" });
     await settle();
     await editor.propose({
-      ops: [{ op: "textEdit", block: paragraph, replace: { s: "KEEP ME", marks: [] } }],
+      ops: [{ op: "textEdit", block: paragraph, changes: replaceChanges("keep me", "KEEP ME") }],
       evidence: [paragraph],
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",
@@ -188,6 +192,71 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     expect(rejectedCard?.textContent).toContain("kept in history");
     const suggestion = [...Object.values(editor.view.blocks)].find((b) => b.type === "nooq.suggestion/v1")!;
     expect(suggestion.fields.proposal).toBeDefined(); // payload persists (DM-6.4)
+    surface.destroy();
+    editor.close();
+  });
+});
+
+describe("writing core: character-level edits and incremental rendering (DM-4.3, EB-6/7)", () => {
+  test("a keystroke emits a one-splice transaction and never recreates the textarea", async () => {
+    const { editor, surface } = editorWith();
+    const paragraph = editor.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "hello" });
+    await settle();
+    const before = textareaFor(surface, paragraph);
+    before.focus();
+    before.setSelectionRange(5, 5);
+
+    type(before, "hello!");
+    await settle();
+
+    // Cost proportional to the edit: a single retain+insert splice
+    const last = editor.view.log.at(-1)!;
+    const op = last.ops[0]!;
+    if (op.op === "textEdit") {
+      expect(op.changes).toEqual([{ retain: 5 }, { insert: "!" }]);
+    } else {
+      throw new Error(`expected textEdit, got ${op.op}`);
+    }
+    // Incremental rendering: same DOM node, same caret — by construction
+    const after = textareaFor(surface, paragraph);
+    expect(after).toBe(before);
+    expect(after.selectionStart).toBe(6);
+    surface.destroy();
+    editor.close();
+  });
+
+  test("EB-7.1: remote splices move the caret onto the same characters", async () => {
+    const { editor, surface } = editorWith();
+    const paragraph = editor.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "0123456789" });
+    await settle();
+    const area = textareaFor(surface, paragraph);
+    area.focus();
+    area.setSelectionRange(5, 5);
+
+    // Remote insert strictly before the caret: caret advances past it
+    editor.applyTextChanges(paragraph, [{ retain: 2 }, { insert: "XY" }]);
+    await settle();
+    expect(area).toBe(textareaFor(surface, paragraph)); // same node
+    expect(area.value).toBe("01XY23456789");
+    expect(area.selectionStart).toBe(7);
+
+    // Remote insert strictly after the caret: nothing moves
+    editor.applyTextChanges(paragraph, [{ retain: 12 }, { insert: "!" }]);
+    await settle();
+    expect(area.selectionStart).toBe(7);
+
+    // Remote delete before the caret: caret steps back with it
+    editor.applyTextChanges(paragraph, [{ delete: 2 }]);
+    await settle();
+    expect(area.value).toBe("XY23456789!");
+    expect(area.selectionStart).toBe(5);
+
+    // Remote delete covering the caret: collapses to the splice point, never beyond (EB-7.1)
+    editor.applyTextChanges(paragraph, [{ retain: 3 }, { delete: 4 }, { retain: 4 }]);
+    await settle();
+    expect(area.value).toBe("XY2789!"); // "3456" deleted at position 3
+    expect(area.selectionStart).toBe(3);
+    expect(area).toBe(textareaFor(surface, paragraph));
     surface.destroy();
     editor.close();
   });

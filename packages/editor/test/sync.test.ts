@@ -1,6 +1,6 @@
 import "./dom.ts";
 import { describe, expect, test } from "bun:test";
-import { canonicalJson } from "@nooq/core";
+import { canonicalJson, replaceChanges } from "@nooq/core";
 import { NooqRelay, settled } from "@nooq/sync";
 import { Editor } from "../src/controller.ts";
 import { createSurface } from "../src/dom.ts";
@@ -34,7 +34,7 @@ describe("reference editor: sync and presence (§2, SW-3/6/7)", () => {
 
     // AI proposes to Alice; Bob sees the same suggestion card state
     await alice.propose({
-      ops: [{ op: "textEdit", block: fromBob, replace: { s: "HELLO FROM BOB", marks: "HELLO FROM BOB".split("").map(() => []) } }],
+      ops: [{ op: "textEdit", block: fromBob, changes: replaceChanges("hello from bob", "HELLO FROM BOB") }],
       evidence: [fromBob],
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",

@@ -30,7 +30,8 @@ export interface Lab {
   view: Bun.WebView;
   browser: string;
   open(url: string): Promise<void>;
-  evaluate<T>(script: string): Promise<T>;
+  /** Evaluate in the page; `ms` is the deadline (default 30s). */
+  evaluate<T>(script: string, ms?: number): Promise<T>;
   click(selector: string): Promise<void>;
   scrollTo(selector: string): Promise<void>;
   /** Trusted keystrokes through the input pipeline: keyDown then keyUp (EB-2.1). */
@@ -40,27 +41,28 @@ export interface Lab {
   close(): void;
 }
 
-const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
-  Enter: { code: "Enter", keyCode: 13, text: "\r" },
-  Backspace: { code: "Backspace", keyCode: 8 },
-  End: { code: "End", keyCode: 35 },
+/**
+ * `command` is the macOS editing command Chrome expects alongside the key.
+ * Without it a Backspace with no editable focus falls through to Chrome's
+ * own key handling and the page goes hidden (no more frames). Puppeteer and
+ * Playwright send the same commands.
+ */
+const KEYS: Record<string, { code: string; keyCode: number; text?: string; command?: string }> = {
+  Enter: { code: "Enter", keyCode: 13, text: "\r", command: "insertNewline" },
+  Backspace: { code: "Backspace", keyCode: 8, command: "deleteBackward" },
+  /** The lab uses End to mean "caret to the end of this block". */
+  End: { code: "End", keyCode: 35, command: "moveToEndOfDocument" },
   " ": { code: "Space", keyCode: 32, text: " " },
 };
 
-function keyInfo(key: string): { code: string; keyCode: number; text?: string } {
+function keyInfo(key: string): { code: string; keyCode: number; text?: string; command?: string } {
   if (KEYS[key]) return KEYS[key]!;
   const upper = key.toUpperCase();
   return { code: /[a-z]/i.test(key) ? `Key${upper}` : "", keyCode: upper.charCodeAt(0), text: key };
 }
 
-const TRACE_CATEGORIES = [
-  "devtools.timeline",
-  "disabled-by-default-devtools.timeline.frame",
-  "benchmark",
-  "cc",
-  "input",
-  "latencyInfo",
-];
+/** EventLatency lives in "benchmark"; anything more only makes the trace bigger. */
+const TRACE_CATEGORIES = ["benchmark"];
 
 export async function openLab(options: LabOptions = {}): Promise<Lab> {
   const view = new Bun.WebView({
@@ -72,6 +74,8 @@ export async function openLab(options: LabOptions = {}): Promise<Lab> {
   await view.navigate("about:blank");
   const { product } = await view.cdp<{ product: string }>("Browser.getVersion");
   await view.cdp("Emulation.setCPUThrottlingRate", { rate: options.throttle ?? 4 });
+  // Without focus emulation, a Backspace with no editable focus hides the page in headless Chrome and frames stop.
+  await view.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
   await view.cdp("Network.enable");
   await view.cdp("Network.setCacheDisabled", { cacheDisabled: true });
 
@@ -89,32 +93,45 @@ export async function openLab(options: LabOptions = {}): Promise<Lab> {
   return {
     view,
     browser: product,
-    open: (url) => view.navigate(url),
-    evaluate: (script) => view.evaluate(script),
-    click: (selector) => view.click(selector),
-    scrollTo: (selector) => view.scrollTo(selector, { block: "center" }),
+    open: (url) => within(`navigate to ${url}`, 30_000, view.navigate(url)),
+    evaluate: (script, ms = 30_000) => within(`evaluate ${script.slice(0, 60)}`, ms, view.evaluate(script)),
+    click: (selector) => within(`click ${selector}`, 15_000, view.click(selector, { timeout: 10_000 })),
+    scrollTo: (selector) => within(`scroll to ${selector}`, 15_000, view.scrollTo(selector, { block: "center", timeout: 10_000 })),
     async press(key) {
-      const { code, keyCode, text } = keyInfo(key);
+      const { code, keyCode, text, command } = keyInfo(key);
       const base = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode };
-      await view.cdp("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", ...base, ...(text ? { text, unmodifiedText: text } : {}) });
-      await view.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+      const commands = command && process.platform === "darwin" ? { commands: [command] } : {};
+      await within(`keyDown ${key}`, 10_000, view.cdp("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", ...base, ...(text ? { text, unmodifiedText: text } : {}), ...commands }));
+      await within(`keyUp ${key}`, 10_000, view.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base }));
     },
     async trace(during) {
       const events: TraceEvent[] = [];
       let complete!: () => void;
       const done = new Promise<void>((resolve) => (complete = resolve));
-      const collect = (event: Event) => events.push(...(event as MessageEvent<any>).data.value);
-      view.addEventListener("Tracing.dataCollected", collect as EventListener);
+      const collect = (event: Event) => {
+        for (const item of (event as MessageEvent<TraceEvent[] & { value: TraceEvent[] }>).data.value) events.push(item);
+      };
+      view.addEventListener("Tracing.dataCollected", collect);
       view.addEventListener("Tracing.tracingComplete", () => complete(), { once: true });
-      await view.cdp("Tracing.start", { traceConfig: { includedCategories: TRACE_CATEGORIES }, transferMode: "ReportEvents" });
-      await during();
-      await view.cdp("Tracing.end");
-      await done;
-      view.removeEventListener("Tracing.dataCollected", collect);
+      await within("Tracing.start", 10_000, view.cdp("Tracing.start", { traceConfig: { includedCategories: TRACE_CATEGORIES }, transferMode: "ReportEvents" }));
+      try {
+        await during();
+      } finally {
+        await within("Tracing.end", 10_000, view.cdp("Tracing.end"));
+        await within("trace delivery", 120_000, done);
+        view.removeEventListener("Tracing.dataCollected", collect);
+      }
       return events;
     },
     close: () => view.close(),
   };
+}
+
+/** Every browser call has a deadline: a lab run fails with the step that stalled, never hangs. */
+function within<T>(step: string, ms: number, promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(`lab: ${step} did not finish within ${ms}ms`)), ms)));
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
 /**
