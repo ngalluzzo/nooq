@@ -154,9 +154,9 @@
   --nq-change-bar: 3px;
   --nq-caret-width: 2px;
   --nq-block-gap: 8px;
-  --nq-font-serif: "Literata Variable", "Literata", "Iowan Old Style", Georgia, serif;
-  --nq-font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", system-ui, sans-serif;
-  --nq-font-mono: "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --nq-font-serif: "Literata Variable", "Literata Fallback", Georgia, serif;
+  --nq-font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next Fallback", system-ui, sans-serif;
+  --nq-font-mono: "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono Fallback", ui-monospace, Menlo, monospace;
 }
 
 .nq-doc-title { font-family: var(--nq-font-serif); font-size: 40px; line-height: 48px; font-weight: 700; letter-spacing: -0.015em; font-variation-settings: "opsz" 40; }

@@ -32,7 +32,7 @@ A remote writer's ink is a pure function of their actor ID, so every peer comput
 - Set document content in the Document styles (`doc-title`, `doc-h1`, `doc-h2`, `doc-body`, `doc-quote`), family `serif` (Literata). The writing surface is what nooq is designed around (founding stance 4), so it gets the reading face.
 - Set all chrome in the Interface styles, family `sans` (Atkinson Hyperlegible Next). It was drawn for low-vision readers and keeps I, l and 1 apart (§9).
 - Set anything a machine wrote and a person compares in the Data styles, family `mono` (Atkinson Hyperlegible Mono): digests, block ids, `nooq.paragraph/v1` type ids, ops. Use `digest` for inline fingerprints, `code` for code.
-- `display` is the brand voice for site headlines and the wordmark. It never appears inside the editor.
+- `display` is the brand voice for site headlines. It never appears inside the editor, and it never sets the name: the wordmark is drawn.
 - Keep the text column at `measure` (680px, about 70 characters of `doc-body`).
 - Sentence case everywhere. Lowercase `nooq`, always, including at the start of a sentence.
 
@@ -67,6 +67,7 @@ Every state shows a word, a glyph and a fill, so nothing depends on color alone 
 - The caret blinks at 530ms on, 530ms off and stops blinking while the writer types. Under `prefers-reduced-motion` it does not blink.
 - A suggestion's state changes in place the moment revalidation runs (DM-6.5). No toast, no flash. The tag and outline simply change.
 - Menus and popovers may fade in over 80ms. That is the only animation in the editor.
+- The logo animation runs only on brand surfaces: the site, first run, loading. Never in the editor.
 
 ### Focus
 
@@ -89,9 +90,19 @@ nooq writes like its founding documents: plain, short, and citable. It states wh
 - Cite sections as `§3` and `DM-6.2`, set in the text face, never linked as "learn more".
 - Numbers a machine produced stay exact: lamport 42, not "a moment ago"; truncate digests as `sha256:9f2c1a…e81a` (first 6, last 4) and copy the full value.
 
+## Logo
+
+n, o, o and q share one counter, so the wordmark is one module drawn four ways: a rounded centerline at an 18-unit stroke. It is drawn, never typeset. Use `wordmark()` or `mark()` where the theme is loaded, and the files in `assets/` everywhere else.
+
+- Letters are `graphite`; the q's tail is `ink`. Mono uses one ink for everything.
+- The animation types four o's, then moves the first o's base to become the q's tail (DM-4.4). The piece keeps its length, so the descender is exactly what the n gave up. Use `hero` timing for the site and first run, `loader` for loading.
+- Under reduced motion, show the wordmark at rest.
+- Keep one counter width (56 units) clear on every side. Smallest: wordmark 64px wide, mark 16px tall.
+- Never set the name in a font, recolor the tail in `pencil`, outline the letters, or give the two o's a face.
+
 ## Iconography
 
-nooq has no logo and no icon set yet. Set the name as plain type: lowercase `nooq` in `display`. Do not draw a mark until one is designed and added under Logos.
+nooq has no icon set yet.
 
 The components draw a small set of geometric glyphs inline as SVG in `currentColor`: the five state glyphs above, the six-dot drag handle, and the AI mark (a square hatched in `pencil-text` over `pencil`). Use typographic glyphs where a block type needs one in the slash menu (¶ for paragraph). No emoji, anywhere.
 

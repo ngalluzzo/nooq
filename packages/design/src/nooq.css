@@ -107,3 +107,10 @@
 
 /* SyncStatus */
 .nq-sync { display: inline-flex; align-items: center; gap: 6px; color: var(--nq-graphite-muted); }
+
+/* Logo. Geometry lives in the SVG; color comes from tokens. The moved piece keeps the writer's ink. */
+.nq-logo { display: block; width: 100%; height: auto; overflow: visible; }
+.nq-logo-letter, .nq-logo-piece { stroke: var(--nq-graphite); }
+.nq-logo-piece.is-moved { stroke: var(--nq-ink); }
+.nq-logo-caret { fill: var(--nq-caret); }
+.nq-logo-mono .nq-logo-letter, .nq-logo-mono .nq-logo-piece { stroke: currentColor; }

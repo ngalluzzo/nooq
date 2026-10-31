@@ -32,6 +32,7 @@ panel.append(suggestionCard({ state: "fresh", actor: "Rewrite assistant", model:
 
 ```sh
 bun run tokens          # tokens.json → src/tokens.css
+bun run logo            # logo geometry + tokens.json → assets/*.svg
 bun run storybook       # living docs at http://localhost:6006
 bun test                # unit tests (also run by `bun test` at the repo root)
 bun run test:stories    # every story in Chromium, light and dark, with axe

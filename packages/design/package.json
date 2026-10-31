@@ -9,11 +9,16 @@
     "./tokens.json": "./tokens.json",
     "./tokens.css": "./src/tokens.css",
     "./nooq.css": "./src/nooq.css",
-    "./fonts.css": "./src/fonts.css"
+    "./fonts.css": "./src/fonts.css",
+    "./assets/*": "./assets/*"
   },
   "scripts": {
     "tokens": "bun scripts/build-tokens.ts",
     "tokens:check": "bun scripts/build-tokens.ts --check",
+    "logo": "bun scripts/build-logo.ts",
+    "logo:check": "bun scripts/build-logo.ts --check",
+    "fonts": "bun scripts/build-fonts.ts",
+    "fonts:check": "bun scripts/build-fonts.ts --check",
     "test": "bun test",
     "test:stories": "vitest run",
     "storybook": "storybook dev -p 6006",
@@ -26,6 +31,8 @@
     "@nooq/core": "workspace:*"
   },
   "devDependencies": {
+    "@capsizecss/core": "4.1.3",
+    "@capsizecss/metrics": "4.4.0",
     "@happy-dom/global-registrator": "21.0.4",
     "@storybook/addon-a11y": "10.6.5",
     "@storybook/addon-docs": "10.6.5",

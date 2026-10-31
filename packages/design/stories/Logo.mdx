@@ -1,0 +1,48 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as LogoStories from "./Logo.stories";
+import { PIECE_LENGTH, TIMINGS } from "../src/brand/geometry.ts";
+
+<Meta of={LogoStories} />
+
+# Logo
+
+<Canvas of={LogoStories.Hero} />
+
+## One counter, four letters
+
+n, o, o and q share the same inner space. The wordmark is drawn around that single module: one rounded centerline, one 18-unit stroke, letters 106 units apart. It is drawn, not typeset. Literata sets documents; it never sets the name.
+
+- **o** is the module, closed.
+- **n** is the module with its base gone and its sides run down to the baseline.
+- **q** is the module with a tail down its right side.
+
+## The Move
+
+The animation types four identical o's, then performs a Move (DM-4.4): the base of the first o lets go, which leaves an n, travels under the word intact, docks at the last o and unrolls into its tail. Nothing is drawn in and nothing fades out. The piece is {PIECE_LENGTH.toFixed(1)} units long in every frame, so the q's descender is exactly what the n gave up. The tail stays in `ink` at rest: it is the one part of the mark that moved, attributed the way a change bar attributes an edit.
+
+<Canvas of={LogoStories.Frame} />
+
+| Timing | Total | Use |
+| --- | --- | --- |
+| `hero` | {TIMINGS.hero.total} ms | The site and first run. Ends with the caret parked after the q, blinking twice. |
+| `loader` | {TIMINGS.loader.total} ms | Loading states. Same choreography, no parked caret. |
+
+## Using it
+
+```ts
+import { animateWordmark, mark, wordmark } from "@nooq/design";
+
+const logo = wordmark();            // at rest
+header.append(logo);
+await animateWordmark(logo, { timing: "hero" }).finished;
+```
+
+- Use `wordmark()` and `mark()` where the theme is loaded; they recolor with the theme. Use the files in `assets/` everywhere else: `nooq-wordmark.svg`, `nooq-wordmark-dark.svg`, `nooq-wordmark-mono.svg`, `nooq-mark.svg`, `nooq-icon.svg`. They are generated from the same geometry and `tokens.json` by `bun run logo`.
+- Animate only on brand surfaces: the site, first run, loading. Never inside the editor, where nothing may delay the caret (§3).
+- Under `prefers-reduced-motion`, `animateWordmark` shows the wordmark at rest and nothing moves. Cancelling also lands at rest: the logo is never left half-drawn.
+- Keep clear space of one counter width (56 units, about 14% of the wordmark's width) on every side.
+- Smallest sizes: the wordmark at 64px wide, the mark at 16px tall. Below that, use the app icon.
+- Never set the name in a font, recolor the tail in `pencil` (pencil means an AI proposed it), outline the letters, or add a face to the two o's.
+
+<Canvas of={LogoStories.Mark} />
+<Canvas of={LogoStories.AppIcon} />

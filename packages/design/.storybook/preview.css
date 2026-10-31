@@ -7,3 +7,4 @@
 .sb-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); align-items: start; gap: var(--nq-space-8); }
 .sb-chrome { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--nq-space-4); padding-bottom: var(--nq-space-3); border-bottom: 1px solid var(--nq-rule); }
 @media (max-width: 720px) { .sb-review { grid-template-columns: 1fr; } }
+.sb-logo-stage { max-width: 100%; padding: var(--nq-space-6) var(--nq-space-4) var(--nq-space-12); box-sizing: border-box; }

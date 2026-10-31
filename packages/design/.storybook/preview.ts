@@ -47,7 +47,7 @@ const preview: Preview = {
       config: { rules: [{ id: "page-has-heading-one", enabled: false }, { id: "landmark-one-main", enabled: false }, { id: "region", enabled: false }] },
     },
     options: {
-      storySort: { order: ["Introduction", "Foundations", ["Color", "Typography", "Space and shape", "Themes"], "Protocol surfaces", "Components", "Patterns"] },
+      storySort: { order: ["Introduction", "Foundations", ["Color", "Typography", "Space and shape", "Themes"], "Brand", "Protocol surfaces", "Components", "Patterns"] },
     },
   },
   tags: ["autodocs"],

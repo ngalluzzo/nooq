@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="nooq">
+<title>nooq</title>
+<rect width="200" height="200" rx="44" fill="#f7f8fa"/>
+<g transform="translate(-264 27.447)">
+<path d="M356 9H372A29 29 0 0 1 401 38V62A29 29 0 0 1 372 91H356A29 29 0 0 1 327 62V38A29 29 0 0 1 356 9Z" stroke="#15171c" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<polyline points="401,38 401,145.106" stroke="#2343d1" fill="none" stroke-width="18" stroke-linejoin="round"/>
+</g>
+</svg>

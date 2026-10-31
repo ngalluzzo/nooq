@@ -56,32 +56,50 @@ driver can be replaced without touching the tests.
   `keydown` events. `view.type()` inserts text without any `keydown`
   (the paste path) and MUST NOT be used to measure typing. The WebKit
   backend turns Enter and Backspace into editing commands without
-  `keydown`, so it MUST NOT run budgets.
+  `keydown`, so it MUST NOT run budgets. On macOS, Backspace, Enter and
+  End MUST carry their editing command (`deleteBackward`,
+  `insertNewline`, `moveToEndOfDocument`), as Puppeteer and Playwright
+  send them; without one, Chrome handles the key itself.
 - **Throttling.** `Emulation.setCPUThrottlingRate` at rate 4, set after
   the first navigation and before any measurement.
+- **Focus.** `Emulation.setFocusEmulationEnabled` is on. Without it, a
+  Backspace that lands with no editable focus hides the page in headless
+  Chrome, and a hidden page gets no frames. The lab page counts
+  visibility losses, and a run that saw one is void.
+- **Deadlines.** Every browser call has a deadline and fails naming the
+  step that stalled. A lab run never hangs.
 - **Network.** `Fetch.enable` with patterns for font, sync and AI URLs;
   paused requests are continued after the configured delay, or failed to
   block them. `Network.setCacheDisabled` is on for every measurement that
   involves fonts, because views in one process share Chrome's HTTP cache.
-- **Timing.** EB-6 presentation times come from a `Tracing` capture
-  (`devtools.timeline` and frame categories), matched to keystrokes by
-  input timestamp. In-page Event Timing entries are recorded alongside as
-  a cross-check, never as the gate: they are rounded to 8 ms.
+- **Timing.** EB-6 presentation times come from Chrome's `EventLatency`
+  trace slices (category `benchmark`): from the input event's creation to
+  the presentation of the frame that shows it, for `KEY_PRESSED` events.
+  A key press with no slice produced no frame and is counted as such.
+  In-page Event Timing entries are a cross-check, never the gate: they are
+  rounded to 8 ms.
 - **Isolation.** One measurement at a time: one test file per budget and
   no concurrent views. Chrome launches with `--disable-gpu` by default,
   so frames composite in software. Results compare run to run, not to
   real hardware.
 - **Results.** Each budget writes p50, p95 and max per load condition as
-  JSON. The regression gate (EB-6) compares two such files from the same
-  job.
+  JSON to `lab/results/`. `lab/compare.ts` is the regression gate: it
+  compares two result directories from the same job and fails on a p95
+  regression over 10% or any new invariant violation.
+- **Enforcement.** `NQ_LAB_GATE=report` records every result but skips
+  the absolute assertions; the regression gate still applies. CI runs in
+  report mode until the reference editor first meets a budget, then
+  enforces it. Report mode never loosens a budget (EB-11): the numbers
+  are published either way.
 - **Pinning.** CI pins the Bun version. Because `Bun.WebView` is
   experimental, a change in its behavior counts as a rig change: rerun
   the base commit before comparing against it.
 
 Verified on Bun 1.4.4 with the Chrome backend: trusted `keydown` from
-`Input.dispatchKeyEvent`, CPU throttling, and the Event Timing, Layout
-Instability and Long Animation Frame APIs. Not yet exercised: `Fetch`
-interception and `Tracing`.
+`Input.dispatchKeyEvent`, CPU throttling, focus emulation,
+`EventLatency` tracing, and the Event Timing, Layout Instability and
+Long Animation Frame APIs. `Fetch` interception is wired but not yet
+exercised: the lab page's fonts are inlined, so no request has matched.
 
 ## EB-3. Reference documents
 
@@ -102,7 +120,9 @@ Budgets in EB-6 hold under each of these, separately and combined:
 - **Sync storm** — a simulated peer applies 50 remote transactions per
   second, spread across the document, through the Yjs adapter.
 - **AI streaming** — a deterministic fake model streams a proposal at
-  30 tokens per second into a suggestion (DM-6).
+  30 tokens per second into a suggestion (DM-6). Blocked: the framework
+  has no streaming proposal API yet; a proposal arrives whole. This
+  condition joins the gate when one exists.
 
 ## EB-5. Budget: time to editable
 
@@ -173,6 +193,11 @@ The journey map's "fonts never move the caret."
 - **Gate:** the layout shift inside the editor caused by the web fonts
   finishing their load, measured with the Layout Instability API, scores
   ≤ 0.01 on `ref-small` while a keystroke loop runs.
+- A bundler that inlines fonts into the stylesheet (Bun does, for every
+  font file it considers small) leaves no swap to measure: the cost moves
+  into stylesheet size, which EB-5 sees. `@nooq/design/fonts.css`
+  declares only the Latin and Latin Extended subsets so that cost stays
+  bounded.
 
 ## EB-9. Field metrics (opt-in, integrator-owned)
 
