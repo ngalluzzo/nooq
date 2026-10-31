@@ -67,7 +67,10 @@ content-addressed proposals with deterministic revalidation-on-merge
 project, lineage stated in the spec). The sync wire protocol is specified
 in [`SYNC.md`](SYNC.md) — transport-agnostic envelope, verified
 bootstrap, and the server-as-peer contract (a hosted nooq service is a
-peer, never an authority).
+peer, never an authority). What a writer must feel is pinned in
+[`EXPERIENCE-BUDGETS.md`](EXPERIENCE-BUDGETS.md) — CI budgets for time
+to editable and keystroke to paint, and the invariant that remote edits
+never move your caret.
 
 5. **Sustainability without capture.** Maintainers must eat, so nooq will
    earn money — from what operations genuinely cost: hosted collaboration

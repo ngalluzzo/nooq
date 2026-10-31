@@ -1,0 +1,8 @@
+@import "@nooq/design/fonts.css";
+@import "@nooq/design/tokens.css";
+@import "@nooq/design/nooq.css";
+
+/* Lab page chrome only. The editor brings no stylesheet of its own yet. */
+body { margin: 0; }
+#root { max-width: calc(var(--nq-measure) + var(--nq-gutter)); margin: 0 auto; padding: var(--nq-space-8) var(--nq-space-4); }
+.nq-input { width: 100%; box-sizing: border-box; border: 0; resize: none; background: transparent; color: inherit; font: inherit; padding: 0; overflow: hidden; field-sizing: content; }
