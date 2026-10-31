@@ -9,6 +9,26 @@ export {
 } from "./canonical.ts";
 export { fingerprint, sha256, toHex } from "./digest.ts";
 export {
+  createActorKey,
+  fromBase64,
+  signEnvelope,
+  signingInput,
+  toBase64,
+  updateDigestOf,
+  verifyEnvelope,
+  type ActorKey,
+  type Clocks,
+  type Envelope,
+} from "./actor.ts";
+export {
+  adoptionMatches,
+  authorize,
+  roleOf,
+  SUGGESTION_TYPE as ACCESS_SUGGESTION_TYPE,
+  type Touched,
+  type Verdict,
+} from "./access.ts";
+export {
   applyTextChanges,
   caretAfterChanges,
   replaceChanges,
@@ -44,7 +64,10 @@ export {
   type ActorDescriptor,
   type ActorId,
   type ActorKind,
+  type Access,
   type Attribution,
+  type Grant,
+  type Role,
   type Block,
   type BlockId,
   type DocState,

@@ -55,9 +55,26 @@ export interface Block {
   attribution: Attribution;
 }
 
+export type Role = "writer" | "suggester" | "reader";
+
+export interface Grant {
+  actorId: ActorId;
+  /** base64 raw Ed25519 public key bound to the actor (DM-13). */
+  key: string;
+  role: Role;
+}
+
+export interface Access {
+  owner: { actorId: ActorId; key: string };
+  /** Append-only in v1 (DM-13); revocation is a fork (DM-10). */
+  grants: Grant[];
+}
+
 export interface DocState {
   docId: string;
   schemaVersion: number;
+  /** Present only in access-controlled documents (DM-13). */
+  access?: Access;
   /** Live root block IDs in order. */
   roots: BlockId[];
   blocks: Record<BlockId, Block>;
@@ -104,4 +121,6 @@ export interface Proposal {
   evidence: ProposalEvidenceEntry[];
   context: JsonValue;
   actor: ActorId;
+  /** The proposer's full descriptor (DM-5) — accept authors as the proposer (DM-6.3). */
+  actorDescriptor?: ActorDescriptor;
 }

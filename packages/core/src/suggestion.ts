@@ -87,10 +87,16 @@ export function acceptTransaction(options: AcceptOptions): Transaction {
     { op: "setField", block: options.suggestion, key: STATUS_KEY, value: "accepted" },
     { op: "delete", block: options.suggestion },
   ];
-  const model = (proposal.context as { model?: string } | null)?.model;
+  const descriptor = proposal.actorDescriptor ?? {
+    actorId: proposal.actor,
+    kind: "ai" as const,
+    ...((proposal.context as { model?: string } | null)?.model
+      ? { model: (proposal.context as { model?: string }).model }
+      : {}),
+  };
   return {
     id: crypto.randomUUID(),
-    actor: { actorId: proposal.actor, kind: "ai", ...(model ? { model } : {}) },
+    actor: descriptor,
     adoptedBy: options.actor.actorId,
     lamport: options.lamport,
     causality: structuredClone(options.causality ?? {}),
