@@ -157,6 +157,13 @@ that must not see content must not be peers.
 
 1. Binary framing (length-prefixed) instead of base64-in-JSON for
    throughput; deferred until measured (PHILOSOPHY §3 budgets).
+1. **Incremental update exchange.** Bare per-transaction updates of
+   nested-type inserts (new blocks) currently fail to integrate into
+   peer documents — observed in @nooq/yjs (full-state updates always
+   integrate; edits to existing blocks replicate fine). Reference v1
+   sessions therefore ship full state per update (a valid idempotent
+   payload, SW-4) at an efficiency cost this deferral shares. Fixing
+   nested-type incremental encoding restores cheap steady-state sync.
 2. Awareness piggybacking on `update` to cut message counts.
 3. Compaction/truncation of full-history deltas for very old documents.
 

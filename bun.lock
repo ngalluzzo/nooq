@@ -37,6 +37,20 @@
         "vitest": "5.0.5",
       },
     },
+    "packages/editor": {
+      "name": "@nooq/editor",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/design": "workspace:*",
+        "@nooq/sync": "workspace:*",
+        "@nooq/yjs": "workspace:*",
+        "yjs": "^13.6.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+      },
+    },
     "packages/sync": {
       "name": "@nooq/sync",
       "version": "0.0.1",
@@ -149,6 +163,8 @@
     "@nooq/core": ["@nooq/core@workspace:packages/core"],
 
     "@nooq/design": ["@nooq/design@workspace:packages/design"],
+
+    "@nooq/editor": ["@nooq/editor@workspace:packages/editor"],
 
     "@nooq/sync": ["@nooq/sync@workspace:packages/sync"],
 

@@ -1,0 +1,24 @@
+{
+  "name": "@nooq/editor",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "The nooq reference editor: a headless controller over the public framework API plus a DOM surface built from @nooq/design. The framework is the product; this editor is the proof.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "lab": "NQ_LAB=1 bun test --timeout 900000 lab"
+  },
+  "dependencies": {
+    "@nooq/core": "workspace:*",
+    "@nooq/design": "workspace:*",
+    "@nooq/sync": "workspace:*",
+    "@nooq/yjs": "workspace:*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4"
+  }
+}
