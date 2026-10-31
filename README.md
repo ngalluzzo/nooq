@@ -54,6 +54,11 @@ nooq is that proof.
    parts. Every layer of the stack nooq depends on must be open. We do not
    build on foundations with paid tiers.
 
+Design decisions are codified in [`PHILOSOPHY.md`](PHILOSOPHY.md) — nine
+falsifiable principles, each with a "broken when" test, derived from four
+founding stances: framework first, local-first as architecture, AI as
+substrate, designed for the people writing in it.
+
 5. **Sustainability without capture.** Maintainers must eat, so nooq will
    earn money — from what operations genuinely cost: hosted collaboration
    infrastructure, professional support, deployment and integration work.
