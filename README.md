@@ -1,5 +1,8 @@
 # nooq
 
+[![CI](https://github.com/ngalluzzo/nooq/actions/workflows/ci.yml/badge.svg)](https://github.com/ngalluzzo/nooq/actions/workflows/ci.yml)
+[![Lab](https://github.com/ngalluzzo/nooq/actions/workflows/lab.yml/badge.svg)](https://github.com/ngalluzzo/nooq/actions/workflows/lab.yml)
+
 **Every feature. One license. Forever.**
 
 nooq is a block-based rich-text editor. Notion-class editing UX, local-first
