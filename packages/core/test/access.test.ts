@@ -46,8 +46,9 @@ describe("actor keys and signatures (DM-12)", () => {
   });
 
   test("signing input is canonical: key order does not matter", () => {
-    const a = signingInput({ docId: "d", tx: tx([], "x"), client: 1, clocks: { from: 0, to: 0 }, updateDigest: "sha256:x" });
-    expect(a).toBe(canonicalJson({ updateDigest: "sha256:x", client: 1, clocks: { to: 0, from: 0 }, tx: tx([], "x"), docId: "d" }));
+    const transaction = tx([], "x");
+    const a = signingInput({ docId: "d", tx: transaction, client: 1, clocks: { from: 0, to: 0 }, updateDigest: "sha256:x" });
+    expect(a).toBe(canonicalJson({ updateDigest: "sha256:x", client: 1, clocks: { to: 0, from: 0 }, tx: transaction, docId: "d" }));
   });
 
   test("update digests fingerprint bytes", async () => {

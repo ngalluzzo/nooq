@@ -38,6 +38,20 @@ export function roleOf(access: Access | undefined, actorId: string, key: string)
   return "none";
 }
 
+/**
+ * An actorId that exists in access with a DIFFERENT key is an
+ * impersonation attempt — deny, never hold (DM-13; PHILOSOPHY §5:
+ * "a peer can claim another actor's identity" is broken-when).
+ */
+export function keyMismatch(access: Access | undefined, actorId: string, key: string | undefined): boolean {
+  if (!access || key === undefined) return false;
+  if (access.owner.actorId === actorId) return !keysEqual(access.owner.key, key);
+  for (const grant of access.grants) {
+    if (grant.actorId === actorId) return !keysEqual(grant.key, key);
+  }
+  return false;
+}
+
 function keysEqual(a: string, b: string): boolean {
   return a === b;
 }
@@ -63,9 +77,10 @@ export function authorize(
     return "deny";
   }
 
+  if (keyMismatch(access, envelope.signer, envelope.signerKey)) return "deny";
   const role = roleOf(access, envelope.signer, envelope.signerKey ?? access.owner.key);
   if (role === "none") {
-    // Validly signed but not granted: hold pending grants (DM-13).
+    // Validly signed, unknown actor: hold pending grants (DM-13).
     return "hold";
   }
   if (role === "writer") return "allow";

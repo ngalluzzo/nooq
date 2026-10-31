@@ -23,6 +23,7 @@ export {
 export {
   adoptionMatches,
   authorize,
+  keyMismatch,
   roleOf,
   SUGGESTION_TYPE as ACCESS_SUGGESTION_TYPE,
   type Touched,
