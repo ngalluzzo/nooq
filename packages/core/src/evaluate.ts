@@ -36,13 +36,19 @@ export async function evaluate(proposal: Proposal, state: DocState): Promise<Eva
 
   const entries = [...proposal.evidence].sort((a, b) => (a.block < b.block ? -1 : a.block > b.block ? 1 : 0));
   for (const entry of entries) {
-    const current = digests.get(entry.block);
-    if (!current) {
+    if (!state.blocks[entry.block]) {
       drift.push({ block: entry.block, reason: "missing" });
       continue;
     }
     if (!alive.has(entry.block)) {
       drift.push({ block: entry.block, reason: "tombstoned" });
+      continue;
+    }
+    const current = digests.get(entry.block);
+    if (!current) {
+      // Alive blocks always have digests (DM-6.1); treat the impossible
+      // defensively as structural drift rather than crashing.
+      drift.push({ block: entry.block, reason: "structure" });
       continue;
     }
     if (current.structureDigest !== entry.structureDigest) {

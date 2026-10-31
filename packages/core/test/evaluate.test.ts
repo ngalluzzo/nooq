@@ -74,10 +74,11 @@ describe("evaluate (DM-6.2/6.5)", () => {
     ], 5));
     const result = await evaluate(proposal, both);
     expect(result.status).toBe("conflicted");
-    expect(result.drift).toEqual([
-      { block: p, reason: "content" },
-      { block: section, reason: "structure" },
-    ]);
+    expect(result.drift).toHaveLength(2);
+    // Drift entries are sorted by block ID; fixture UUIDs are random, so
+    // assert order-insensitively.
+    expect(result.drift).toContainEqual({ block: p, reason: "content" });
+    expect(result.drift).toContainEqual({ block: section, reason: "structure" });
   });
 
   test("pure function: identical inputs, identical output", async () => {

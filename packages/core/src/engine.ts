@@ -88,6 +88,10 @@ function requireAlive(state: DocState, id: BlockId): Block {
 }
 
 function attach(state: DocState, id: BlockId, parent: BlockId | null, index: number | undefined): void {
+  // Placement-register semantics (DM-4.6/4.7): a block lives in exactly one
+  // list. Scrub every occurrence — including stale entries in tombstoned
+  // parents' lists — so a block revived elsewhere never appears twice.
+  detachFromAllLists(state, id);
   const list = parent === null ? state.roots : requireAlive(state, parent).children;
   const at = index ?? list.length;
   if (!Number.isInteger(at) || at < 0 || at > list.length) throw new Error(`index ${at} out of range`);
@@ -104,6 +108,16 @@ function detach(state: DocState, id: BlockId): void {
   list.splice(at, 1);
 }
 
+/** Remove every occurrence of id from roots and all children lists (register semantics). */
+function detachFromAllLists(state: DocState, id: BlockId): void {
+  const scratch = state.roots.indexOf(id);
+  if (scratch >= 0) state.roots.splice(scratch, 1);
+  for (const block of Object.values(state.blocks)) {
+    const at = block.children.indexOf(id);
+    if (at >= 0) block.children.splice(at, 1);
+  }
+}
+
 function applyOp(state: DocState, op: Op, tx: Transaction): void {
   const writer = { actor: tx.actor.actorId, lamport: tx.lamport };
   switch (op.op) {
@@ -111,7 +125,9 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       if (state.blocks[op.block.id]) throw new Error(`block ${op.block.id} already exists`);
       for (const child of op.block.children) requireBlock(state, child);
       const block = structuredClone(op.block);
-      block.text = block.text === undefined ? undefined : validateRenderedText(block.text);
+      // Never assign undefined: it would create an own `text` property on
+      // text-less blocks and break canonical full-state comparison.
+      if (block.text !== undefined) block.text = validateRenderedText(block.text);
       state.blocks[block.id] = block;
       try {
         attach(state, block.id, op.parent, op.index);
@@ -161,6 +177,14 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
     case "restore": {
       requireBlock(state, op.block);
       if (liveTree(state).alive.has(op.block)) throw new Error(`block ${op.block} is not tombstoned`);
+      if (op.parent !== null) {
+        requireAlive(state, op.parent);
+        // The subtree may contain tombstoned descendants, so this check is
+        // needed even though the restored block is unreachable (DM-4.6).
+        if (subtreeOf(state, op.block).has(op.parent)) {
+          throw new Error("cannot restore a block into its own subtree (DM-3.1)");
+        }
+      }
       attach(state, op.block, op.parent, op.index);
       return;
     }

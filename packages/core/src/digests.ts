@@ -1,16 +1,19 @@
 /**
- * Block digests — DM-6.1 (Draft 1.2).
+ * Block digests — DM-6.1 (Draft 1.3).
  *
- * Three digests per block:
+ * Digests are defined over the ALIVE FOREST: blocks reachable from roots.
+ * The forest is single-parent by construction, so each alive block has a
+ * unique path from a root — digests are context-free and memoizable, and
+ * placement cycles orphaned by concurrent merges (unreachable) never
+ * enter the walk. Unreachable blocks have no digest entries; evaluate
+ * reports them as tombstoned/missing before comparing digests.
+ *
  * - contentDigest: {type, fields, textDigest} — what the block says.
  * - structureDigest: {children: [{id, structureDigest}]} — the content-free
  *   recursive shape. Descendant content drift never changes an ancestor's
  *   structureDigest; this is what separates `stale` from `conflicted`.
  * - blockDigest: {contentDigest, structureDigest, children: [child blockDigests]}
  *   — the full Merkle digest; any change anywhere below changes it.
- *
- * A children entry whose block is absent from the map serializes as null
- * (malformed/GC'd documents) so revalidation degrades instead of crashing.
  *
  * Deliberate: attribution is excluded from every digest input. Provenance
  * is metadata about change, not content; an attribution update must never
@@ -33,7 +36,7 @@ export interface BlockDigests {
 
 export async function computeDigests(state: DocState): Promise<Map<BlockId, BlockDigests>> {
   const memo = new Map<BlockId, BlockDigests>();
-  for (const id of Object.keys(state.blocks)) await digestsOf(state, id, memo, []);
+  for (const root of state.roots) await digestsOf(state, root, memo, []);
   return memo;
 }
 
@@ -45,7 +48,7 @@ async function digestsOf(
 ): Promise<BlockDigests> {
   const hit = memo.get(id);
   if (hit) return hit;
-  if (ancestors.includes(id)) throw new Error(`Cycle at ${id} (DM-3.1 violation)`);
+  if (ancestors.includes(id)) throw new Error(`Cycle at ${id} within the alive forest (DM-3.1 violation)`);
 
   const block = state.blocks[id];
   if (!block) throw new Error(`Missing block ${id}`);
