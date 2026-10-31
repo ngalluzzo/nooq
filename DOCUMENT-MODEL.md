@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1 — pre-implementation.** This spec converts
+**Status: Draft 1.1 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -166,9 +166,9 @@ The proposal payload:
 
 ```json
 {
-  "base": { "rootDigest": "sha256:…", "blockDigests": {"<blockId>": "sha256:…"} },
+  "base": { "rootDigest": "sha256:…" },
   "ops": [ "…exact DM-4 ops, canonical JSON…" ],
-  "evidence": [ {"block": "<blockId>", "digest": "sha256:…"} ],
+  "evidence": [ {"block": "<blockId>", "contentDigest": "sha256:…", "structureDigest": "sha256:…"} ],
   "context": { "…model, prompt ref, plugin…": "…" },
   "actor": "<actorId>"
 }
@@ -179,7 +179,15 @@ The proposal payload:
   live order>]}` — a Merkle structure. `textDigest` is the fingerprint of
   the canonical rendered `{s, marks}`. The **root digest** is the
   fingerprint over the ordered live `roots` block digests. Evidence pins
-  exactly what the proposal applied to.
+  exactly what the proposal applied to. Because a full block digest is
+  opaque, each evidence entry records both **component digests** — the
+  content digest (`{type, fields, textDigest}`) and the structure digest
+  (`{children}`) — so revalidation (DM-6.2) can distinguish content drift
+  from structural drift without decomposing a hash.
+  *(Draft 1.1 amendment: the original Draft 1 recorded only the full block
+  digest per evidence entry, which made `stale` indistinguishable from
+  `conflicted`. Found while implementing `evaluate()`; doc changed before
+  code, per DM-11.)*
 - **DM-6.2 States.** `fresh → accepted | rejected | stale | conflicted`.
   States are NOT stored as truth; they are **derived** by
   `evaluate(proposal, state)` — a pure function, so all peers agree
