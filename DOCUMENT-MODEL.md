@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.1 — pre-implementation.** This spec converts
+**Status: Draft 1.2 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -174,20 +174,31 @@ The proposal payload:
 }
 ```
 
-- **DM-6.1 Digests.** The **block digest** is the fingerprint over exactly
-  `{type, fields, textDigest, children: [<child block digests in current
-  live order>]}` — a Merkle structure. `textDigest` is the fingerprint of
-  the canonical rendered `{s, marks}`. The **root digest** is the
-  fingerprint over the ordered live `roots` block digests. Evidence pins
-  exactly what the proposal applied to. Because a full block digest is
-  opaque, each evidence entry records both **component digests** — the
-  content digest (`{type, fields, textDigest}`) and the structure digest
-  (`{children}`) — so revalidation (DM-6.2) can distinguish content drift
-  from structural drift without decomposing a hash.
-  *(Draft 1.1 amendment: the original Draft 1 recorded only the full block
-  digest per evidence entry, which made `stale` indistinguishable from
-  `conflicted`. Found while implementing `evaluate()`; doc changed before
-  code, per DM-11.)*
+- **DM-6.1 Digests.** Three digests per block:
+  - The **content digest** — fingerprint over exactly
+    `{type, fields, textDigest}`, where `textDigest` is the fingerprint of
+    the canonical rendered `{s, marks}`.
+  - The **structure digest** — fingerprint over exactly
+    `{children: [{id, structureDigest}]}` — the *content-free* recursive
+    shape of the subtree. Because it never incorporates any content
+    digest, content drift in a descendant does not change an ancestor's
+    structure digest. This is what makes `stale` distinguishable from
+    `conflicted` in DM-6.2.
+  - The **block digest** — fingerprint over exactly
+    `{contentDigest, structureDigest, children: [<child block digests>]}`
+    — the full Merkle digest: any change anywhere in a subtree changes
+    every ancestor's block digest. The **root digest** is the fingerprint
+    over the ordered live `roots` block digests, and thus pins the entire
+    document.
+  Evidence records the content and structure digests. A children entry
+  referencing a block absent from the map (only possible in malformed or
+  GC'd documents) serializes as `null` in digest inputs — revalidation
+  degrades deterministically to `conflicted` instead of crashing.
+  *(Draft 1.2 amendment: Draft 1.1 defined the structure digest over
+  child block digests, which include content — so any descendant content
+  edit flipped every ancestor's structure digest and `stale` vs
+  `conflicted` collapsed again. Found by the first `evaluate()` test run;
+  doc changed before code, per DM-11.)*
 - **DM-6.2 States.** `fresh → accepted | rejected | stale | conflicted`.
   States are NOT stored as truth; they are **derived** by
   `evaluate(proposal, state)` — a pure function, so all peers agree
