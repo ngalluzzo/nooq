@@ -37,6 +37,15 @@
         "vitest": "5.0.5",
       },
     },
+    "packages/sync": {
+      "name": "@nooq/sync",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/yjs": "workspace:*",
+        "yjs": "^13.6.0",
+      },
+    },
     "packages/yjs": {
       "name": "@nooq/yjs",
       "version": "0.0.1",
@@ -140,6 +149,8 @@
     "@nooq/core": ["@nooq/core@workspace:packages/core"],
 
     "@nooq/design": ["@nooq/design@workspace:packages/design"],
+
+    "@nooq/sync": ["@nooq/sync@workspace:packages/sync"],
 
     "@nooq/yjs": ["@nooq/yjs@workspace:packages/yjs"],
 
