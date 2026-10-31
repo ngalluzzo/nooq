@@ -5,7 +5,8 @@
   "license": "Apache-2.0",
   "description": "The nooq reference editor: a headless controller over the public framework API plus a DOM surface built from @nooq/design. The framework is the product; this editor is the proof.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./reference": "./src/reference.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -14,11 +15,16 @@
   "dependencies": {
     "@nooq/core": "workspace:*",
     "@nooq/design": "workspace:*",
+    "@nooq/plugins": "workspace:*",
     "@nooq/sync": "workspace:*",
     "@nooq/yjs": "workspace:*",
+    "prosemirror-model": "^1",
+    "prosemirror-state": "^1",
+    "prosemirror-transform": "^1",
     "yjs": "^13.6.0"
   },
   "devDependencies": {
+    "@nooq/plugin-callouts": "workspace:*",
     "@happy-dom/global-registrator": "21.0.4"
   }
 }

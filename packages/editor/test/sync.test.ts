@@ -4,16 +4,17 @@ import { canonicalJson, replaceChanges } from "@nooq/core";
 import { NooqRelay, settled } from "@nooq/sync";
 import { Editor } from "../src/controller.ts";
 import { createSurface } from "../src/dom.ts";
+import { referencePlugins, referenceDOM, referenceJobBindings } from "../src/reference.ts";
 
 const DOC = "editor-sync-doc";
 
 describe("reference editor: sync and presence (§2, SW-3/6/7)", () => {
   test("two editors converge through a hosted peer, offline-first throughout", async () => {
     const relay = new NooqRelay();
-    const alice = new Editor({ docId: DOC, actor: { actorId: "human:alice", name: "Alice" }, transport: relay.connect(DOC) });
-    const bob = new Editor({ docId: DOC, actor: { actorId: "human:bob", name: "Bob" }, transport: relay.connect(DOC) });
-    const aliceSurface = createSurface(alice);
-    const bobSurface = createSurface(bob);
+    const alice = new Editor({ plugins: referencePlugins, jobBindings: referenceJobBindings(), docId: DOC, actor: { actorId: "human:alice", name: "Alice" }, transport: relay.connect(DOC) });
+    const bob = new Editor({ plugins: referencePlugins, jobBindings: referenceJobBindings(), docId: DOC, actor: { actorId: "human:bob", name: "Bob" }, transport: relay.connect(DOC) });
+    const aliceSurface = createSurface(alice, { plugins: referenceDOM });
+    const bobSurface = createSurface(bob, { plugins: referenceDOM });
     await settled();
 
     // Both write independently (concurrent divergence)
@@ -57,8 +58,8 @@ describe("reference editor: sync and presence (§2, SW-3/6/7)", () => {
   });
 
   test("an editor with no transport is fully functional (§2)", async () => {
-    const editor = new Editor({ docId: "solo", actor: { actorId: "human:solo", name: "Solo" } });
-    const surface = createSurface(editor);
+    const editor = new Editor({ plugins: referencePlugins, jobBindings: referenceJobBindings(), docId: "solo", actor: { actorId: "human:solo", name: "Solo" } });
+    const surface = createSurface(editor, { plugins: referenceDOM });
     const block = editor.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "offline and fine" });
     await settled(2);
     expect(surface.element.querySelector(".nq-sync")?.textContent).toContain("Saved on this device");

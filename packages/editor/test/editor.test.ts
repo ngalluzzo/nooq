@@ -3,13 +3,14 @@ import { describe, expect, test } from "bun:test";
 import { liveTree, replaceChanges } from "@nooq/core";
 import { Editor } from "../src/controller.ts";
 import { createSurface } from "../src/dom.ts";
+import { referencePlugins, referenceDOM, referenceJobBindings } from "../src/reference.ts";
 import { settled } from "@nooq/sync";
 
 const DOC = "editor-test-doc";
 
 function editorWith(actorId = "human:writer"): { editor: Editor; surface: ReturnType<typeof createSurface> } {
-  const editor = new Editor({ docId: DOC, actor: { actorId, name: actorId === "human:writer" ? "Writer" : actorId } });
-  const surface = createSurface(editor);
+  const editor = new Editor({ plugins: referencePlugins, jobBindings: referenceJobBindings(), docId: DOC, actor: { actorId, name: actorId === "human:writer" ? "Writer" : actorId } });
+  const surface = createSurface(editor, { plugins: referenceDOM });
   document.body.append(surface.element); // a mounted editor: focus needs the document
   return { editor, surface };
 }
@@ -88,6 +89,7 @@ describe("reference editor: writing (§1 — every keystroke is a transaction)",
     // The empty block was tombstoned, not destroyed (DM-3.4)
     expect(editor.view.blocks[second]).toBeDefined();
     expect(liveTree(editor.view).alive.has(second)).toBe(false);
+    expect(document.activeElement).toBe(textareaFor(surface, first));
     surface.destroy();
     editor.close();
   });
