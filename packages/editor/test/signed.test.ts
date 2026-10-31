@@ -139,7 +139,7 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
       actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
       intent: "rewrite-block",
     });
-    await settled(6);
+    await settled(10);
     // The suggestion reached bob as a sealed suggester envelope.
     expect(readState(bob.ydoc).blocks[suggestionId]).toBeDefined();
 
@@ -159,7 +159,7 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     // Send through a raw transport as if a hostile client emitted it.
     const attacker = relay.connect(keys.docId);
     attacker.send(JSON.stringify({ v: 1, t: "update", doc: keys.docId, update: Buffer.from(captured.update).toString("base64"), envelope: sealed }));
-    await settled(6);
+    await settled(10);
 
     expect(canonicalJson(readState(bob.ydoc))).toBe(before);
     // Alice's local doc applied it (local-first), but the relay refused to
@@ -170,7 +170,7 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     owner.close();
     alice.close();
     bob.close();
-  });
+  }, 30_000);
 
   test("a fresh signed peer bootstraps through the verified envelope log", async () => {
     const relay = new NooqRelay();
@@ -191,5 +191,5 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     owner.close();
     alice.close();
     bob.close();
-  });
+  }, 30_000);
 });

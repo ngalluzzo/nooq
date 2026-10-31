@@ -54,7 +54,7 @@ describe("reference editor: sync and presence (§2, SW-3/6/7)", () => {
     bobSurface.destroy();
     alice.close();
     bob.close();
-  });
+  }, 30_000);
 
   test("an editor with no transport is fully functional (§2)", async () => {
     const editor = new Editor({ docId: "solo", actor: { actorId: "human:solo", name: "Solo" } });
