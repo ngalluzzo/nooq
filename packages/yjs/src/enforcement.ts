@@ -38,6 +38,19 @@ export interface Committed {
 
 /** Run a nooq transaction and seal its exact effects (DM-12). */
 export async function commitSigned(doc: Y.Doc, tx: import("@nooq/core").Transaction, key: ActorKey, signer: string): Promise<Committed> {
+  const captured = applyCaptured(doc, tx, key, signer);
+  const envelope = await sealEnvelope(doc, tx, captured.update, key, signer);
+  return { envelope, update: captured.update };
+}
+
+/** The synchronous half: validate, apply atomically, capture the update. */
+export function applyCaptured(
+  doc: Y.Doc,
+  tx: import("@nooq/core").Transaction,
+  key: ActorKey,
+  signer?: string,
+): { tx: import("@nooq/core").Transaction; update: Uint8Array; key: ActorKey; signer: string } {
+  void key;
   const captured: Uint8Array[] = [];
   const handler = (update: Uint8Array, origin: unknown) => {
     if (origin === COMMIT_ORIGIN) captured.push(update);
@@ -51,14 +64,23 @@ export async function commitSigned(doc: Y.Doc, tx: import("@nooq/core").Transact
   if (captured.length !== 1) {
     throw new Error(`expected exactly one update for one transaction, got ${captured.length}`);
   }
-  const update = captured[0]!;
+  return { tx, update: captured[0]!, key, signer: signer ?? tx.actor.actorId };
+}
+
+/** The asynchronous half: seal the envelope over the captured update. */
+export async function sealEnvelope(
+  doc: Y.Doc,
+  tx: import("@nooq/core").Transaction,
+  update: Uint8Array,
+  key: ActorKey,
+  signer: string,
+): Promise<Envelope> {
   const clocks = clocksOf(update, doc.clientID);
-  const envelope = await (await import("@nooq/core")).signEnvelope(
+  return (await import("@nooq/core")).signEnvelope(
     { docId: documentHeader(doc).docId, tx, client: doc.clientID, clocks, updateDigest: await updateDigestOf(update) },
     key,
     signer,
   );
-  return { envelope, update };
 }
 
 function clocksOf(update: Uint8Array, client: number): { from: number; to: number } {
@@ -355,6 +377,13 @@ export async function admitEnvelope(
     }
   }
 
+  // DM-13: an adoption's ops must canonically equal the proposal's ops —
+  // verified here, not promised by the accept path.
+  if (envelope.tx.adoptedBy) {
+    const settlement = await adoptionSettlement(doc, envelope.tx);
+    if (settlement === false) return { verdict: "deny", reason: "adoption ops diverge from the proposal" };
+  }
+
   const access = readState(doc).access;
   if (access) {
     const key = keyFor(access, envelope.signer);
@@ -377,6 +406,33 @@ export async function admitEnvelope(
 
   Y.applyUpdate(doc, update, ADMIT_ORIGIN);
   return { verdict: "allow", touched: inspected.touched };
+}
+
+/** The settlement ops every accept/reject appends after the proposal's ops. */
+function isSettlementOp(op: import("@nooq/core").Op): boolean {
+  return (
+    (op.op === "setField" && op.key === "status") ||
+    op.op === "delete"
+  );
+}
+
+async function adoptionSettlement(doc: Y.Doc, tx: import("@nooq/core").Transaction): Promise<boolean | undefined> {
+  const view = readState(doc);
+  const suggestionIds = new Set<string>();
+  for (const op of tx.ops) {
+    if (op.op === "setField" && op.key === "status" && view.blocks[op.block]?.type === "nooq.suggestion/v1") {
+      suggestionIds.add(op.block);
+    }
+  }
+  if (suggestionIds.size === 0) return undefined; // not an adoption we can check
+  for (const suggestionId of suggestionIds) {
+    const proposal = view.blocks[suggestionId]?.fields.proposal as { ops?: import("@nooq/core").Op[] } | undefined;
+    if (!proposal?.ops) return false;
+    const adopted = tx.ops.filter((op) => !isSettlementOp(op));
+    const { canonicalJson } = await import("@nooq/core");
+    if (canonicalJson(adopted) !== canonicalJson(proposal.ops)) return false;
+  }
+  return true;
 }
 
 function keyFor(access: Access, actorId: string): Uint8Array | undefined {

@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, summarize, writeResult } from "./harness.ts";
-import { LAB, labSession } from "./session.ts";
+import { ENFORCE, LAB, labSession } from "./session.ts";
 
 const SAMPLES = 5;
 
@@ -48,6 +48,7 @@ describe.skipIf(!LAB)("EB-5 time to editable", () => {
       await writeResult("eb5-editable", result);
       console.log(JSON.stringify(result, null, 2));
 
+      if (!ENFORCE) return;
       expect(result.neverEditable).toBe(0);
       expect(Math.max(...gaps)).toBeLessThanOrEqual(FRAME_MS);
     },

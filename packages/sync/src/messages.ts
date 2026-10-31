@@ -5,6 +5,9 @@
  */
 
 export const WIRE_VERSION = 1;
+
+/** An envelope as it travels the wire (DM-12): JSON through and through. */
+export type WireEnvelope = import("@nooq/core").Envelope;
 /** The only backend registered in wire v1 (SW-3). */
 export const BACKEND = "yjs/1";
 
@@ -17,7 +20,7 @@ export interface CursorAnchor {
 export type Cursor = CursorAnchor | null;
 
 export type WireMessage =
-  | { v: typeof WIRE_VERSION; t: "hello"; doc: string; backend: string; sv: string | null; update?: string | null }
+  | { v: typeof WIRE_VERSION; t: "hello"; doc: string; backend: string; sv: string | null; update?: string | null; envelope?: WireEnvelope }
   | {
       v: typeof WIRE_VERSION;
       t: "hello-reply";
@@ -26,8 +29,10 @@ export type WireMessage =
       sv: string;
       delta: string | null;
       rootDigest: string | null;
+      /** DM-12/SW-3: the envelope log for access-controlled documents. */
+      envelopes?: Array<{ envelope: WireEnvelope; update: string }>;
     }
-  | { v: typeof WIRE_VERSION; t: "update"; doc: string; update: string }
+  | { v: typeof WIRE_VERSION; t: "update"; doc: string; update: string; envelope?: WireEnvelope }
   | { v: typeof WIRE_VERSION; t: "delta"; doc: string; sv?: string | null; delta?: string; rootDigest?: string }
   | {
       v: typeof WIRE_VERSION;

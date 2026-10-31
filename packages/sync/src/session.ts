@@ -11,7 +11,8 @@
 
 import * as Y from "yjs";
 import { rootDigest } from "@nooq/core";
-import { documentHeader, readState } from "@nooq/yjs";
+import { admitEnvelope, documentHeader, readState, registerHeader } from "@nooq/yjs";
+import type { Envelope } from "@nooq/core";
 import { fromBase64, toBase64 } from "./base64.ts";
 import {
   BACKEND,
@@ -24,6 +25,8 @@ import {
 import type { SyncTransport } from "./transport.ts";
 
 export const REMOTE_ORIGIN = "nooq-remote";
+/** Updates sealed by commitSigned carry this origin and are shipped by their committer. */
+export const COMMIT_ORIGIN = "nooq-commit";
 
 export interface AwarenessEntry {
   actor: string;
@@ -40,12 +43,16 @@ export interface SyncSessionOptions {
   onAwareness?: (entry: AwarenessEntry) => void;
   onError?: (error: { code: string; message?: string }) => void;
   onSynced?: () => void;
+  /** SW-2: surfaces envelope verdicts (denied updates were dropped; held ones pend). */
+  onAdmission?: (verdict: "allow" | "hold" | "deny", reason?: string) => void;
 }
 
 export class SyncSession {
   private readonly options: SyncSessionOptions;
   private syncedFlag = false;
   private closed = false;
+  /** DM-13: envelopes held pending grants; retried after every admission. */
+  private readonly pending: Array<{ envelope: Envelope; update: Uint8Array }> = [];
   private readonly handleTransportMessage: (raw: string) => void;
   private readonly handleDocUpdate: (update: Uint8Array, origin: unknown) => void;
 
@@ -53,7 +60,8 @@ export class SyncSession {
     this.options = options;
     this.handleTransportMessage = (raw) => this.receive(raw);
     this.handleDocUpdate = (update, origin) => {
-      if (origin === REMOTE_ORIGIN || this.closed) return;
+      if (origin === REMOTE_ORIGIN || origin === COMMIT_ORIGIN || this.closed) return;
+      // COMMIT_ORIGIN updates are sealed and shipped by their committer.
       // Bare per-transaction increments (SW-4): idempotent, unordered,
       // and — since the header left the CRDT (SYNC Draft 1.2) — items
       // start at clock 0, so even a peer that missed our base integrates
@@ -85,6 +93,19 @@ export class SyncSession {
         backend: BACKEND,
         sv: hasState ? toBase64(Y.encodeStateVector(this.options.doc)) : null,
         update: hasState ? toBase64(Y.encodeStateAsUpdate(this.options.doc)) : null,
+      }),
+    );
+  }
+
+  /** SW-2: ship an update, optionally sealed in its envelope (DM-12). */
+  sendUpdate(update: Uint8Array, envelope?: Envelope): void {
+    this.options.transport.send(
+      encodeMessage({
+        v: WIRE_VERSION,
+        t: "update",
+        doc: this.docId,
+        update: toBase64(update),
+        ...(envelope !== undefined ? { envelope } : {}),
       }),
     );
   }
@@ -126,7 +147,7 @@ export class SyncSession {
         void this.bootstrap(message);
         return;
       case "update":
-        Y.applyUpdate(this.options.doc, fromBase64(message.update), REMOTE_ORIGIN);
+        void this.receiveUpdate(message.update, message.envelope);
         return;
       case "delta":
         if (message.delta !== undefined) {
@@ -142,6 +163,38 @@ export class SyncSession {
       case "hello":
         return; // sessions do not act as relays
     }
+  }
+
+  private async receiveUpdate(updateB64: string, envelope?: Envelope): Promise<void> {
+    const update = fromBase64(updateB64);
+    if (envelope) {
+      const admission = await admitEnvelope(this.options.doc, envelope, update);
+      this.options.onAdmission?.(admission.verdict, admission.reason);
+      if (admission.verdict === "deny") return; // never applied (DM-13)
+      if (admission.verdict === "hold") {
+        this.pending.push({ envelope, update });
+        return;
+      }
+      await this.retryPending();
+      return;
+    }
+    // Bare update: legal only in open documents (SW-2/DM-13).
+    if (readState(this.options.doc).access) {
+      this.options.onAdmission?.("deny", "unsigned update in an access-controlled document");
+      return;
+    }
+    Y.applyUpdate(this.options.doc, update, REMOTE_ORIGIN);
+  }
+
+  private async retryPending(): Promise<void> {
+    if (this.pending.length === 0) return;
+    const remaining: Array<{ envelope: Envelope; update: Uint8Array }> = [];
+    for (const item of this.pending) {
+      const admission = await admitEnvelope(this.options.doc, item.envelope, item.update);
+      if (admission.verdict === "hold") remaining.push(item);
+    }
+    this.pending.length = 0;
+    this.pending.push(...remaining);
   }
 
   private async bootstrap(message: Extract<WireMessage, { t: "hello-reply" }>): Promise<void> {
@@ -169,6 +222,25 @@ export class SyncSession {
       }
     }
     Y.applyUpdate(this.options.doc, fromBase64(message.delta), REMOTE_ORIGIN);
+    // SW-3: when the envelope log ships with the bootstrap, replay it on a
+    // scratch document — every transaction verified back to the first.
+    if (message.envelopes && message.envelopes.length > 0) {
+      const scratch = new Y.Doc();
+      registerHeader(scratch, documentHeader(this.options.doc)); // side-channel parity for the comparison
+      for (const item of message.envelopes) {
+        const admission = await admitEnvelope(scratch, item.envelope, fromBase64(item.update));
+        if (admission.verdict !== "allow") {
+          this.options.onError?.({ code: "envelope-log-invalid", message: `bootstrap envelope log: ${admission.reason}` });
+          return;
+        }
+      }
+      const { canonicalJson } = await import("@nooq/core");
+      const { readState: project } = await import("@nooq/yjs");
+      if (canonicalJson(project(scratch)) !== canonicalJson(project(this.options.doc))) {
+        this.options.onError?.({ code: "envelope-log-mismatch", message: "bootstrap delta disagrees with its envelope log" });
+        return;
+      }
+    }
     this.markSynced();
   }
 

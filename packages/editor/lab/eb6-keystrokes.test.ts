@@ -56,7 +56,7 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
 
   const keys = typingScript(count);
   const expectedDelta = keys.filter((k) => k.length === 1).length - keys.filter((k) => k === "Backspace").length;
-  const charsBefore = await lab.evaluate<number>("lab.totalChars()");
+  const charsBefore = await lab.evaluate<number>(`lab.localChars(${JSON.stringify(target)})`);
   progress(doc, `typing ${keys.length} keys`);
   if (condition === "sync-storm") await lab.evaluate(`lab.startStorm(${JSON.stringify(target)}, 50)`);
   const events = await lab.trace(async () => {
@@ -64,7 +64,7 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
     await lab.evaluate("lab.settle()");
   });
   if (condition === "sync-storm") await lab.evaluate("lab.stopStorm()");
-  const charsAfter = await lab.evaluate<number>("lab.totalChars()");
+  const charsAfter = await lab.evaluate<number>(`lab.localChars(${JSON.stringify(target)})`);
   progress(doc, `typed; ${events.length} trace events`);
   const focusLosses = await lab.evaluate<number>("lab.focusLosses()");
   const pageHidden = await lab.evaluate<number>("lab.hiddenCount()");
@@ -72,19 +72,25 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
 
   // If typing stopped landing, also measure the cost of a keystroke when the
   // writer re-clicks before every key. Diagnostic only: never the gate.
-  let diagnostic: { refocusedKeystrokes: ReturnType<typeof summarize> } | undefined;
+  let diagnostic: { refocusedKeystrokes?: ReturnType<typeof summarize>; error?: string } | undefined;
   const landed = (charsAfter - charsBefore) / expectedDelta;
   if (landed < 0.9) {
     progress(doc, `only ${Math.round(landed * 100)}% of characters landed; diagnostic pass`);
     const sample = TEXT.slice(0, 40).split("");
-    const diag = await lab.trace(async () => {
-      for (const key of sample) {
-        await lab.click(rowSelector(target));
-        await lab.press(key);
-        await lab.evaluate("lab.settle()");
-      }
-    });
-    diagnostic = { refocusedKeystrokes: summarize(keystrokeLatencies(diag, sample.length).latencies) };
+    try {
+      const diag = await lab.trace(async () => {
+        for (const key of sample) {
+          // Typed spaces with nothing focused page the document down, so find the block again first.
+          await lab.scrollTo(rowSelector(target));
+          await lab.click(rowSelector(target));
+          await lab.press(key);
+          await lab.evaluate("lab.settle()");
+        }
+      });
+      diagnostic = { refocusedKeystrokes: summarize(keystrokeLatencies(diag, sample.length).latencies) };
+    } catch (error) {
+      diagnostic = { error: String(error) };
+    }
   }
   session.close();
 

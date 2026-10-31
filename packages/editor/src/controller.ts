@@ -33,7 +33,7 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
-import { applyTransaction as applyToDoc, newDocument, readState } from "@nooq/yjs";
+import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope } from "@nooq/yjs";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
 
 export interface EditorOptions {
@@ -42,6 +42,10 @@ export interface EditorOptions {
   actor: { actorId: string; name?: string };
   /** Absent: a local document with no peers — fully functional (§2). */
   transport?: SyncTransport;
+  /** DM-12: the writer's Ed25519 key. Present => transactions ship signed. */
+  key?: import("@nooq/core").ActorKey;
+  /** The simulated model plugin's key (a suggester, DM-13). */
+  aiKey?: import("@nooq/core").ActorKey;
 }
 
 export interface ProposeOptions {
@@ -115,10 +119,34 @@ export class Editor {
     return () => this.listeners.delete(callback);
   }
 
-  /** The one entry point (§1): apply a nooq transaction. */
+  /**
+   * The one entry point (§1): apply a nooq transaction. In signed mode the
+   * document mutates synchronously (EB-6: typing never waits); the envelope
+   * seals and ships a microtask later, so the wire always carries it.
+   */
   apply(tx: Transaction): void {
     this.lamport = Math.max(this.lamport, tx.lamport);
+    if (this.options.key && this.session) {
+      // The signer is not always the author: adoptions are authored by the
+      // proposing AI but signed by the accepting writer (DM-6.3, DM-13).
+      const aiAuthored = tx.actor.actorId.startsWith("ai:");
+      const key = aiAuthored && !tx.adoptedBy && this.options.aiKey ? this.options.aiKey : this.options.key;
+      const signer = tx.adoptedBy ?? tx.actor.actorId;
+      const captured = applyCaptured(this.ydoc, tx, key, signer);
+      void this.ship(captured);
+      return;
+    }
     applyToDoc(this.ydoc, tx);
+  }
+
+  private async ship(commit: { tx: Transaction; update: Uint8Array; key: import("@nooq/core").ActorKey; signer: string }): Promise<void> {
+    try {
+      const sealed = await sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer);
+      this.session?.sendUpdate(commit.update, sealed);
+    } catch {
+      // Signing failures surface via the session's error channel; the local
+      // document is already consistent.
+    }
   }
 
   private tx(ops: Op[], intent?: string): Transaction {
@@ -174,6 +202,11 @@ export class Editor {
 
   setField(block: BlockId, key: string, value: JsonValue): void {
     this.apply(this.tx([{ op: "setField", block, key, value }], `field:${key}`));
+  }
+
+  /** DM-13: install the access header (owner-signed; the op validates shape). */
+  setAccess(access: import("@nooq/core").Access): void {
+    this.apply(this.tx([{ op: "setAccess", access }], "set-access"));
   }
 
   // ---- suggestions (DM-6) ----

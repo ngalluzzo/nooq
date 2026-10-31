@@ -8,8 +8,8 @@
  */
 
 import * as Y from "yjs";
-import { rootDigest } from "@nooq/core";
-import { readState, registerHeader } from "@nooq/yjs";
+import { rootDigest, type Envelope } from "@nooq/core";
+import { admitEnvelope, readState, registerHeader } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import { BACKEND, decodeMessage, encodeMessage, errorFor } from "./messages.ts";
 import type { SyncTransport } from "./transport.ts";
@@ -41,9 +41,19 @@ export interface NooqRelayOptions {
   lieAboutDigest?: boolean;
 }
 
+interface HeldEnvelope {
+  envelope: Envelope;
+  update: Uint8Array;
+  raw: string;
+}
+
 export class NooqRelay {
   private readonly docs = new Map<string, Y.Doc>();
   private readonly connections = new Map<string, Set<SyncTransport>>();
+  /** DM-12/SW-3: the envelope log per document, in admission order. */
+  private readonly envelopeLog = new Map<string, Array<{ envelope: Envelope; update: Uint8Array }>>();
+  /** DM-13: validly signed envelopes awaiting grants. */
+  private readonly held = new Map<string, HeldEnvelope[]>();
 
   constructor(private readonly options: NooqRelayOptions = {}) {}
 
@@ -61,6 +71,43 @@ export class NooqRelay {
     return this.docs.get(docId);
   }
 
+  envelopesOf(docId: string): Array<{ envelope: Envelope; update: Uint8Array }> {
+    return this.envelopeLog.get(docId) ?? [];
+  }
+
+  /** Verify then admit, exactly like any peer (SW-6). Returns the verdict. */
+  private async verifyAndAdmit(docId: string, envelope: Envelope, update: Uint8Array, raw: string): Promise<"allow" | "hold" | "deny"> {
+    const doc = this.docs.get(docId) ?? this.open(docId);
+    const admission = await admitEnvelope(doc, envelope, update);
+    if (admission.verdict === "allow") {
+      this.envelopeLog.get(docId)!.push({ envelope, update });
+      return "allow";
+    }
+    if (admission.verdict === "hold") {
+      this.held.get(docId)!.push({ envelope, update, raw });
+      return "hold";
+    }
+    return "deny";
+  }
+
+  /** Re-evaluate held envelopes after any admission (grants may have arrived). */
+  private async releaseHeld(docId: string, server: SyncTransport): Promise<void> {
+    const queue = this.held.get(docId);
+    if (!queue || queue.length === 0) return;
+    const remaining: HeldEnvelope[] = [];
+    for (const item of queue) {
+      const verdict = await this.verifyAndAdmit(docId, item.envelope, item.update, item.raw);
+      if (verdict === "allow") {
+        for (const peer of this.connections.get(docId)!) {
+          if (peer !== server) peer.send(item.raw); // released: relay like any update
+        }
+      } else if (verdict === "hold") {
+        remaining.push(item);
+      } // deny: dropped for good
+    }
+    this.held.set(docId, remaining);
+  }
+
   private async handle(docId: string, server: SyncTransport, raw: string): Promise<void> {
     const message = decodeMessage(raw);
     if (!message) return; // unknown envelope: ignore (SW-2)
@@ -75,24 +122,38 @@ export class NooqRelay {
           return;
         }
         const doc = this.docs.get(docId) ?? this.open(docId);
+        // Register BEFORE any await: updates arriving while we compute the
+        // reply must already be forwarded to this connection (race fix).
+        this.connections.get(docId)!.add(server);
         // Draft 1.1: apply the client's full state BEFORE computing the
         // reply, so the handshake alone converges both directions (SW-3).
         // Draft 1.2: the hello's payload is an update like any other —
-        // relay it to existing sessions so they learn the joiner's base
-        // (clocks 0..n); without it, the joiner's later increments would
-        // pend on peers that never saw them (SW-6).
+        // relay it to existing sessions so they learn the joiner's base.
+        // Draft 2: in access-controlled documents a bare hello update is
+        // refused like any bare update — state cannot bypass the rules.
         if (message.update) {
-          Y.applyUpdate(doc, fromBase64(message.update), "relay-store");
+          if (message.envelope) {
+            const verdict = await this.verifyAndAdmit(docId, message.envelope, fromBase64(message.update), raw);
+            if (verdict === "deny") {
+              server.send(encodeMessage(errorFor(docId, "envelope-denied", "hello update failed verification")));
+              return;
+            }
+          } else if (readState(doc).access) {
+            server.send(encodeMessage(errorFor(docId, "envelope-denied", "unsigned hello update in an access-controlled document")));
+            return;
+          } else {
+            Y.applyUpdate(doc, fromBase64(message.update), "relay-store");
+          }
           for (const peer of this.connections.get(docId)!) {
             if (peer !== server) {
-              peer.send(encodeMessage({ v: 1, t: "update", doc: docId, update: message.update }));
+              peer.send(encodeMessage({ v: 1, t: "update", doc: docId, update: message.update, ...(message.envelope ? { envelope: message.envelope } : {}) }));
             }
           }
         }
         const sv = message.sv === null ? undefined : fromBase64(message.sv);
         const delta = toBase64(Y.encodeStateAsUpdate(doc, sv));
         const digest = await rootDigest(readState(doc));
-        this.connections.get(docId)!.add(server);
+        const log = this.envelopeLog.get(docId) ?? [];
         server.send(
           encodeMessage({
             v: 1,
@@ -102,12 +163,34 @@ export class NooqRelay {
             sv: toBase64(Y.encodeStateVector(doc)),
             delta,
             rootDigest: this.options.lieAboutDigest ? "sha256:" + "0".repeat(64) : digest,
+            ...(log.length > 0 ? { envelopes: log.map(({ envelope, update }) => ({ envelope, update: toBase64(update) })) } : {}),
           }),
         );
         return;
       }
       case "update": {
         const doc = this.docs.get(docId) ?? this.open(docId);
+        if (message.envelope) {
+          // DM-12/13: verify like any peer; invalid envelopes are never
+          // applied or relayed (SW-6).
+          const verdict = await this.verifyAndAdmit(docId, message.envelope, fromBase64(message.update), raw);
+          if (verdict === "deny") {
+            server.send(encodeMessage(errorFor(docId, "envelope-denied", "update failed verification or authorization")));
+            return;
+          }
+          if (verdict === "hold") return; // held pending grants; not relayed yet
+          for (const peer of this.connections.get(docId)!) {
+            if (peer !== server) peer.send(raw); // relay unchanged (SW-6)
+          }
+          await this.releaseHeld(docId, server);
+          return;
+        }
+        // Open documents accept bare updates (SW-2); access-controlled
+        // documents never do — unsigned state cannot bypass the rules.
+        if (readState(doc).access) {
+          server.send(encodeMessage(errorFor(docId, "envelope-denied", "unsigned update in an access-controlled document")));
+          return;
+        }
         Y.applyUpdate(doc, fromBase64(message.update), "relay-store");
         for (const peer of this.connections.get(docId)!) {
           if (peer !== server) peer.send(raw); // relay unchanged (SW-6)
@@ -141,6 +224,8 @@ export class NooqRelay {
     registerHeader(doc, { docId, schemaVersion: 1 }); // side-channel header (SYNC Draft 1.2)
     this.docs.set(docId, doc);
     this.connections.set(docId, this.connections.get(docId) ?? new Set());
+    this.envelopeLog.set(docId, this.envelopeLog.get(docId) ?? []);
+    this.held.set(docId, this.held.get(docId) ?? []);
     return doc;
   }
 }
