@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.3 — pre-implementation.** This spec converts
+**Status: Draft 1.4 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -107,13 +107,18 @@ applied.
 ```json
 {
   "id": "<uuid>",
-  "actor": "<actorId>",
+  "actor": "<actorDescriptor>",
+  "adoptedBy": "<actorId>",
   "lamport": 42,
   "causality": { "<actorId>": 41 },
   "intent": "rewrite-intro",
   "ops": [ "…op objects…" ]
 }
 ```
+
+`adoptedBy` appears only on suggestion-adoption transactions (DM-6.3):
+the transaction's `actor` is the proposing actor whose ops are applied
+verbatim, and `adoptedBy` names the actor who accepted them.
 
 Operations (all reference block IDs, never positions):
 
@@ -234,13 +239,26 @@ The proposal payload:
   - structural drift (target tombstoned, moved out from under a
     structural op, or tree no longer matches `base`) → `conflicted`
 - **DM-6.3 Accept** is an ordinary transaction applying the proposal's
-  `ops` verbatim, with adoption provenance (DM-5). Implementations MUST
-  apply the ops as written — acceptance is an explicit human act against a
-  displayed diff, not a re-derivation. If `evaluate` is not `fresh`, the
-  UI MUST present the stale/conflicted evidence; applying anyway is
-  permitted (the writer decides) and recorded.
-- **DM-6.4 Reject** tombstones the suggestion block; the proposal payload
-  persists in history.
+  `ops` verbatim, with adoption provenance (DM-5). The accepting
+  transaction is authored by the **proposing** actor (block-level
+  attribution keeps pointing at the AI: its text is never unattributed)
+  and carries `adoptedBy` naming the accepting actor. Acceptance also
+  writes a `status` field (`"accepted"`) to the suggestion block and
+  tombstones it in the same transaction, so the verdict is derivable
+  from document state, not only from the log. Implementations MUST
+  apply the ops as written — acceptance is an explicit human act against
+  a displayed diff, not a re-derivation — so a forced accept of a stale
+  proposal can fail outright (e.g. an index no longer fits); failing
+  loudly is correct. If `evaluate` is not `fresh`, the UI MUST present
+  the stale/conflicted evidence; applying anyway is permitted (the
+  writer decides) and recorded.
+- **DM-6.4 Reject** tombstones the suggestion block after writing
+  `status: "rejected"` to it in the same transaction; the proposal
+  payload persists in the tombstone and in history.
+  *(Draft 1.4: `adoptedBy` formalized on the transaction sketch; the
+  author-of-record rule and the status-field verdict added while
+  implementing the suggestion lifecycle; doc changed before code, per
+  DM-11.)*
 - **DM-6.5 Revalidation is continuous:** status is recomputed on every
   state change, so a suggestion visibly goes stale the moment a concurrent
   edit invalidates its evidence. This is the property gooi enforces by
