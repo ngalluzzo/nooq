@@ -92,6 +92,7 @@ export class Editor {
   readonly awareness = new Map<string, AwarenessEntry>();
   private readonly session: SyncSession | null;
   private readonly listeners = new Set<() => void>();
+  private readonly eventListeners = new Set<(events: ChangeEvent[]) => void>();
   private lamport = 0;
   private notifyScheduled = false;
   readonly registry: PluginRegistry;
@@ -218,6 +219,16 @@ export class Editor {
   onChange(callback: () => void): () => void {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
+  }
+
+  /**
+   * Detailed change batches (origin, block ids, text/fields/structure) —
+   * the surface renders only what changed; a null-flag batch means
+   * "re-render everything" (initial, access).
+   */
+  onEvents(callback: (events: ChangeEvent[]) => void): () => void {
+    this.eventListeners.add(callback);
+    return () => this.eventListeners.delete(callback);
   }
 
   /**
@@ -482,7 +493,9 @@ export class Editor {
     queueMicrotask(() => {
       this.notifyScheduled = false;
       if (this.closed) return;
-      for (const event of this.events.splice(0)) this.runtime.emit(event);
+      const batch = this.events.splice(0);
+      for (const event of batch) this.runtime.emit(event);
+      for (const callback of this.eventListeners) try { callback(batch); } catch (cause) { this.reportError({ phase: "observer", cause }); }
       for (const callback of this.listeners) try { callback(); } catch (cause) { this.reportError({ phase: "observer", cause }); }
     });
   }

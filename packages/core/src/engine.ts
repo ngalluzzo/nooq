@@ -77,6 +77,24 @@ export function applyTransaction(state: DocState, tx: Transaction): DocState {
   return next;
 }
 
+/**
+ * Validation for THROWAWAY states (EB-6): applies the transaction to the
+ * passed state IN PLACE — no defensive clone — and returns nothing. The
+ * caller must treat the state as consumed. Cuts per-keystroke cost by the
+ * whole-document clone applyTransaction pays to stay pure.
+ */
+export function validateTransaction(state: DocState, tx: Transaction): void {
+  tx.ops.forEach((op, index) => {
+    try {
+      applyOp(state, op, tx);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
+    }
+  });
+  state.log.push(structuredClone(tx));
+}
+
 function requireBlock(state: DocState, id: BlockId): Block {
   const block = state.blocks[id];
   if (!block) throw new Error(`no such block ${id}`);

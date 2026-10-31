@@ -1,12 +1,13 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
 import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
-import type { BlockView, BlockViewContext, DOMPlugin, RichTextOptions, SurfaceAction, SurfaceActionContext, TextBinding, TextSelection } from "@nooq/plugins/dom";
+import type { Action, BlockView, BlockViewContext, DOMPlugin, RichTextOptions, SurfaceAction, SurfaceActionContext, SurfaceActions, TextBinding, TextSelection } from "@nooq/plugins/dom";
 import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
+import { createActions, mountActionToolbar } from "./actions.ts";
 
-export interface EditorSurface { element: HTMLElement; destroy(): void }
+export interface EditorSurface { element: HTMLElement; actions: SurfaceActions; destroy(): void }
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
   resolve?: Readonly<Record<string, string>>;
@@ -14,6 +15,7 @@ export interface SurfaceOptions {
 }
 interface Binding { element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; destroy(): void }
 interface Row {
+  id: string;
   shell: HTMLElement; children: HTMLElement; presence: HTMLElement; view: BlockView;
   abort: AbortController; bindings: Binding[]; cleanups: (() => void)[]; signature: string; type: string;
 }
@@ -22,6 +24,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const plugins = options.plugins ?? [], views = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }>();
   const providers = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }[]>();
   const seen = new Set<string>(), menus: SurfaceAction[] = [];
+  const definitions: Action[] = [], legacyIds = new Set(plugins.flatMap(p => [...p.menus ?? [], ...p.keys ?? []].map(a => a.id)));
   const keys = new Map<string, NonNullable<DOMPlugin["keys"]>[number][]>();
   for (const plugin of plugins) {
     if (seen.has(plugin.id)) throw new Error(`Duplicate DOM plugin ${plugin.id}`);
@@ -31,11 +34,17 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (!editor.registry.block(view.type)) throw new Error(`View ${plugin.id} references unknown block ${view.type}`);
       providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount }]);
     }
-    for (const action of [...plugin.menus ?? [], ...plugin.keys ?? []]) {
+    for (const action of [...plugin.menus ?? [], ...plugin.keys ?? [], ...plugin.actions ?? []]) {
       if ((!!action.command === !!action.job) || (action.command && !editor.registry.command(action.command)) || (action.job && !editor.registry.job(action.job))) throw new Error(`Invalid surface action ${plugin.id}:${action.id}`);
     }
     menus.push(...plugin.menus ?? []);
     for (const binding of plugin.keys ?? []) keys.set(binding.key, [...keys.get(binding.key) ?? [], binding]);
+    for (const action of plugin.actions ?? []) {
+      if (legacyIds.has(action.id) || definitions.some(a => a.id === action.id)) throw new Error(`Duplicate action ID ${action.id}`);
+      definitions.push(action);
+      if (action.placements?.includes("slash")) menus.push(action);
+      for (const key of action.keys ?? []) keys.set(key, [...keys.get(key) ?? [], { ...action, key }]);
+    }
   }
   if (new Set(menus.map(m => m.id)).size !== menus.length) throw new Error("Duplicate menu action ID");
   for (const [slot, owner] of Object.entries(options.resolve ?? {})) if (!slot.startsWith("view:") || !providers.get(slot.slice(5))?.some(v => v.plugin === owner)) throw new Error(`Invalid view resolution ${slot} -> ${owner}`);
@@ -56,9 +65,12 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   for (const key of Object.keys(options.keyOrder ?? {})) if (!keys.has(key)) throw new Error(`Unknown keyOrder ${key}`);
 
   const root = document.createElement("div"), status = document.createElement("div"), body = document.createElement("div"), history = document.createElement("div");
+  const surfaceAbort = new AbortController();
   root.className = "nq-editor"; root.append(status, body, history);
   const rows = new Map<string, Row>();
   let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
+  let menuBlock: string | undefined;
+  const actionRefreshers = new Set<() => void>();
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
@@ -69,22 +81,42 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const selection = (id: string): SelectionRequest => {
     return { block: id, ...rows.get(id)?.bindings[0]?.selection() ?? { anchor: 0, head: 0 } };
   };
-  const actionContext = (id: string): SurfaceActionContext => ({ block: id, snapshot: snapshot(), selection: selection(id) });
-  const invoke = (action: SurfaceAction, id: string) => {
-    try {
-      const ctx = actionContext(id), args = action.args(ctx);
-      if (action.command) return editor.commands.run(action.command, args, { selection: ctx.selection });
-      const job = editor.jobs.start(action.job!, args);
-      void job.result.catch(cause => { if (!job.signal.aborted) fail(undefined, cause); });
-      return { status: "started" };
-    } catch (error) { fail(undefined, error); return { status: "failed" }; }
+  const actionContext = (id: string): SurfaceActionContext => Object.freeze({ block: id, snapshot: snapshot(), selection: Object.freeze(selection(id)) });
+  const actions = createActions(editor, definitions, { context: actionContext,
+    blocked: dispatch => destroyed ? "This surface is disposed." : dispatch && rendering ? "Views cannot dispatch while rendering." : undefined,
+    report: cause => fail(undefined, cause),
+  });
+  let actionsScheduled = false;
+  const refreshActions = () => {
+    if (actionsScheduled || destroyed) return;
+    actionsScheduled = true;
+    queueMicrotask(() => {
+      actionsScheduled = false; if (destroyed) return;
+      for (const refresh of actionRefreshers) refresh();
+    });
   };
-  const closeMenu = () => { menu?.remove(); menu = undefined; };
+  for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, refreshActions, { signal: surfaceAbort.signal });
+  root.ownerDocument.addEventListener("selectionchange", () => {
+    if (root.contains(root.ownerDocument.activeElement)) refreshActions();
+  }, { signal: surfaceAbort.signal });
+  const invoke = actions.invoke;
+  const closeMenu = () => { menu?.remove(); menu = undefined; menuBlock = undefined; };
   const openMenu = (id: string) => {
+    const focused = !!menu?.contains(document.activeElement);
+    const active = menu?.querySelector('[aria-selected="true"]')?.getAttribute("data-nq-action");
     closeMenu(); if (!menus.length) return;
-    menu = slashMenu({ items: menus.map(m => ({ label: m.label, type: m.id, glyph: m.glyph ?? "+", hint: m.hint ?? "", ai: !!m.job })),
+    const states = new Map(actions.list(id, "slash").map(state => [state.id, state.availability]));
+    const items = menus.filter(m => states.get(m.id)?.status !== "hidden").map(m => {
+      const state = states.get(m.id);
+      return { label: m.label, type: m.id, glyph: m.glyph ?? "+", hint: m.hint ?? "", ai: !!m.job,
+        disabled: state?.status === "disabled", reason: state?.status === "disabled" ? state.reason : undefined };
+    });
+    if (!items.length) return;
+    menuBlock = id;
+    menu = slashMenu({ items, active: Math.max(0, items.findIndex(item => item.type === active)),
       onSelect: item => { closeMenu(); invoke(menus.find(m => m.id === item.type)!, id); }, onClose: closeMenu,
     }); root.append(menu);
+    if (focused) menu.querySelector<HTMLElement>('[role="listbox"]')?.focus();
   };
 
   function sendText(id: string, row: Row, changes: TextChange[]): boolean {
@@ -102,12 +134,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     } catch (cause) { fail(undefined, cause); return false; }
   }
   function keyDown(id: string, event: KeyboardEvent): boolean {
+    if (typeof process !== "undefined" && process.env.NQ_DEBUG_KEYS) console.log("[keyDown]", id, event.key, "actions:", (keys.get([event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+")) ?? []).map((a) => a.id).join(","));
     if (event.key === "Escape") { closeMenu(); return true; }
     const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
     for (const action of keys.get(key) ?? []) try {
-      if (action.when && !action.when(actionContext(id))) continue;
       const outcome = invoke(action, id);
-      if (outcome.status !== "not-applicable") return true;
+      if (typeof process !== "undefined" && process.env.NQ_DEBUG_KEYS) console.log("[invoke]", action.id, "->", outcome.status, JSON.stringify(outcome).slice(0, 200));
+      if (outcome.status !== "not-applicable" && outcome.status !== "unavailable") return true;
     } catch (cause) { fail(undefined, cause); return true; }
     return false;
   }
@@ -190,13 +223,25 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function makeRow(id: string, block: Block): Row {
     const shell = document.createElement("div"), children = document.createElement("div"), presence = document.createElement("div");
     shell.dataset.nqBlock = id; children.className = "nq-children";
-    const row: Row = { shell, children, presence, view: undefined!, abort: new AbortController(), bindings: [], cleanups: [], signature: "", type: block.type };
+    const row: Row = { id, shell, children, presence, view: undefined!, abort: new AbortController(), bindings: [], cleanups: [], signature: "", type: block.type };
     const provider = views.get(block.type);
     const signal = row.abort.signal;
     const canAct = () => { if (signal.aborted || destroyed) throw new Error("View is disposed"); if (rendering) throw new Error("Views cannot dispatch while rendering"); };
     const context: BlockViewContext = {
       block: id, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
       mountRichText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountRichText(id, row, options); },
+      actions: {
+        list: placement => signal.aborted ? [] : actions.list(id, placement),
+        run: action => signal.aborted ? { status: "unavailable", reason: "View is disposed." } : actions.run(action, id),
+      },
+      mountActionToolbar: options => {
+        if (signal.aborted) throw new Error("View is disposed");
+        const toolbar = mountActionToolbar({ list: placement => actions.list(id, placement),
+          run: action => signal.aborted ? { status: "unavailable", reason: "View is disposed." } : actions.run(action, id),
+          subscribe: refresh => { actionRefreshers.add(refresh); return () => { actionRefreshers.delete(refresh); }; },
+        }, options?.label);
+        row.cleanups.push(() => toolbar.destroy()); return toolbar;
+      },
       run: (command, args) => { try { canAct(); return editor.commands.run(command, args, { selection: selection(id) }); } catch (error) { return { status: "failed", error }; } }, selection: () => selection(id), snapshot,
       onChange: listener => { if (signal.aborted) return () => {}; const off = editor.onChange(() => { if (!signal.aborted) try { listener(); } catch (cause) { fail(provider?.plugin, cause); } }); row.cleanups.push(off); return off; },
       review: () => editor.reviewSuggestion(id), accept: async options => { canAct(); await editor.accept(id, { ...options, signal }); }, reject: () => { canAct(); editor.reject(id); }, report: cause => fail(provider?.plugin, cause),
@@ -212,9 +257,45 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     shell.append(presence, row.view.element); return row;
   }
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
+  let mountedFocused = false;
+
+  /** The anchor row keeping the viewport still across remote renders (EB-7). */
+  function pickAnchor(): { row: HTMLElement; top: number } | null {
+    const scroller = document.scrollingElement;
+    if (!scroller) return null;
+    const viewportTop = scroller.getBoundingClientRect().top;
+    let best: { row: HTMLElement; top: number } | null = null;
+    for (const row of rows.values()) {
+      const top = row.shell.getBoundingClientRect().top;
+      if (top >= viewportTop && (!best || top < best.top)) best = { row: row.shell, top };
+    }
+    return best;
+  }
+  function pinViewport(anchor: { row: HTMLElement; top: number } | null): void {
+    if (!anchor || !anchor.row.isConnected) return;
+    const scroller = document.scrollingElement;
+    if (!scroller) return;
+    const drift = anchor.row.getBoundingClientRect().top - anchor.top;
+    if (drift !== 0) scroller.scrollTop += drift;
+  }
+
   function render() {
     scheduled = false; if (destroyed) return;
     rendering = true;
+    const batch = pendingBatch; const remote = batchIsRemote;
+    pendingBatch = null; batchIsRemote = false;
+    // Which blocks earn expensive work? null = everything (initial/access/awareness-only).
+    let changedIds: Set<string> | null = null;
+    let structural = false;
+    if (batch !== null && batch.length > 0) {
+      changedIds = new Set<string>();
+      for (const event of batch) {
+        for (const id of event.blocks) changedIds.add(id);
+        if (event.roots || event.access) { changedIds = null; break; }
+        for (const info of Object.values(event.changes ?? {})) if (info.structure) structural = true;
+      }
+    }
+    const anchor = remote ? pickAnchor() : null;
     try {
     const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
     renderState = state;
@@ -243,21 +324,45 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       }
     };
     walk(state.roots, body);
-    const historic: string[] = [];
-    for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
-    walk(historic.filter(id => !alive.has(id)), history);
+    if (structural || changedIds === null) {
+      const historic: string[] = [];
+      for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
+      walk(historic.filter(id => !alive.has(id)), history);
+    }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
+    // EB-5: editable in the frame the surface becomes visible — no clicking.
+    if (!mountedFocused && root.isConnected) {
+      mountedFocused = true;
+      if (!root.contains(document.activeElement)) {
+        const first = [...rows.values()].find((row) => alive.has(row.id) && row.bindings[0]);
+        const caret = state.blocks[first?.id ?? ""]?.text?.s.length ?? 0;
+        first?.bindings[0]?.focus({ anchor: caret, head: caret });
+      }
+    }
+    if (anchor) pinViewport(anchor);
     if (active && root.contains(active.element) && !active.element.contains(document.activeElement)) active.focus(activeSelection);
     if (pendingSelection) {
       const request = pendingSelection; pendingSelection = undefined;
       const binding = rows.get(request.block)?.bindings[0];
       if (binding && alive.has(request.block)) binding.focus(request);
     }
+    for (const refresh of actionRefreshers) refresh();
+    if (menuBlock) {
+      if (alive.has(menuBlock) && state.blocks[menuBlock]?.text?.s === "/") openMenu(menuBlock);
+      else closeMenu();
+    }
     } finally { rendering = false; renderState = undefined; }
   }
+  // EB-6: render only what the transactions touched; a null set means all.
+  let pendingBatch: import("@nooq/plugins").ChangeEvent[] | null = null;
+  let batchIsRemote = false;
+  const offEvents = editor.onEvents((events) => {
+    pendingBatch = pendingBatch === null ? [...events] : [...pendingBatch, ...events];
+    if (events.some((event) => event.origin === "remote")) batchIsRemote = true;
+  });
   const offChange = editor.onChange(schedule), offSelection = editor.onSelection(request => { pendingSelection = request; schedule(); });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, destroy };
+  return { element: root, actions, destroy };
 }

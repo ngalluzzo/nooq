@@ -50,6 +50,7 @@ export {
 } from "./digests.ts";
 export {
   applyTransaction,
+  validateTransaction,
   emptyDocument,
   makeBlock,
   newBlockId,

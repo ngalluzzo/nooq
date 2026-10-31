@@ -19,7 +19,7 @@ import {
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
-import { applyTransaction as engineApply } from "@nooq/core";
+import { validateTransaction } from "@nooq/core";
 import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
@@ -37,7 +37,7 @@ export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown):
   // Atomicity (DM-12): validate the WHOLE transaction against the
   // sequential engine over the current projection before any Yjs
   // mutation — a failing op never leaves its siblings applied.
-  engineApply(readState(doc), tx);
+  validateTransaction(readState(doc), tx); // throwaway projection: no defensive clone (EB-6)
   doc.transact(() => {
     tx.ops.forEach((op, index) => {
       try {
