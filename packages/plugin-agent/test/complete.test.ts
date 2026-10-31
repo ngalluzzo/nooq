@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { sandboxAvailable } from "./sandbox-capability.ts";
 import { completeFixture } from "./complete-fixture.ts";
 import { parseBrief } from "../src/brief.ts";
 import { checkSourcePolicy, validatePackage } from "../src/check.ts";
@@ -7,7 +8,7 @@ import { isolated } from "./isolated.ts";
 import type { CompleteValidation } from "../src/check.ts";
 import type { BrowserChecks } from "../src/browser.ts";
 const brief=parseBrief(await Bun.file(new URL("../briefs/callout-complete.json",import.meta.url)).json());
-const macTest=process.platform==="darwin"?test:test.skip;
+const macTest=process.platform==="darwin"&&sandboxAvailable?test:test.skip;
 
 test("complete recipe validates view/story links and confines edits/imports",()=>{
   expect(()=>parseBrief({...brief,view:{...brief.view,controls:[{command:"absent",label:"Wrong"}]}})).toThrow();

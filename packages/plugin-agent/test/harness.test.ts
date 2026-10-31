@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { sandboxAvailable } from "./sandbox-capability.ts";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,7 @@ import { runConformance } from "../src/conformance.ts";
 import callouts from "../examples/callout.ts";
 
 const brief = parseBrief(JSON.parse(await readFile(new URL("../briefs/callout.json", import.meta.url), "utf8")));
-const macTest = process.platform === "darwin" ? test : test.skip;
+const macTest = process.platform === "darwin" && sandboxAvailable ? test : test.skip;
 
 test("brief rejects an absent behavioral oracle", () => {
   expect(() => parseBrief({ ...brief, commands: [] })).toThrow();
