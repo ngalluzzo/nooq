@@ -1,0 +1,37 @@
+$ bun packages/plugin-agent/src/cli.ts run packages/plugin-agent/briefs/callout-rich.json --model "Qwen3.8-27B-Q8_0" --out "/tmp/nooq-callouts-rich-20261031-v2"
+Model: Qwen3.8-27B-Q8_0
+Run: /tmp/nooq-callouts-rich-20261031-v2
+  model: toolUse, 131 output tokens, 5s elapsed
+  tool: read_api
+  tool: read_api
+  tool: read_api
+  tool: read_api
+  tool: read_api
+  model: toolUse, 92 output tokens, 20s elapsed
+  tool: read_file
+  tool: read_file
+  tool: read_file
+  model: toolUse, 73 output tokens, 23s elapsed
+  tool: read_file
+  tool: read_file
+  model: toolUse, 280 output tokens, 27s elapsed
+  tool: write_file
+  model: toolUse, 629 output tokens, 35s elapsed
+  tool: write_file
+  model: toolUse, 1049 output tokens, 45s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 48s elapsed
+  tool: check_plugin
+  check 1: failed
+  model: toolUse, 634 output tokens, 57s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 59s elapsed
+  tool: check_plugin
+  check 2: failed
+  model: toolUse, 93 output tokens, 62s elapsed
+  tool: report_api_gap
+  model: error, 0 output tokens, 62s elapsed
+Result: api-gap
+Preview: /tmp/nooq-callouts-rich-20261031-v2/preview.html
+Report: /tmp/nooq-callouts-rich-20261031-v2/report.json
+error: script "plugin-agent" exited with code 1

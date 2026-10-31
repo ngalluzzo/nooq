@@ -137,8 +137,10 @@ function sameCharMarks(a: { charMarks: string[][] }, b: { charMarks: string[][] 
  * runs. Plain typing degrades to exactly the prefix/suffix splice shape.
  */
 export function charDiff(a: { text: string; charMarks: string[][] }, b: { text: string; charMarks: string[][] }): TextChange[] {
-  const oldChars = [...a.text];
-  const newChars = [...b.text];
+  // PM positions, core splices, and mark arrays all use UTF-16 code units.
+  if (a.text === b.text && sameCharMarks(a, b)) return [];
+  const oldChars = a.text.split("");
+  const newChars = b.text.split("");
   const eq = (i: number, j: number): boolean =>
     oldChars[i] === newChars[j] && sameMarks(a.charMarks[i] ?? [], b.charMarks[j] ?? []);
 
@@ -231,7 +233,7 @@ function flattenTextBlocks(node: Node, out: PmTextBlock[]): void {
         child.forEach((inline) => {
           if (inline.isText && inline.text) {
             const names = inline.marks.map((mark) => mark.type.name);
-            for (const _ of inline.text) charMarks.push([...names]);
+            for (let i = 0; i < inline.text.length; i++) charMarks.push([...names].sort());
           }
         });
         void text;

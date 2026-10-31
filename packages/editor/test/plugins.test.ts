@@ -6,7 +6,8 @@ import { defineBlock, defineCommand, defineJob, definePlugin, PluginRegistry, ty
 import { defineDOMPlugin, type BlockViewContext } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock } from "@nooq/plugins/essentials";
 import { callout, callouts, cycleTone, insertCallout } from "@nooq/plugin-callouts";
-import { calloutsDOM } from "@nooq/plugin-callouts/dom";
+// Retain v1 textarea coverage; rich editing has its own integration/browser suite.
+import { calloutsPlainDOM as calloutsDOM } from "@nooq/plugin-callouts/dom";
 import { admitEnvelope, applyCaptured, newDocument, sealEnvelope } from "@nooq/yjs";
 import { settled } from "@nooq/sync";
 import { Editor, type EditorOptions } from "../src/controller.ts";

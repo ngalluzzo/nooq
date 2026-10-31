@@ -1,0 +1,1742 @@
+{
+  "status": "passed",
+  "model": "Qwen3.8-27B-Q8_0",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "piVersion": "0.85.1",
+  "bunVersion": "1.4.4",
+  "contractHash": "de5055e2f3d53d03bbf4569197a85130f9f9951fe936a5344e06b5f5819c5a1c",
+  "apiHash": "6b8f03bea37e047f876939af7b88e4741436677a9f0197d573352bc333bbc8d2",
+  "briefHash": "d74b87bb998b8c79279424883b23ae8fd00d22ff023e353cc2375b20c0b76a31",
+  "elapsedMs": 134466,
+  "revisions": 7,
+  "toolCalls": 20,
+  "completedRounds": 2,
+  "gaps": [],
+  "events": [
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2177,
+        "output": 52,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 2229,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 4881
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2354,
+        "output": 53,
+        "cacheRead": 2144,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 4551,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 9915
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 4782,
+        "output": 53,
+        "cacheRead": 4480,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 9315,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 19546
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1082,
+        "output": 56,
+        "cacheRead": 9248,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 10386,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 22443
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 484,
+        "output": 783,
+        "cacheRead": 10304,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 11571,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 31255
+    },
+    {
+      "event": "write",
+      "revision": 1,
+      "path": "src/index.ts",
+      "sourceHash": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+      "elapsedMs": 31260
+    },
+    {
+      "event": "write",
+      "revision": 2,
+      "path": "src/dom.ts",
+      "sourceHash": "372904507ec6b85c5480d9159d4986001d4599c472684a0eb3f0fa069d1e528c",
+      "elapsedMs": 31261
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 987,
+        "output": 1202,
+        "cacheRead": 10752,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 12941,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 43998
+    },
+    {
+      "event": "write",
+      "revision": 3,
+      "path": "src/plugin.stories.ts",
+      "sourceHash": "3ce22ae6ebe2fad7e08aef46ec606019209f43812af698cbd88ef1c88e776745",
+      "elapsedMs": 44000
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1316,
+        "output": 1143,
+        "cacheRead": 11712,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 14171,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 55419
+    },
+    {
+      "event": "write",
+      "revision": 4,
+      "path": "src/plugin.stories.ts",
+      "sourceHash": "c226b8dc964de80ed7fff2bb0129c2fe6fca6aade90c30642e210bb607ff2f06",
+      "elapsedMs": 55422
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1268,
+        "output": 27,
+        "cacheRead": 12992,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 14287,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 58566
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "c42cf9c8385d2234f5326a5d59ef54d6663c4982064213206af5c2a754ade679",
+        "files": {
+          "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+          "src/dom.ts": "372904507ec6b85c5480d9159d4986001d4599c472684a0eb3f0fa069d1e528c",
+          "src/plugin.stories.ts": "c226b8dc964de80ed7fff2bb0129c2fe6fca6aade90c30642e210bb607ff2f06"
+        },
+        "errors": [
+          "src/dom.ts: Import type expressions are unsupported; use an explicit type-only import"
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 58587
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 395,
+        "output": 512,
+        "cacheRead": 14240,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 15147,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 64966
+    },
+    {
+      "event": "write",
+      "revision": 5,
+      "path": "src/dom.ts",
+      "sourceHash": "f80d776ac0c32a9828743ebdfaa6e9859067c297c2295dba24920c2b5b026148",
+      "elapsedMs": 64967
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 607,
+        "output": 27,
+        "cacheRead": 14624,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 15258,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 67001
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "complete": false,
+        "sourceHash": "7bd110c1026fc74ee4c91b48c71f69a1be6669adb95c97f49445255f6ecde88b",
+        "files": {
+          "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+          "src/dom.ts": "f80d776ac0c32a9828743ebdfaa6e9859067c297c2295dba24920c2b5b026148",
+          "src/plugin.stories.ts": "c226b8dc964de80ed7fff2bb0129c2fe6fca6aade90c30642e210bb607ff2f06"
+        },
+        "errors": [],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 67884
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 384,
+        "output": 27,
+        "cacheRead": 15200,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 15611,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 69323
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "complete": true,
+        "sourceHash": "7bd110c1026fc74ee4c91b48c71f69a1be6669adb95c97f49445255f6ecde88b",
+        "files": {
+          "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+          "src/dom.ts": "f80d776ac0c32a9828743ebdfaa6e9859067c297c2295dba24920c2b5b026148",
+          "src/plugin.stories.ts": "c226b8dc964de80ed7fff2bb0129c2fe6fca6aade90c30642e210bb607ff2f06"
+        },
+        "errors": [],
+        "sandbox": "macos-seatbelt",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "passed"
+          },
+          {
+            "name": "runtime",
+            "status": "passed"
+          },
+          {
+            "name": "browser",
+            "status": "passed"
+          },
+          {
+            "name": "storybook",
+            "status": "passed"
+          }
+        ],
+        "conformance": {
+          "checks": [
+            {
+              "name": "manifest and contribution identity",
+              "ok": true
+            },
+            {
+              "name": "creation defaults and fresh data",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 1: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 2: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 3: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 4: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 5: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 6: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 1",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 2",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 3",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 4",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: missing target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: deleted target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: wrong-type target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+              "ok": true
+            }
+          ],
+          "preview": {
+            "id": "0b3e0722-2df2-49a2-9934-2e8d7fe27138",
+            "type": "seed.callout/v1",
+            "fields": {
+              "tone": "info",
+              "futureField": {
+                "preserved": true
+              }
+            },
+            "text": {
+              "s": "A😀B!",
+              "marks": [
+                [],
+                [
+                  "future-mark"
+                ],
+                [
+                  "future-mark"
+                ],
+                [],
+                []
+              ]
+            },
+            "children": [
+              "fixture-child"
+            ],
+            "attribution": {
+              "created": {
+                "actor": "test-human"
+              },
+              "fields": {
+                "tone": {
+                  "actor": "test-human",
+                  "lamport": 21
+                }
+              },
+              "text": {
+                "actor": "test-human",
+                "lamport": 22
+              }
+            }
+          }
+        },
+        "runtime": {
+          "checks": [
+            {
+              "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+              "ok": true
+            },
+            {
+              "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: editor isolation and disposed dispatch",
+              "ok": true
+            },
+            {
+              "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+              "ok": true
+            }
+          ]
+        },
+        "browser": {
+          "checks": [
+            {
+              "name": "browser: real view mounts, labelled text/controls and nested content",
+              "ok": true
+            },
+            {
+              "name": "browser: native keyboard activation dispatches exactly one field command",
+              "ok": true
+            },
+            {
+              "name": "browser: typing and remote splice preserve text controller and caret",
+              "ok": true
+            },
+            {
+              "name": "browser: composition event sequence rebases over a concurrent insertion",
+              "ok": true
+            },
+            {
+              "name": "browser: rich formatting preserves emoji, unknown marks, fields and children",
+              "ok": true
+            },
+            {
+              "name": "browser: missing-plugin peer retains identical data and fallback",
+              "ok": true
+            },
+            {
+              "name": "browser: slash menu inserts atomically and focuses its new text",
+              "ok": true
+            },
+            {
+              "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+              "ok": true
+            },
+            {
+              "name": "browser: view disposal exactly once per mount",
+              "ok": true
+            },
+            {
+              "name": "storybook: required CSF stories exported",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "browser: no uncaught errors or network requests",
+              "ok": true
+            }
+          ],
+          "version": "156.0.8078.4",
+          "stories": 14,
+          "previewHash": "14dd9c4b2ec041e143ed8973de21cb4f0dcb38b704a689549f015664e5b22cdb"
+        }
+      },
+      "elapsedMs": 72693
+    },
+    {
+      "event": "model",
+      "stopReason": "stop",
+      "usage": {
+        "input": 1599,
+        "output": 245,
+        "cacheRead": 15552,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 17396,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 80741
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1836,
+        "output": 580,
+        "cacheRead": 17120,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 19536,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 94674
+    },
+    {
+      "event": "write",
+      "revision": 6,
+      "path": "src/dom.ts",
+      "sourceHash": "3158350dc7fbf2e7af18f9b5e25e1c315d097e18d5c49df59e2a387b3af4bc25",
+      "elapsedMs": 94676
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 679,
+        "output": 27,
+        "cacheRead": 18944,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 19650,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 96896
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "8f1eeb69e6bca4d3f556cf096e4329fb2596a3b79f14bbf9f17566a5f02d0e99",
+        "files": {
+          "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+          "src/dom.ts": "3158350dc7fbf2e7af18f9b5e25e1c315d097e18d5c49df59e2a387b3af4bc25",
+          "src/plugin.stories.ts": "c226b8dc964de80ed7fff2bb0129c2fe6fca6aade90c30642e210bb607ff2f06"
+        },
+        "errors": [],
+        "sandbox": "macos-seatbelt",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "passed"
+          },
+          {
+            "name": "runtime",
+            "status": "passed"
+          },
+          {
+            "name": "browser",
+            "status": "passed"
+          },
+          {
+            "name": "storybook",
+            "status": "failed"
+          }
+        ],
+        "conformance": {
+          "checks": [
+            {
+              "name": "manifest and contribution identity",
+              "ok": true
+            },
+            {
+              "name": "creation defaults and fresh data",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 1: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 2: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 3: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 4: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 5: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 6: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 1",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 2",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 3",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 4",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: missing target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: deleted target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: wrong-type target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+              "ok": true
+            }
+          ],
+          "preview": {
+            "id": "5778b1e8-37ad-488e-9f38-8409a1880274",
+            "type": "seed.callout/v1",
+            "fields": {
+              "tone": "info",
+              "futureField": {
+                "preserved": true
+              }
+            },
+            "text": {
+              "s": "A😀B!",
+              "marks": [
+                [],
+                [
+                  "future-mark"
+                ],
+                [
+                  "future-mark"
+                ],
+                [],
+                []
+              ]
+            },
+            "children": [
+              "fixture-child"
+            ],
+            "attribution": {
+              "created": {
+                "actor": "test-human"
+              },
+              "fields": {
+                "tone": {
+                  "actor": "test-human",
+                  "lamport": 21
+                }
+              },
+              "text": {
+                "actor": "test-human",
+                "lamport": 22
+              }
+            }
+          }
+        },
+        "runtime": {
+          "checks": [
+            {
+              "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+              "ok": true
+            },
+            {
+              "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: editor isolation and disposed dispatch",
+              "ok": true
+            },
+            {
+              "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+              "ok": true
+            }
+          ]
+        },
+        "browser": {
+          "checks": [
+            {
+              "name": "browser: real view mounts, labelled text/controls and nested content",
+              "ok": true
+            },
+            {
+              "name": "browser: native keyboard activation dispatches exactly one field command",
+              "ok": true
+            },
+            {
+              "name": "browser: typing and remote splice preserve text controller and caret",
+              "ok": true
+            },
+            {
+              "name": "browser: composition event sequence rebases over a concurrent insertion",
+              "ok": true
+            },
+            {
+              "name": "browser: rich formatting preserves emoji, unknown marks, fields and children",
+              "ok": true
+            },
+            {
+              "name": "browser: missing-plugin peer retains identical data and fallback",
+              "ok": true
+            },
+            {
+              "name": "browser: slash menu inserts atomically and focuses its new text",
+              "ok": true
+            },
+            {
+              "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+              "ok": true
+            },
+            {
+              "name": "browser: view disposal exactly once per mount",
+              "ok": true
+            },
+            {
+              "name": "storybook: required CSF stories exported",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / light: play and axe",
+              "ok": false,
+              "error": "Error: Error: expect(element).toBeDisabled()\n\nReceived element is not disabled:\n  <button\n  type=\"button\"\n/>"
+            },
+            {
+              "name": "storybook: KeyboardCycle / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / dark: play and axe",
+              "ok": false,
+              "error": "Error: Error: expect(element).toBeDisabled()\n\nReceived element is not disabled:\n  <button\n  type=\"button\"\n/>"
+            },
+            {
+              "name": "storybook: KeyboardCycle / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "browser: no uncaught errors or network requests",
+              "ok": true
+            }
+          ],
+          "version": "156.0.8078.4",
+          "stories": 12,
+          "previewHash": "3b701806cb86de29d8ebffa28659889eb5fd23fc403f796e657b941c0927b98f"
+        }
+      },
+      "elapsedMs": 99960
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1644,
+        "output": 1217,
+        "cacheRead": 19616,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 22477,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 115378
+    },
+    {
+      "event": "write",
+      "revision": 7,
+      "path": "src/plugin.stories.ts",
+      "sourceHash": "0afe15aba3440ccd23761415e239c86ad1bf0a9497d62dfa867e996fea377986",
+      "elapsedMs": 115380
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1315,
+        "output": 27,
+        "cacheRead": 21248,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 22590,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 119008
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": true,
+        "complete": true,
+        "sourceHash": "c63f0b3fde0fd115b9acf9e4027fba349bac73640f19106a224a68f228b4cd91",
+        "files": {
+          "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+          "src/dom.ts": "3158350dc7fbf2e7af18f9b5e25e1c315d097e18d5c49df59e2a387b3af4bc25",
+          "src/plugin.stories.ts": "0afe15aba3440ccd23761415e239c86ad1bf0a9497d62dfa867e996fea377986"
+        },
+        "errors": [],
+        "sandbox": "macos-seatbelt",
+        "gates": [
+          {
+            "name": "types",
+            "status": "passed"
+          },
+          {
+            "name": "headless",
+            "status": "passed"
+          },
+          {
+            "name": "runtime",
+            "status": "passed"
+          },
+          {
+            "name": "browser",
+            "status": "passed"
+          },
+          {
+            "name": "storybook",
+            "status": "passed"
+          }
+        ],
+        "conformance": {
+          "checks": [
+            {
+              "name": "manifest and contribution identity",
+              "ok": true
+            },
+            {
+              "name": "creation defaults and fresh data",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 1: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 2: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 3: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 4: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 5: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "diagnostics 6: pure and repeatable",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 1",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 2",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 3",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: invalid args 4",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: missing target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: deleted target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: wrong-type target declines",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+              "ok": true
+            },
+            {
+              "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+              "ok": true
+            }
+          ],
+          "preview": {
+            "id": "93f611fa-8ef7-4676-90cc-8269c3bbc175",
+            "type": "seed.callout/v1",
+            "fields": {
+              "tone": "info",
+              "futureField": {
+                "preserved": true
+              }
+            },
+            "text": {
+              "s": "A😀B!",
+              "marks": [
+                [],
+                [
+                  "future-mark"
+                ],
+                [
+                  "future-mark"
+                ],
+                [],
+                []
+              ]
+            },
+            "children": [
+              "fixture-child"
+            ],
+            "attribution": {
+              "created": {
+                "actor": "test-human"
+              },
+              "fields": {
+                "tone": {
+                  "actor": "test-human",
+                  "lamport": 21
+                }
+              },
+              "text": {
+                "actor": "test-human",
+                "lamport": 22
+              }
+            }
+          }
+        },
+        "runtime": {
+          "checks": [
+            {
+              "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+              "ok": true
+            },
+            {
+              "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+              "ok": true
+            },
+            {
+              "name": "runtime: editor isolation and disposed dispatch",
+              "ok": true
+            },
+            {
+              "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+              "ok": true
+            }
+          ]
+        },
+        "browser": {
+          "checks": [
+            {
+              "name": "browser: real view mounts, labelled text/controls and nested content",
+              "ok": true
+            },
+            {
+              "name": "browser: native keyboard activation dispatches exactly one field command",
+              "ok": true
+            },
+            {
+              "name": "browser: typing and remote splice preserve text controller and caret",
+              "ok": true
+            },
+            {
+              "name": "browser: composition event sequence rebases over a concurrent insertion",
+              "ok": true
+            },
+            {
+              "name": "browser: rich formatting preserves emoji, unknown marks, fields and children",
+              "ok": true
+            },
+            {
+              "name": "browser: missing-plugin peer retains identical data and fallback",
+              "ok": true
+            },
+            {
+              "name": "browser: slash menu inserts atomically and focuses its new text",
+              "ok": true
+            },
+            {
+              "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+              "ok": true
+            },
+            {
+              "name": "browser: view disposal exactly once per mount",
+              "ok": true
+            },
+            {
+              "name": "storybook: required CSF stories exported",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / light: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Default / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Warning / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: Success / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: InvalidTone / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: KeyboardCycle / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: NestedContent / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "storybook: RichFormatting / dark: play and axe",
+              "ok": true
+            },
+            {
+              "name": "browser: no uncaught errors or network requests",
+              "ok": true
+            }
+          ],
+          "version": "156.0.8078.4",
+          "stories": 14,
+          "previewHash": "b2e5e7185eef8fc42a59b1095c7df153812a9b1d164217cb9c08246c7e22c79f"
+        }
+      },
+      "elapsedMs": 122263
+    },
+    {
+      "event": "model",
+      "stopReason": "stop",
+      "usage": {
+        "input": 1603,
+        "output": 115,
+        "cacheRead": 22528,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 24246,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 127887
+    }
+  ],
+  "bounds": {
+    "rounds": 3,
+    "roundTimeoutMs": 240000,
+    "toolCalls": 32,
+    "sourceRevisions": 12,
+    "modelChecks": 6,
+    "runtimeTimeoutMs": 20000,
+    "browserTimeoutMs": 90000
+  },
+  "remainingGates": [
+    "human source review",
+    "native IME coverage beyond composition-event simulation",
+    "browser performance budgets",
+    "HTML/PDF export adapters"
+  ],
+  "validation": {
+    "ok": true,
+    "complete": true,
+    "sourceHash": "c63f0b3fde0fd115b9acf9e4027fba349bac73640f19106a224a68f228b4cd91",
+    "files": {
+      "src/index.ts": "dff8c5c11986db02bdfcca1a2e018345698ca6ca076a3e1cd6341eb784601302",
+      "src/dom.ts": "3158350dc7fbf2e7af18f9b5e25e1c315d097e18d5c49df59e2a387b3af4bc25",
+      "src/plugin.stories.ts": "0afe15aba3440ccd23761415e239c86ad1bf0a9497d62dfa867e996fea377986"
+    },
+    "errors": [],
+    "sandbox": "macos-seatbelt",
+    "gates": [
+      {
+        "name": "types",
+        "status": "passed"
+      },
+      {
+        "name": "headless",
+        "status": "passed"
+      },
+      {
+        "name": "runtime",
+        "status": "passed"
+      },
+      {
+        "name": "browser",
+        "status": "passed"
+      },
+      {
+        "name": "storybook",
+        "status": "passed"
+      }
+    ],
+    "conformance": {
+      "checks": [
+        {
+          "name": "manifest and contribution identity",
+          "ok": true
+        },
+        {
+          "name": "creation defaults and fresh data",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 1: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 2: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 3: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 4: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 5: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "diagnostics 6: pure and repeatable",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 1",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 2",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 3",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: invalid args 4",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: missing target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: deleted target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: wrong-type target declines",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 1, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 2, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 3, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 4, core/Yjs/replication/native roundtrip",
+          "ok": true
+        },
+        {
+          "name": "seed.callout.cycle-tone: scenario 5, core/Yjs/replication/native roundtrip",
+          "ok": true
+        }
+      ],
+      "preview": {
+        "id": "32b35593-60c9-4a20-99ce-6d9597da4747",
+        "type": "seed.callout/v1",
+        "fields": {
+          "tone": "info",
+          "futureField": {
+            "preserved": true
+          }
+        },
+        "text": {
+          "s": "A😀B!",
+          "marks": [
+            [],
+            [
+              "future-mark"
+            ],
+            [
+              "future-mark"
+            ],
+            [],
+            []
+          ]
+        },
+        "children": [
+          "fixture-child"
+        ],
+        "attribution": {
+          "created": {
+            "actor": "test-human"
+          },
+          "fields": {
+            "tone": {
+              "actor": "test-human",
+              "lamport": 21
+            }
+          },
+          "text": {
+            "actor": "test-human",
+            "lamport": 22
+          }
+        }
+      }
+    },
+    "runtime": {
+      "checks": [
+        {
+          "name": "runtime: insertion validates all arguments and rejects missing parents without mutation",
+          "ok": true
+        },
+        {
+          "name": "runtime: insertion preview, fresh IDs, atomic slash consumption and selection",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 1, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 2, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 3, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 4, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: seed.callout.cycle-tone case 5, provenance and missing-plugin peer",
+          "ok": true
+        },
+        {
+          "name": "runtime: editor isolation and disposed dispatch",
+          "ok": true
+        },
+        {
+          "name": "runtime: reader and missing-genesis denial without mutation; signed writer admission",
+          "ok": true
+        }
+      ]
+    },
+    "browser": {
+      "checks": [
+        {
+          "name": "browser: real view mounts, labelled text/controls and nested content",
+          "ok": true
+        },
+        {
+          "name": "browser: native keyboard activation dispatches exactly one field command",
+          "ok": true
+        },
+        {
+          "name": "browser: typing and remote splice preserve text controller and caret",
+          "ok": true
+        },
+        {
+          "name": "browser: composition event sequence rebases over a concurrent insertion",
+          "ok": true
+        },
+        {
+          "name": "browser: rich formatting preserves emoji, unknown marks, fields and children",
+          "ok": true
+        },
+        {
+          "name": "browser: missing-plugin peer retains identical data and fallback",
+          "ok": true
+        },
+        {
+          "name": "browser: slash menu inserts atomically and focuses its new text",
+          "ok": true
+        },
+        {
+          "name": "browser: nested slash insertion keeps the actual parent and sibling order",
+          "ok": true
+        },
+        {
+          "name": "browser: view disposal exactly once per mount",
+          "ok": true
+        },
+        {
+          "name": "storybook: required CSF stories exported",
+          "ok": true
+        },
+        {
+          "name": "storybook: Default / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Warning / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Success / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: InvalidTone / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: KeyboardCycle / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: NestedContent / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: RichFormatting / light: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Default / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Warning / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: Success / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: InvalidTone / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: KeyboardCycle / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: NestedContent / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "storybook: RichFormatting / dark: play and axe",
+          "ok": true
+        },
+        {
+          "name": "browser: no uncaught errors or network requests",
+          "ok": true
+        }
+      ],
+      "version": "156.0.8078.4",
+      "stories": 14,
+      "previewHash": "052bde0598c2a2baeb249726b4a2e74f808607f5e6217d1d92ff6e3d161cddf3",
+      "screenshot": "preview.png"
+    }
+  }
+}

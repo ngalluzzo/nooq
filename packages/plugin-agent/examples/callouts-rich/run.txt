@@ -1,0 +1,48 @@
+$ bun packages/plugin-agent/src/cli.ts run packages/plugin-agent/briefs/callout-rich.json --model "Qwen3.8-27B-Q8_0" --out "/tmp/nooq-callouts-rich-20261031-v2-retry"
+Model: Qwen3.8-27B-Q8_0
+Run: /tmp/nooq-callouts-rich-20261031-v2-retry
+  model: toolUse, 52 output tokens, 5s elapsed
+  tool: read_api
+  tool: read_api
+  model: toolUse, 53 output tokens, 10s elapsed
+  tool: read_api
+  tool: read_api
+  model: toolUse, 53 output tokens, 20s elapsed
+  tool: read_api
+  tool: read_file
+  model: toolUse, 56 output tokens, 22s elapsed
+  tool: read_file
+  tool: read_file
+  model: toolUse, 783 output tokens, 31s elapsed
+  tool: write_file
+  tool: write_file
+  model: toolUse, 1202 output tokens, 44s elapsed
+  tool: write_file
+  model: toolUse, 1143 output tokens, 55s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 59s elapsed
+  tool: check_plugin
+  check 1: failed
+  model: toolUse, 512 output tokens, 65s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 67s elapsed
+  tool: check_plugin
+  check 2: partial pass
+  model: toolUse, 27 output tokens, 69s elapsed
+  tool: check_plugin
+  check 3: complete
+  model: stop, 245 output tokens, 81s elapsed
+  model: toolUse, 580 output tokens, 95s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 97s elapsed
+  tool: check_plugin
+  check 4: failed
+  model: toolUse, 1217 output tokens, 115s elapsed
+  tool: write_file
+  model: toolUse, 27 output tokens, 119s elapsed
+  tool: check_plugin
+  check 5: complete
+  model: stop, 115 output tokens, 128s elapsed
+Result: passed
+Preview: /tmp/nooq-callouts-rich-20261031-v2-retry/preview.html
+Report: /tmp/nooq-callouts-rich-20261031-v2-retry/report.json

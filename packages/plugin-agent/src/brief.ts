@@ -9,6 +9,7 @@ export interface Brief {
   diagnostics: { fields: Record<string, JsonValue>; expectedFields: string[] }[];
   insertCommand?: { id: string; label: string };
   view?: {
+    textMode?: "plain" | "rich";
     textLabel: string;
     field: string;
     controls: { command: string; label: string }[];
@@ -57,6 +58,7 @@ export function parseBrief(input: unknown): Brief {
       || !Array.isArray(b.view.controls) || !b.view.controls.length || b.view.controls.some(c => !text(c.label) || !b.commands.some(command => command.id === c.command))
       || !Array.isArray(b.view.stories) || !b.view.stories.length || b.view.stories.some(s => !/^[A-Z][A-Za-z0-9]+$/.test(s))
       || new Set(b.view.stories).size !== b.view.stories.length) throw new Error("Invalid complete-plugin brief");
+    if (b.view.textMode !== undefined && !["plain", "rich"].includes(b.view.textMode)) throw new Error("Invalid text mode");
   }
   return structuredClone(b);
 }

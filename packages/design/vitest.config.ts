@@ -12,6 +12,12 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
  * Unit tests run under `bun test`, not here.
  */
 export default defineConfig({
+  // Editor-backed stories load these transitively; prebundle before either theme starts.
+  optimizeDeps: { include: [
+    "@nooq/plugin-agent > @nooq/editor > prosemirror-model",
+    "@nooq/plugin-agent > @nooq/editor > prosemirror-state",
+    "@nooq/plugin-agent > @nooq/editor > prosemirror-view",
+  ] },
   test: {
     projects: (["light", "dark"] as const).map((theme) => ({
       extends: true,

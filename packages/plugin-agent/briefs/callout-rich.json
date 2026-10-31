@@ -1,0 +1,148 @@
+{
+  "id": "seed.callouts",
+  "label": "Callout",
+  "description": "A text callout with an info, warning, or success tone. Preserve text, marks, unknown fields, and children. Diagnose invalid or missing tone without changing content. The cycle command applies only to live blocks of this exact type with a valid tone; invalid stored tone declines the action. Extra command arguments are harmless. Commands return ordinary setField operations and a nonempty intent. Use defineBlockSchema, field.enum, cycleFieldCommand and insertBlockCommand to avoid duplicating standard validation and operations. The view must use mountRichText. RichFormatting exercises bold formatting with keyboard interaction and verifies the visible formatted text.",
+  "blockType": "seed.callout/v1",
+  "defaults": {
+    "fields": {
+      "tone": "info"
+    },
+    "text": ""
+  },
+  "diagnostics": [
+    {
+      "fields": {
+        "tone": "info"
+      },
+      "expectedFields": []
+    },
+    {
+      "fields": {
+        "tone": "warning"
+      },
+      "expectedFields": []
+    },
+    {
+      "fields": {
+        "tone": "success",
+        "future": "keep"
+      },
+      "expectedFields": []
+    },
+    {
+      "fields": {},
+      "expectedFields": [
+        "tone"
+      ]
+    },
+    {
+      "fields": {
+        "tone": "unknown"
+      },
+      "expectedFields": [
+        "tone"
+      ]
+    },
+    {
+      "fields": {
+        "tone": 42
+      },
+      "expectedFields": [
+        "tone"
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "id": "seed.callout.cycle-tone",
+      "label": "Cycle callout tone",
+      "description": "Cycle tone from info to warning to success to info. Decline if missing, deleted, wrong block type, or invalid tone.",
+      "validArgs": {
+        "block": "$target"
+      },
+      "invalidArgs": [
+        null,
+        {},
+        {
+          "block": 12
+        },
+        "target"
+      ],
+      "cases": [
+        {
+          "fields": {
+            "tone": "info"
+          },
+          "args": {
+            "block": "$target"
+          },
+          "expectedFields": {
+            "tone": "warning"
+          }
+        },
+        {
+          "fields": {
+            "tone": "warning"
+          },
+          "args": {
+            "block": "$target"
+          },
+          "expectedFields": {
+            "tone": "success"
+          }
+        },
+        {
+          "fields": {
+            "tone": "success"
+          },
+          "args": {
+            "block": "$target"
+          },
+          "expectedFields": {
+            "tone": "info"
+          }
+        },
+        {
+          "fields": {
+            "tone": "invalid"
+          },
+          "args": {
+            "block": "$target"
+          },
+          "expectedFields": null
+        },
+        {
+          "fields": {},
+          "args": {
+            "block": "$target"
+          },
+          "expectedFields": null
+        }
+      ]
+    }
+  ],
+  "insertCommand": {
+    "id": "seed.callout.insert",
+    "label": "Insert callout"
+  },
+  "view": {
+    "textLabel": "Callout text",
+    "field": "tone",
+    "controls": [
+      {
+        "command": "seed.callout.cycle-tone",
+        "label": "Cycle callout tone"
+      }
+    ],
+    "stories": [
+      "Default",
+      "Warning",
+      "Success",
+      "InvalidTone",
+      "KeyboardCycle",
+      "NestedContent",
+      "RichFormatting"
+    ],
+    "textMode": "rich"
+  }
+}

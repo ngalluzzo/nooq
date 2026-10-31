@@ -1,9 +1,10 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
 import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
-import type { BlockView, BlockViewContext, DOMPlugin, SurfaceAction, SurfaceActionContext, TextBinding } from "@nooq/plugins/dom";
+import type { BlockView, BlockViewContext, DOMPlugin, RichTextOptions, SurfaceAction, SurfaceActionContext, TextBinding, TextSelection } from "@nooq/plugins/dom";
 import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
+import { mountRichText as createRichText } from "./rich-text.ts";
 
 export interface EditorSurface { element: HTMLElement; destroy(): void }
 export interface SurfaceOptions {
@@ -11,7 +12,7 @@ export interface SurfaceOptions {
   resolve?: Readonly<Record<string, string>>;
   keyOrder?: Readonly<Record<string, readonly string[]>>;
 }
-interface Binding extends TextBinding { update(block: Block): void; composing: boolean }
+interface Binding { element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; destroy(): void }
 interface Row {
   shell: HTMLElement; children: HTMLElement; presence: HTMLElement; view: BlockView;
   abort: AbortController; bindings: Binding[]; cleanups: (() => void)[]; signature: string; type: string;
@@ -66,8 +67,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     return snapshotCache.value;
   };
   const selection = (id: string): SelectionRequest => {
-    const area = rows.get(id)?.bindings[0]?.element;
-    return { block: id, anchor: area?.selectionStart ?? 0, head: area?.selectionEnd ?? 0 };
+    return { block: id, ...rows.get(id)?.bindings[0]?.selection() ?? { anchor: 0, head: 0 } };
   };
   const actionContext = (id: string): SurfaceActionContext => ({ block: id, snapshot: snapshot(), selection: selection(id) });
   const invoke = (action: SurfaceAction, id: string) => {
@@ -87,7 +87,40 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }); root.append(menu);
   };
 
-  function mountText(id: string, row: Row, label = "Text block"): Binding {
+  function sendText(id: string, row: Row, changes: TextChange[]): boolean {
+    if (destroyed || row.abort.signal.aborted) return false;
+    if (rendering) { fail(undefined, new Error("Views cannot edit text while rendering")); return false; }
+    if (!liveTree(editor.view).alive.has(id)) return false;
+    try {
+      if (editor.registry.command("nooq.text.edit")) {
+        const result = editor.commands.run("nooq.text.edit", { block: id, changes });
+        if (result.status === "failed") throw result.error;
+        if (result.status === "denied") throw new Error(result.reason);
+        return result.status === "applied";
+      }
+      editor.applyTextChanges(id, changes); return true;
+    } catch (cause) { fail(undefined, cause); return false; }
+  }
+  function keyDown(id: string, event: KeyboardEvent): boolean {
+    if (event.key === "Escape") { closeMenu(); return true; }
+    const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
+    for (const action of keys.get(key) ?? []) try {
+      if (action.when && !action.when(actionContext(id))) continue;
+      const outcome = invoke(action, id);
+      if (outcome.status !== "not-applicable") return true;
+    } catch (cause) { fail(undefined, cause); return true; }
+    return false;
+  }
+  function mountRichText(id: string, row: Row, options?: RichTextOptions) {
+    if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
+    const rich = createRichText({ read: () => editor.view.blocks[id]?.text ?? { s: "", marks: [] },
+      commit: changes => sendText(id, row, changes), keyDown: event => keyDown(id, event),
+      input: text => { if (text === "/") openMenu(id); else closeMenu(); },
+    }, options);
+    row.bindings.push({ ...rich, update: block => rich.update(block.text ?? { s: "", marks: [] }) });
+    return rich;
+  }
+  function mountText(id: string, row: Row, label = "Text block"): Binding & TextBinding {
     if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
     const area = document.createElement("textarea"); area.className = "nq-input"; area.setAttribute("aria-label", label);
     let value = (renderState ?? editor.view).blocks[id]?.text?.s ?? "", compositionBase = value;
@@ -95,19 +128,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const controller = new AbortController();
     const send = (changes: TextChange[]) => {
       if (!changes.length) return;
-      if (rendering) { fail(undefined, new Error("Views cannot edit text while rendering")); return; }
-      try {
-        if (editor.registry.command("nooq.text.edit")) {
-          const result = editor.commands.run("nooq.text.edit", { block: id, changes });
-          if (result.status === "failed") throw result.error;
-          if (result.status === "denied") throw new Error(result.reason);
-          if (result.status === "not-applicable") area.value = editor.view.blocks[id]?.text?.s ?? "";
-        } else editor.applyTextChanges(id, changes);
-        value = editor.view.blocks[id]?.text?.s ?? "";
-      }
-      catch (cause) { fail(undefined, cause); area.value = value = editor.view.blocks[id]?.text?.s ?? ""; }
+      const accepted = sendText(id, row, changes);
+      value = editor.view.blocks[id]?.text?.s ?? "";
+      if (!accepted) area.value = value;
     };
-    const binding: Binding = { element: area, composing: false,
+    const binding: Binding & TextBinding & { composing: boolean } = { element: area, composing: false,
+      selection: () => ({ anchor: area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart, head: area.selectionDirection === "backward" ? area.selectionStart : area.selectionEnd }),
+      focus(selection) { if (controller.signal.aborted) return; area.focus(); if (selection) area.setSelectionRange(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head), selection.anchor > selection.head ? "backward" : "forward"); },
       update(block) {
         const next = block.text?.s ?? "";
         if (binding.composing) { value = next; return; }
@@ -140,14 +167,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     });
     on("keydown", event => {
       if (binding.composing || event.isComposing) return;
-      if (event.key === "Escape") { closeMenu(); return; }
-      const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
-      for (const action of keys.get(key) ?? []) try {
-        if (action.when && !action.when(actionContext(id))) continue;
-        const result = invoke(action, id);
-        if (result.status === "not-applicable") continue;
-        event.preventDefault(); break;
-      } catch (cause) { fail(undefined, cause); event.preventDefault(); break; }
+      if (keyDown(id, event)) event.preventDefault();
     });
     row.bindings.push(binding); return binding;
   }
@@ -176,6 +196,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const canAct = () => { if (signal.aborted || destroyed) throw new Error("View is disposed"); if (rendering) throw new Error("Views cannot dispatch while rendering"); };
     const context: BlockViewContext = {
       block: id, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
+      mountRichText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountRichText(id, row, options); },
       run: (command, args) => { try { canAct(); return editor.commands.run(command, args, { selection: selection(id) }); } catch (error) { return { status: "failed", error }; } }, selection: () => selection(id), snapshot,
       onChange: listener => { if (signal.aborted) return () => {}; const off = editor.onChange(() => { if (!signal.aborted) try { listener(); } catch (cause) { fail(provider?.plugin, cause); } }); row.cleanups.push(off); return off; },
       review: () => editor.reviewSuggestion(id), accept: async options => { canAct(); await editor.accept(id, { ...options, signal }); }, reject: () => { canAct(); editor.reject(id); }, report: cause => fail(provider?.plugin, cause),
@@ -197,7 +218,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     try {
     const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
     renderState = state;
-    const active = document.activeElement instanceof HTMLTextAreaElement ? document.activeElement : undefined;
+    const active = [...rows.values()].flatMap(row => row.bindings).find(binding => binding.element.contains(document.activeElement));
+    const activeSelection = active?.selection();
     status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }));
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
@@ -225,11 +247,11 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
     walk(historic.filter(id => !alive.has(id)), history);
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
-    if (active && root.contains(active) && document.activeElement !== active) { const start = active.selectionStart, end = active.selectionEnd; active.focus(); active.setSelectionRange(start, end); }
+    if (active && root.contains(active.element) && !active.element.contains(document.activeElement)) active.focus(activeSelection);
     if (pendingSelection) {
       const request = pendingSelection; pendingSelection = undefined;
-      const area = rows.get(request.block)?.bindings[0]?.element;
-      if (area && alive.has(request.block)) { area.focus(); area.setSelectionRange(request.anchor, request.head); }
+      const binding = rows.get(request.block)?.bindings[0];
+      if (binding && alive.has(request.block)) binding.focus(request);
     }
     } finally { rendering = false; renderState = undefined; }
   }

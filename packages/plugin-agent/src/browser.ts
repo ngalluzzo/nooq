@@ -9,6 +9,24 @@ import type { Check } from "./conformance.ts";
 
 export interface BrowserChecks { checks: Check[]; version: string; screenshot?: string; previewHash?: string; stories: number }
 export const escapeHtml = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+/** Browser fixture setup, independent of platform-specific Home/arrow behavior. */
+function selectText(el: HTMLElement | SVGElement, offsets: { anchor: number; head: number }): void {
+  if (!(el instanceof HTMLElement)) throw new Error("Expected an editable HTML element");
+  el.focus();
+  if (el instanceof HTMLTextAreaElement) { el.setSelectionRange(offsets.anchor, offsets.head); return; }
+  const at = (offset: number): [Node, number] => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const length = node.textContent!.length;
+      if (offset <= length) return [node, offset];
+      offset -= length;
+    }
+    throw new Error("Selection fixture is outside text");
+  };
+  const [anchor, anchorOffset] = at(offsets.anchor), [head, headOffset] = at(offsets.head);
+  document.getSelection()!.setBaseAndExtent(anchor, anchorOffset, head, headOffset);
+}
 const css = `:root{color-scheme:light;font:16px/1.55 system-ui;color:#24352f;background:#f5f5ef}*{box-sizing:border-box}body{margin:0;padding:24px}h1,h2,p{margin:0 0 12px}h1{font-size:28px}h2{font-size:18px}button{font:inherit;padding:7px 12px;border:1px solid #74867b;border-radius:6px;color:inherit;background:transparent;cursor:pointer}button:focus-visible,textarea:focus-visible{outline:3px solid #167b55;outline-offset:3px}textarea{display:block;width:100%;min-height:88px;padding:10px;font:inherit;color:inherit;background:transparent;border:1px solid #84948a;border-radius:6px;resize:vertical}main{display:grid;grid-template-columns:1fr 1fr;gap:20px}.panel{min-width:0;padding:20px;background:#fff;border:1px solid #c7d0c8;border-radius:12px}aside{margin-bottom:12px}.nq-children{margin:12px 0 0 20px}.nq-fallback{margin:12px 0;padding:12px;border:1px dashed #8c9f92}.nq-status{font-size:13px}pre{white-space:pre-wrap;overflow-wrap:anywhere}header{margin-bottom:20px}nav{display:flex;gap:12px;margin:12px 0}small{display:block;color:#526759}[data-nq-theme=dark]{color-scheme:dark;color:#e3ebe5;background:#17241e}[data-nq-theme=dark] .panel{background:#223329;border-color:#5a7061}[data-nq-theme=dark] small{color:#bfd1c3}@media(max-width:720px){main{grid-template-columns:1fr}}`;
 function frameHtml(script: string, body: string): string {
   const safeScript = script.replace(/<\/script/gi, "<\\/script"), digest = createHash("sha256").update(safeScript).digest("base64");
@@ -46,6 +64,7 @@ export async function runBrowserChecks(sources: Sources, brief: Brief, artifactD
     const row = frame.locator(`#author [data-nq-block="${target}"]`), text = row.getByRole("textbox", { name: brief.view!.textLabel, exact: true });
     await check("browser: real view mounts, labelled text/controls and nested content", async () => {
       assert(await text.count() === 1, "Expected one labelled text controller");
+      if (brief.view!.textMode === "rich") assert(await text.getAttribute("contenteditable") === "true", "Rich-text brief requires the host contenteditable binding");
       assert(await row.getByRole("button", { name: brief.view!.controls[0]!.label, exact: true }).count() === 1, "Missing accessible command button");
       assert(await row.getByRole("textbox", { name: "Text block", exact: true }).inputValue() === "Nested child", "Child container missing");
       assert(await row.locator(".nq-fallback").count() === 1, "Candidate view failed to mount or children missing");
@@ -59,18 +78,47 @@ export async function runBrowserChecks(sources: Sources, brief: Brief, artifactD
       assert(await frame.evaluate(() => (window as any).__nooqFixture.a.view.log.length) === before + 1, "Button dispatched more than once");
     });
     await check("browser: typing and remote splice preserve text controller and caret", async () => {
-      await text.fill("abc"); await text.focus(); await text.evaluate((el: HTMLTextAreaElement) => { (window as any).__savedText = el; el.setSelectionRange(1, 1); });
+      await text.fill("abc"); await text.focus();
+      await frame.waitForFunction(target => (window as any).__nooqFixture.a.view.blocks[target].text.s === "abc", target);
+      await text.evaluate(selectText, { anchor: 1, head: 1 });
+      await text.evaluate(el => { (window as any).__savedText = el; });
       await frame.evaluate(() => (window as any).__nooqFixture.remote());
-      await text.waitFor();
-      const result = await text.evaluate((el: HTMLTextAreaElement) => ({ same: el === (window as any).__savedText, text: el.value, caret: el.selectionStart, focused: el === document.activeElement }));
+      await frame.waitForFunction(() => { const el=(window as any).__savedText; return (el instanceof HTMLTextAreaElement ? el.value : el.textContent) === "++abc"; });
+      const result = await text.evaluate(el => {
+        const range = document.createRange(), selection = document.getSelection();
+        let caret = 0;
+        if (el instanceof HTMLTextAreaElement) caret = el.selectionStart;
+        else if (selection?.anchorNode && el.contains(selection.anchorNode)) { range.selectNodeContents(el); range.setEnd(selection.anchorNode, selection.anchorOffset); caret = range.toString().length; }
+        return { same: el === (window as any).__savedText, text: el instanceof HTMLTextAreaElement ? el.value : el.textContent, caret, focused: el === document.activeElement };
+      });
       assert(result.same && result.text === "++abc" && result.caret === 3 && result.focused, JSON.stringify(result));
     });
     await check("browser: composition event sequence rebases over a concurrent insertion", async () => {
       await text.fill("abc");
-      await text.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.dispatchEvent(new CompositionEvent("compositionstart")); el.value = "abあc"; });
+      await frame.waitForFunction(target => (window as any).__nooqFixture.a.view.blocks[target].text.s === "abc", target);
+      await text.evaluate(el => { el.focus(); el.dispatchEvent(new CompositionEvent("compositionstart")); });
       await frame.evaluate(() => (window as any).__nooqFixture.remote());
-      await text.evaluate(el => el.dispatchEvent(new CompositionEvent("compositionend")));
+      await text.evaluate(el => {
+        if (el instanceof HTMLTextAreaElement) el.value = "abあc"; else el.textContent = "abあc";
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "あ", isComposing: true }));
+        el.dispatchEvent(new CompositionEvent("compositionend"));
+      });
       await frame.waitForFunction(target => (window as any).__nooqFixture.a.view.blocks[target].text.s === "++abあc", target);
+    });
+    if (brief.view!.textMode === "rich") await check("browser: rich formatting preserves emoji, unknown marks, fields and children", async () => {
+      await text.fill("A😀B");
+      await frame.waitForFunction(target => (window as any).__nooqFixture.a.view.blocks[target].text.s === "A😀B", target);
+      await frame.evaluate(target => (window as any).__nooqFixture.a.applyTextChanges(target, [{ retain: 1 }, { retain: 2, setMarks: ["future-mark"] }]), target);
+      await text.locator("[data-nq-marks]").waitFor();
+      await text.evaluate(selectText, { anchor: 1, head: 3 });
+      const selected = await frame.evaluate(() => document.getSelection()?.toString());
+      assert(selected === "😀", `Expected selected emoji, received ${JSON.stringify(selected)}`);
+      await text.press("Control+b");
+      await text.locator("strong").waitFor();
+      const result = await frame.evaluate(target => (window as any).__nooqFixture.a.view.blocks[target], target);
+      assert(result.text.s === "A😀B" && JSON.stringify(result.text.marks.slice(1,3)) === JSON.stringify([["future-mark","strong"],["future-mark","strong"]]), JSON.stringify(result.text));
+      assert(result.fields.futureField?.preserved && result.children.length === 1, "Formatting damaged other stored content");
+      assert(await text.locator("strong").textContent() === "😀", "Formatting did not render the selected emoji");
     });
     await check("browser: missing-plugin peer retains identical data and fallback", async () => {
       await frame.waitForFunction(() => JSON.stringify((window as any).__nooqFixture.a.view) === JSON.stringify((window as any).__nooqFixture.b.view));

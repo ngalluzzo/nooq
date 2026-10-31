@@ -34,6 +34,24 @@ stored, synchronized, and visible through a generic fallback, including children
 
 ## Define features
 
+For common text blocks, the additive authoring recipes remove repeated validation
+and command code:
+
+```ts
+import { defineBlockSchema, field, cycleFieldCommand, insertBlockCommand } from "@nooq/plugins";
+const note = defineBlockSchema({ type: "example.note/v1", label: "Note", text: "inline",
+  fields: { tone: field.enum(["info", "warning", "success"], "info") },
+});
+const insert = insertBlockCommand(note, { id: "example.note.insert", label: "Insert note" });
+const cycle = cycleFieldCommand(note, "tone", { id: "example.note.cycle", label: "Cycle tone" });
+```
+
+Register these definitions in an ordinary `definePlugin`. `setFieldCommand`
+provides an explicitly chosen, schema-validated field value. String, finite
+number, and boolean descriptors are also available. Schemas validate supported
+local authoring and report diagnostics; unknown stored data is retained. Defaults
+apply only to newly created blocks. `apiVersion` remains 1.
+
 `defineBlock` supplies an exact stored type, label, text mode, creation defaults,
 and pure diagnostics. `create()` returns fields and optional rendered text;
 the command context supplies fresh IDs and the active actor's attribution.
@@ -112,6 +130,21 @@ view aborts an acceptance that is still validating. Custom-view accessibility
 remains the author's responsibility; the host text binding is labelled and
 the Callouts example includes a keyboard-accessible tone button.
 
+`ctx.mountRichText({ label, marks? })` supplies a ProseMirror-backed contenteditable
+binding for any plugin block. It exposes `element`, `selection()`,
+`focus({ anchor, head })`, `toggleMark(name)`, and idempotent `destroy()`; no engine
+objects escape. Offsets are UTF-16. Strong, emphasis, and code marks are supported;
+unknown marks survive as opaque stored data. Mod-B/Mod-I/Mod-backtick toggle marks.
+Host key actions run first; otherwise Enter inserts a newline. Paste currently
+inserts plain text. The host owns remote selection mapping, composition handling,
+rollback after denied edits, and cleanup. One text binding is allowed per view.
+
+Both text bindings retain the same text-command override behavior. The exported
+`insertAfterSelection` argument factory handles common slash-menu placement.
+Rich bindings are currently scoped to individual blocks; document-wide selection,
+collaborative undo, rich clipboard codecs, and arbitrary mark definitions remain
+separate work. See [proposal 0004](../../proposals/0004-plugin-authoring-v2.md).
+
 ## Jobs and proposals
 
 Use `defineJob<Args, Result>({ id, label, validateArgs, publishes, run })`.
@@ -168,7 +201,7 @@ legacy API is passed to plugin contexts.
 
 Native snapshots retain unknown data. Format-specific export adapters,
 migrations, undo, attribute-bearing inline marks, dynamic plugin installation,
-virtualized/rich-text surfaces, and distributed suggestion settlement remain
+virtualization, document-wide rich-text plugin composition, and distributed suggestion settlement remain
 separate work. This implementation does not claim production performance at
 all document sizes; the repository's browser lab records those budgets.
 
@@ -182,5 +215,6 @@ in `packages/plugins/test/jobs.test.ts`; the plugin-agent checks remain separate
 
 Browser benchmarks are opt-in (`bun run lab`). `NQ_LAB_GATE=report` records
 measurements without enforcing the latency budgets; a passing report-mode
-run is not a performance-budget pass. The current surface still exceeds the
-keystroke frame budget, so performance work remains before the seed releases.
+run is not a performance-budget pass. Rich bindings still need the native IME and
+browser performance release gates; passing unit or Storybook tests does not
+establish those budgets.

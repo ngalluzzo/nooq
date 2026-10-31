@@ -1,0 +1,136 @@
+# Proposal 0004: plugin authoring v2
+
+Status: first implementation slice; additive to plugin API version 1.
+Date: 2026-10-31.
+
+## Decision
+
+Make common plugins concise to author, compose, and verify. Preserve the
+headless command boundary, host authorization, captured job evidence, and
+unknown-content preservation established in proposal 0002. Continue to ship
+developer-bundled plugins. Runtime installation and isolation are separate work.
+
+Package versions, SDK/API versions, and stored block versions are independent.
+This slice needs no breaking `apiVersion: 2` or stored-content migration. Existing
+`defineBlock`, `defineCommand`, and textarea views remain supported.
+
+## Comparisons informing the design
+
+| System | Useful pattern | nooq decision |
+| --- | --- | --- |
+| [Tiptap](https://tiptap.dev/docs/editor/extensions/custom-extensions/create-new/extension) | Configured extensions, commands, input/paste rules, shortcuts | Route editing contributions through the existing authorized command path. |
+| [BlockNote](https://www.blocknotejs.org/docs/features/custom-schemas/custom-blocks) | Property schemas, content modes, custom block views and portable HTML | Derive common authoring behavior from typed fields; give arbitrary blocks host-owned text. |
+| [Lexical](https://lexical.dev/docs/extensions/intro) | Framework-independent dependency composition and shared outputs | Add typed configuration and service contracts when the next seed consumers establish their requirements. |
+| [Obsidian](https://docs.obsidian.md/plugins/guides/lifecycle-management) | Resources scoped to plugin lifetime | Text views, event listeners, and composition work belong to the host's disposal scope. |
+| [Gutenberg](https://developer.wordpress.org/block-editor/reference-guides/block-api/block-deprecation/) | Historical compatibility fixtures | Preserve old content and test explicit compatibility; concurrent migrations need a protocol proposal. |
+| [VS Code](https://code.visualstudio.com/api/references/contribution-points) | Declarative actions, placements, visibility and enablement | Build consistent action discovery across surfaces after the first recipe proves the authoring boundary. |
+
+## Slice 1: declarative Callouts and rich text
+
+`defineBlockSchema` accepts a stored type, label, text mode, fields, optional
+initial text, and optional additional diagnostics. `field.enum`, `field.string`,
+`field.number`, and `field.boolean` describe supported values and creation
+defaults. `FieldValues` and field commands infer values from these definitions.
+
+The helper returns an ordinary `BlockDefinition`. Defaults produce fresh data
+only at creation. Diagnostics report missing or unfamiliar values; they do not
+rewrite them. These authoring schemas do not impose new remote admission rules.
+Other trusted custom commands still have the ordinary operation API.
+
+`insertBlockCommand`, `cycleFieldCommand`, and `setFieldCommand` return ordinary
+commands. They validate arguments, check target liveness and exact type, and
+produce operation batches for the host to authorize and commit. Insertion
+allocates a fresh identity, checks placement, and optionally consumes exactly a
+current slash in the same transaction. Cycling invalid stored enum data declines;
+an explicit valid set action can repair that field without touching other data.
+
+`insertAfterSelection` centralizes the slash-menu placement argument factory.
+This is the first reusable action helper, not a complete toolbar/palette system.
+
+### Rich-text surface
+
+`BlockViewContext.mountRichText({ label, marks })` returns a labelled host-owned
+contenteditable element and engine-independent selection, focus, mark-toggle,
+and disposal operations. Supported marks are `strong`, `em`, and `code`.
+The default Enter behavior is a literal newline; registered host key actions
+take precedence. Paste currently inserts plain text. Children retain their
+separate host-owned slot.
+
+The binding uses ProseMirror and shares the mark-aware splice diff with the
+experimental full-document surface. Offsets and mark arrays are UTF-16, matching
+the core operation contract. Unfamiliar stored marks remain opaque in the
+projection and survive supported formatting operations.
+
+All text mutations use the selected `nooq.text.edit` command when present,
+otherwise the existing authorized host text service. Failed, declined, deleted,
+or disposed targets cannot leave optimistic durable edits. The binding restores
+the admitted projection after denial. Remote updates map selection through
+splices; native selection is captured before an asynchronous observer can lag
+behind an incoming patch or a formatting action. Composition defers presentation
+updates and maps local splices onto the latest admitted text.
+
+This is a block-scoped binding. It does not yet unify all custom block views into
+one document-wide ProseMirror view, promise cross-block native selection in the
+plugin surface, add collaborative undo, or implement general import/export.
+Native IME and performance gates remain distinct from simulated browser checks.
+
+`calloutsDOM` uses rich text. `calloutsPlainDOM` retains the textarea presentation
+for existing applications and compatibility tests. The stored type remains
+`nooq.callout/v1`; the feature manifest advances to 1.1.0.
+
+### Agent and evidence
+
+The new `callout-rich.json` brief requires contenteditable and a RichFormatting
+story. A `recipes` tool section documents the public helpers. Scaffold and
+Storybook guidance distinguish rich text assertions from textarea values.
+
+Protected checks assert the requested text mode, native keyboard formatting of
+an emoji, opaque-mark preservation, peer convergence, selection stability,
+composition-event rebasing, slash insertion, disposal, and Storybook play/axe in
+both themes. Legacy textarea checks remain. A textarea candidate cannot satisfy
+a rich-text brief, even if its own stories pass.
+
+The SDK fingerprint includes the rich-text implementation and the shared PM
+diff. Revision IDs are captured before asynchronous writes and disk writes are
+serialized so the saved evidence cannot overwrite an earlier revision under the
+same index. The final package is independently checked after generation.
+
+## Subsequent slices and acceptance criteria
+
+1. **Writing basics and Callouts:** finish public surface composition, selectable
+   text policies, shared actions, and document-wide selection. Prove compatibility
+   and actual browser experience budgets before expanding the catalog.
+2. **Review and AI writing:** typed provider/configuration contracts, scoped
+   incremental subscriptions, unavailable states, and reusable job UI. Preserve
+   identity bindings and original-base evidence. Broader evidence and concurrent
+   settlement require separate protocol work.
+3. **Export:** a snapshot-owned shared content representation, per-block mappings,
+   encoders, assets, cancellation, and block-addressed loss reporting. Start with
+   HTML/PDF and historical fixtures while the catalog is small.
+4. **Columns and lists:** child slots, structural editing, deterministic tolerant
+   projections after concurrent moves, and matching export mappings.
+5. **Code, media, tables:** decorations, asset lifetime/transfer, then grid identity
+   and concurrency. Each capability needs a concrete seed consumer and conformance
+   tests before it becomes a generalized public service.
+
+Extract shared testing/preview helpers into a public testing package when the
+second plugin archetype needs them. Keep author-generated stories independent
+from host-owned acceptance checks. Track source size, repair rounds, elapsed
+time, and check results across distinct archetypes; one successful Callouts run
+does not establish a general plugin-generation success rate.
+
+## Verification
+
+The integrated proof is [generated rich Callouts](../packages/plugin-agent/examples/callouts-rich/README.md).
+Its source is unchanged from the successful oMLX run. The original report and a
+separate current-contract host verification record preserve both fingerprints.
+Repository checks passed 490 tests (seven opt-in performance tests skipped),
+typechecking, 130 Storybook tests, and a static Storybook build. Three consecutive
+browser runs of the generated package passed after making selection setup
+independent of platform-specific Home-key behavior.
+
+Run repository typechecking and tests, normal host Storybook, and the independent
+rich Callouts validator. Focused tests cover recipe semantics, preservation,
+authorization/decline behavior, lifecycle, UTF-16 offsets, selection races,
+legacy compatibility, and real Chromium interactions. Record the generated
+package's exact source hash, SDK fingerprint, model usage, and remaining gates.

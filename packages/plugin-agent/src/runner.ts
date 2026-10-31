@@ -55,16 +55,21 @@ export async function run(options: RunOptions): Promise<{ dir: string; status: s
   await writeFile(join(dir,"revisions/000-scaffold.json"),JSON.stringify(sources,null,2)+"\n");
   const started=Date.now(), events:object[]=[], gaps:{capability:string;reason:string}[]=[];
   let revisions=0,toolCalls=0,checks=0,completedRounds=0,failure:string|undefined,latest:CompleteValidation|undefined;
+  let fileWrites = Promise.resolve();
   const budget=()=>{if(++toolCalls>32)throw new Error("Tool budget exhausted");};
   const reply=(value:unknown)=>({content:[{type:"text" as const,text:JSON.stringify(value)}],details:{}});
   const customTools=[
-    defineTool({name:"read_api",label:"Read API section",description:"Read one pinned contract section: overview, headless, dom, or stories. Stories include Storybook authoring guidance.",parameters:Type.Object({section:Type.Union([Type.Literal("overview"),Type.Literal("headless"),Type.Literal("dom"),Type.Literal("stories")])}),execute:async(_,args)=>{budget();return reply({section:args.section,content:api[args.section]});}}),
+    defineTool({name:"read_api",label:"Read API section",description:"Read one pinned contract section: overview, headless, recipes, dom, or stories. Stories include Storybook authoring guidance.",parameters:Type.Object({section:Type.Union([Type.Literal("overview"),Type.Literal("headless"),Type.Literal("recipes"),Type.Literal("dom"),Type.Literal("stories")])}),execute:async(_,args)=>{budget();return reply({section:args.section,content:api[args.section]});}}),
     defineTool({name:"read_file",label:"Read candidate",description:"Read one editable candidate file.",parameters:Type.Object({path:Type.Union(candidatePaths.map(p=>Type.Literal(p)))}),execute:async(_,args)=>{budget();return reply({path:args.path,source:sources[args.path as CandidatePath]});}}),
     defineTool({name:"write_file",label:"Write candidate file",description:"Replace one allowlisted file with complete TypeScript. Harness, tests, brief and manifest are not editable.",parameters:Type.Object({path:Type.Union(candidatePaths.map(p=>Type.Literal(p))),source:Type.String({maxLength:60_000})}),execute:async(_,args)=>{
       budget(); if(++revisions>12 || args.source.length>60_000 || !candidatePaths.includes(args.path as CandidatePath))throw new Error("Invalid file or source budget exhausted");
-      const path=args.path as CandidatePath; sources[path]=args.source;latest=undefined;
-      await writeFile(join(dir,path),args.source);await writeFile(join(dir,`revisions/${String(revisions).padStart(3,"0")}.json`),JSON.stringify({path,source:args.source},null,2)+"\n");
-      events.push({event:"write",revision:revisions,path,sourceHash:hash(args.source),elapsedMs:Date.now()-started});return reply({written:path,packageHash:packageHash(sources)});
+      const revision=revisions, path=args.path as CandidatePath; sources[path]=args.source;latest=undefined;
+      fileWrites = fileWrites.then(async () => {
+        await writeFile(join(dir,path),args.source);
+        await writeFile(join(dir,`revisions/${String(revision).padStart(3,"0")}.json`),JSON.stringify({path,source:args.source},null,2)+"\n");
+      });
+      await fileWrites;
+      events.push({event:"write",revision,path,sourceHash:hash(args.source),elapsedMs:Date.now()-started});return reply({written:path,packageHash:packageHash(sources)});
     }}),
     defineTool({name:"check_plugin",label:"Check candidate",description:"Run protected checks. types is quick; runtime includes headless and secured Editor checks; all additionally runs real Chromium, Storybook play functions and axe in both themes. Only all can complete a run.",parameters:Type.Object({stage:Type.Optional(Type.Union([Type.Literal("types"),Type.Literal("runtime"),Type.Literal("all")]))}),execute:async(_,args)=>{
       budget();if(++checks>6)throw new Error("Validation budget exhausted");
@@ -90,12 +95,13 @@ export async function run(options: RunOptions): Promise<{ dir: string; status: s
   try {
     for(let round=0;round<rounds;round++){
       let timedOut=false;const timer=setTimeout(()=>{timedOut=true;console.log(`  round ${round+1}: time limit reached; aborting`);void session.abort();},roundTimeoutMs);
-      try {await session.prompt(round===0?`${api.overview}\nImplement this brief in the three scaffold files. $target is a placeholder, never a literal ID. Read the Storybook guidance before writing stories.\n${JSON.stringify(brief,null,2)}`:`Independent validation has not completed. Repair failures or report an API gap.\n${JSON.stringify(latest)}`);}finally{clearTimeout(timer);}
+      try {await session.prompt(round===0?`${api.overview}\nImplement this brief in the three scaffold files. $target is a placeholder, never a literal ID. Read recipes for declarative fields/standard commands, dom for rich text, and stories before writing stories.\n${JSON.stringify(brief,null,2)}`:`Independent validation has not completed. Repair failures or report an API gap.\n${JSON.stringify(latest)}`);}finally{clearTimeout(timer);}
       completedRounds++;if(timedOut){failure="Model round timed out";break;}if(failure||gaps.length||toolCalls>=32)break;
       latest=await validatePackage(sources,brief);if(latest.complete)break;
     }
   } catch(error){failure=String(error);}finally{process.off("SIGINT",cancel);process.off("SIGTERM",cancel);session.dispose();}
   // Independently run final current bytes, including the actual preview artifact.
+  await fileWrites;
   latest=await validatePackage(sources,brief,{artifactDir:dir});
   if(await contractFingerprint()!==fingerprint)failure=[failure,"SDK or oracle changed during the run; rerun against a stable tree"].filter(Boolean).join("; ");
   const status=gaps.length?"api-gap":failure?"failed":latest.complete?"passed":"needs-repair";

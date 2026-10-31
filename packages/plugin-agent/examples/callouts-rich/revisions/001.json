@@ -1,0 +1,4 @@
+{
+  "path": "src/index.ts",
+  "source": "import { definePlugin, field, defineBlockSchema, cycleFieldCommand, insertBlockCommand } from \"@nooq/plugins\";\n\nconst block = defineBlockSchema({\n  type: \"seed.callout/v1\",\n  label: \"Callout\",\n  text: \"inline\",\n  fields: {\n    tone: field.enum([\"info\", \"warning\", \"success\"], \"info\"),\n  },\n});\n\nconst cycleTone = cycleFieldCommand(block, \"tone\", {\n  id: \"seed.callout.cycle-tone\",\n  label: \"Cycle callout tone\",\n});\n\nconst insert = insertBlockCommand(block, {\n  id: \"seed.callout.insert\",\n  label: \"Insert callout\",\n});\n\nexport default definePlugin({\n  id: \"seed.callouts\",\n  version: \"0.1.0\",\n  apiVersion: 1,\n  contributes: { blocks: [block], commands: [cycleTone, insert] },\n});\n"
+}

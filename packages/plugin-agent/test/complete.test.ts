@@ -8,6 +8,7 @@ import { isolated } from "./isolated.ts";
 import type { CompleteValidation } from "../src/check.ts";
 import type { BrowserChecks } from "../src/browser.ts";
 const brief=parseBrief(await Bun.file(new URL("../briefs/callout-complete.json",import.meta.url)).json());
+const richBrief=parseBrief(await Bun.file(new URL("../briefs/callout-rich.json",import.meta.url)).json());
 const macTest=process.platform==="darwin"&&sandboxAvailable?test:test.skip;
 
 test("complete recipe validates view/story links and confines edits/imports",()=>{
@@ -35,3 +36,17 @@ macTest("broken generated stories fail even when independent plugin checks pass"
   expect(result.checks.filter(c=>c.name.startsWith("browser:")).every(c=>c.ok)).toBe(true);
   expect(result.checks.some(c=>c.name.startsWith("storybook: Default")&&!c.ok)).toBe(true);
 },90_000);
+
+macTest("rich recipe validates contenteditable, formatting, composition and portable stories", async () => {
+  const sources = await completeFixture(true);
+  const result = await isolated<CompleteValidation>('import {validatePackage} from "../src/check.ts"; const {sources,brief}=await Bun.stdin.json(); console.log(JSON.stringify(await validatePackage(sources,brief)));', { sources, brief: richBrief });
+  expect(result.errors).toEqual([]);
+  expect(result.browser?.checks.filter(c => !c.ok)).toEqual([]);
+  expect(result.complete).toBe(true); expect(result.browser!.stories).toBe(14);
+}, 90_000);
+
+macTest("rich requirement cannot be satisfied by a passing legacy textarea plugin", async () => {
+  const sources = await completeFixture(false);
+  const result = await isolated<BrowserChecks>('import {runBrowserChecks} from "../src/browser.ts"; const {sources,brief}=await Bun.stdin.json(); console.log(JSON.stringify(await runBrowserChecks(sources,brief)));', { sources, brief: { ...brief, view: { ...brief.view!, textMode: "rich" } } });
+  expect(result.checks.find(c => c.name.startsWith("browser: real view"))!.ok).toBe(false);
+}, 90_000);

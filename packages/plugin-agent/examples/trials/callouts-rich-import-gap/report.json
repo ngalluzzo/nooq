@@ -1,0 +1,403 @@
+{
+  "status": "api-gap",
+  "model": "Qwen3.8-27B-Q8_0",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "piVersion": "0.85.1",
+  "bunVersion": "1.4.4",
+  "contractHash": "c2e71ffd459dede3ee343be8df5a001355f03e2210697b163ac41dc6991c280f",
+  "apiHash": "69447ea61bd4a430d5841258615084efdeb1ed75db7ed67adcce0a5d12ab9f62",
+  "briefHash": "d74b87bb998b8c79279424883b23ae8fd00d22ff023e353cc2375b20c0b76a31",
+  "elapsedMs": 62578,
+  "revisions": 4,
+  "toolCalls": 17,
+  "completedRounds": 1,
+  "gaps": [
+    {
+      "capability": "Block type from @nooq/plugins/dom",
+      "reason": "The dom module declares Block and Immutable locally but does not export them; need a way to type the update(block) parameter."
+    }
+  ],
+  "failure": "The operation was aborted.",
+  "events": [
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 2175,
+        "output": 131,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 2306,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 5199
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 7700,
+        "output": 92,
+        "cacheRead": 2144,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 9936,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 20269
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 830,
+        "output": 73,
+        "cacheRead": 9824,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 10727,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 23091
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 513,
+        "output": 280,
+        "cacheRead": 10624,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 11417,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 27030
+    },
+    {
+      "event": "write",
+      "revision": 1,
+      "path": "src/index.ts",
+      "sourceHash": "04cb243e947845c0325e1e183888619dba419260759b2682026755d29022d00d",
+      "elapsedMs": 27035
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 402,
+        "output": 629,
+        "cacheRead": 11104,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 12135,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 34514
+    },
+    {
+      "event": "write",
+      "revision": 2,
+      "path": "src/dom.ts",
+      "sourceHash": "010761ed23805b9fa726dd7c81d54ee5f643339c394d667bded7db1d546a2390",
+      "elapsedMs": 34516
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 734,
+        "output": 1049,
+        "cacheRead": 11488,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 13271,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 45384
+    },
+    {
+      "event": "write",
+      "revision": 3,
+      "path": "src/plugin.stories.ts",
+      "sourceHash": "4324dd82ebb846f3399dc023e9f2b3ce52d632674fd2ebdfe2f6f72a57c91184",
+      "elapsedMs": 45387
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 1163,
+        "output": 27,
+        "cacheRead": 12192,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 13382,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 48480
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "fb81ba506f71a9419d21ccfa09ce2672771fed08524feccf2268bf916302d026",
+        "files": {
+          "src/index.ts": "04cb243e947845c0325e1e183888619dba419260759b2682026755d29022d00d",
+          "src/dom.ts": "010761ed23805b9fa726dd7c81d54ee5f643339c394d667bded7db1d546a2390",
+          "src/plugin.stories.ts": "4324dd82ebb846f3399dc023e9f2b3ce52d632674fd2ebdfe2f6f72a57c91184"
+        },
+        "errors": [
+          "src/dom.ts:48: Parameter 'block' implicitly has an 'any' type."
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 49371
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 391,
+        "output": 634,
+        "cacheRead": 13344,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 14369,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 56683
+    },
+    {
+      "event": "write",
+      "revision": 4,
+      "path": "src/dom.ts",
+      "sourceHash": "dc2db8ab7850052d3df6cc35289e048a469bde29edcf9203fbb8bf7f6a5b11e0",
+      "elapsedMs": 56685
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 726,
+        "output": 27,
+        "cacheRead": 13728,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 14481,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 58799
+    },
+    {
+      "event": "check",
+      "validation": {
+        "ok": false,
+        "complete": false,
+        "sourceHash": "c72ed328bb3428836135eefbde25511f061b0c921ede3a9f8d43aa5637b91d8d",
+        "files": {
+          "src/index.ts": "04cb243e947845c0325e1e183888619dba419260759b2682026755d29022d00d",
+          "src/dom.ts": "dc2db8ab7850052d3df6cc35289e048a469bde29edcf9203fbb8bf7f6a5b11e0",
+          "src/plugin.stories.ts": "4324dd82ebb846f3399dc023e9f2b3ce52d632674fd2ebdfe2f6f72a57c91184"
+        },
+        "errors": [
+          "src/dom.ts:2: Module '\"@nooq/plugins/dom\"' declares 'Block' locally, but it is not exported.",
+          "src/dom.ts:2: Module '\"@nooq/plugins/dom\"' declares 'Immutable' locally, but it is not exported."
+        ],
+        "sandbox": "not-run",
+        "gates": [
+          {
+            "name": "types",
+            "status": "failed"
+          },
+          {
+            "name": "headless",
+            "status": "not-run"
+          },
+          {
+            "name": "runtime",
+            "status": "not-run"
+          },
+          {
+            "name": "browser",
+            "status": "not-run"
+          },
+          {
+            "name": "storybook",
+            "status": "not-run"
+          }
+        ]
+      },
+      "elapsedMs": 59475
+    },
+    {
+      "event": "model",
+      "stopReason": "toolUse",
+      "usage": {
+        "input": 439,
+        "output": 93,
+        "cacheRead": 14432,
+        "cacheWrite": 0,
+        "reasoning": 0,
+        "totalTokens": 14964,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 61956
+    },
+    {
+      "event": "model",
+      "stopReason": "error",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "elapsedMs": 61959
+    }
+  ],
+  "bounds": {
+    "rounds": 3,
+    "roundTimeoutMs": 240000,
+    "toolCalls": 32,
+    "sourceRevisions": 12,
+    "modelChecks": 6,
+    "runtimeTimeoutMs": 20000,
+    "browserTimeoutMs": 90000
+  },
+  "remainingGates": [
+    "human source review",
+    "native IME coverage beyond composition-event simulation",
+    "browser performance budgets",
+    "HTML/PDF export adapters"
+  ],
+  "validation": {
+    "ok": false,
+    "complete": false,
+    "sourceHash": "c72ed328bb3428836135eefbde25511f061b0c921ede3a9f8d43aa5637b91d8d",
+    "files": {
+      "src/index.ts": "04cb243e947845c0325e1e183888619dba419260759b2682026755d29022d00d",
+      "src/dom.ts": "dc2db8ab7850052d3df6cc35289e048a469bde29edcf9203fbb8bf7f6a5b11e0",
+      "src/plugin.stories.ts": "4324dd82ebb846f3399dc023e9f2b3ce52d632674fd2ebdfe2f6f72a57c91184"
+    },
+    "errors": [
+      "src/dom.ts:2: Module '\"@nooq/plugins/dom\"' declares 'Block' locally, but it is not exported.",
+      "src/dom.ts:2: Module '\"@nooq/plugins/dom\"' declares 'Immutable' locally, but it is not exported."
+    ],
+    "sandbox": "not-run",
+    "gates": [
+      {
+        "name": "types",
+        "status": "failed"
+      },
+      {
+        "name": "headless",
+        "status": "not-run"
+      },
+      {
+        "name": "runtime",
+        "status": "not-run"
+      },
+      {
+        "name": "browser",
+        "status": "not-run"
+      },
+      {
+        "name": "storybook",
+        "status": "not-run"
+      }
+    ]
+  }
+}

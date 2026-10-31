@@ -4,11 +4,23 @@ import type { Command, CommandResult, Immutable, Plugin, SelectionRequest } from
 export interface SurfaceActionContext { block: string; snapshot: Immutable<DocState>; selection: SelectionRequest }
 export interface SurfaceAction { id: string; label: string; command?: string; job?: string; args(context: SurfaceActionContext): unknown; glyph?: string; hint?: string }
 export interface TextBinding { element: HTMLTextAreaElement; destroy(): void }
+export type TextMark = "strong" | "em" | "code";
+export interface TextSelection { anchor: number; head: number }
+/** Host-owned rich text. Positions use UTF-16; no editor-engine objects escape. */
+export interface RichTextBinding {
+  element: HTMLElement;
+  selection(): TextSelection;
+  focus(selection?: TextSelection): void;
+  toggleMark(mark: TextMark): boolean;
+  destroy(): void;
+}
+export interface RichTextOptions { label?: string; marks?: readonly TextMark[] }
 export interface BlockViewContext {
   block: string;
   signal: AbortSignal;
   children: { element: HTMLElement };
   mountText(options?: { label?: string }): TextBinding;
+  mountRichText(options?: RichTextOptions): RichTextBinding;
   run<Args>(command: Command<Args> | string, args: Args): CommandResult;
   selection(): SelectionRequest | undefined;
   snapshot(): Immutable<DocState>;
@@ -17,6 +29,13 @@ export interface BlockViewContext {
   accept(options: { force?: boolean; reviewed: { revision: number; proposal: string } }): Promise<void>;
   reject(): void;
   report(cause: unknown): void;
+}
+
+/** Reusable slash insertion placement; actual liveness is rechecked by the command. */
+export function insertAfterSelection(context: SurfaceActionContext): { parent: string | null; index: number; clearBlock: string } {
+  const parent = Object.values(context.snapshot.blocks).find(block => block.children.includes(context.block))?.id ?? null;
+  const siblings = parent === null ? context.snapshot.roots : context.snapshot.blocks[parent]!.children;
+  return { parent, index: siblings.indexOf(context.block) + 1, clearBlock: context.block };
 }
 export interface BlockView {
   element: HTMLElement;
