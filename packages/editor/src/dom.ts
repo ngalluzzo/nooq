@@ -1,241 +1,406 @@
-/** Plugin-driven surface: views own their content; the host owns text and children. */
-import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
-import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
-import type { BlockView, BlockViewContext, DOMPlugin, SurfaceAction, SurfaceActionContext, TextBinding } from "@nooq/plugins/dom";
-import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
-import type { Editor } from "./controller.ts";
+/**
+ * DOM surface — the visible half of the reference editor.
+ *
+ * Built entirely from @nooq/design components and Editor's public API.
+ * Every keystroke is a transaction (§1). Rendering is INCREMENTAL: each
+ * block owns a row element that is reused unless the block's rendered
+ * inputs changed — an untouched textarea is never recreated, so the
+ * caret and selection survive by construction (EB-6, EB-7). A remote
+ * text edit updates the focused textarea's value in place and moves
+ * the selection with DM-4.3 splice math: the caret stays on the same
+ * characters (EB-7.1); a delete covering it collapses it to the splice
+ * point, never beyond.
+ */
 
-export interface EditorSurface { element: HTMLElement; destroy(): void }
-export interface SurfaceOptions {
-  plugins?: readonly DOMPlugin[];
-  resolve?: Readonly<Record<string, string>>;
-  keyOrder?: Readonly<Record<string, readonly string[]>>;
+import {
+  applyTextChanges,
+  caretAfterChanges,
+  liveTree,
+  replaceChanges,
+  type BlockId,
+  type DocState,
+  type Op,
+  type Proposal,
+} from "@nooq/core";
+import {
+  blockRow,
+  peerInk,
+  presenceCaret,
+  slashMenu,
+  suggestionCard,
+  syncStatus,
+  type DiffSegment,
+  type PeerInk,
+  type SlashMenuItem,
+  type SuggestionState,
+} from "@nooq/design";
+import { actorKindOf, aliveInOrder, parentOf, type Editor } from "./controller.ts";
+
+const TEXT_KINDS: Record<string, "paragraph" | "heading" | "quote"> = {
+  "nooq.paragraph/v1": "paragraph",
+  "nooq.heading/v1": "heading",
+  "nooq.quote/v1": "quote",
+};
+
+interface RowRecord {
+  row: HTMLElement;
+  /** Signature of the row's structure (type, writer, presence): text-only changes take the in-place path. */
+  structure: string;
+  signature: string;
+  value: string; // last text value rendered into the textarea
 }
-interface Binding extends TextBinding { update(block: Block): void; composing: boolean }
-interface Row {
-  shell: HTMLElement; children: HTMLElement; presence: HTMLElement; view: BlockView;
-  abort: AbortController; bindings: Binding[]; cleanups: (() => void)[]; signature: string; type: string;
+
+export interface EditorSurface {
+  element: HTMLElement;
+  destroy(): void;
 }
 
-export function createSurface(editor: Editor, options: SurfaceOptions = {}): EditorSurface {
-  const plugins = options.plugins ?? [], views = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }>();
-  const providers = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }[]>();
-  const seen = new Set<string>(), menus: SurfaceAction[] = [];
-  const keys = new Map<string, NonNullable<DOMPlugin["keys"]>[number][]>();
-  for (const plugin of plugins) {
-    if (seen.has(plugin.id)) throw new Error(`Duplicate DOM plugin ${plugin.id}`);
-    seen.add(plugin.id);
-    if (!editor.registry.plugins.some(p => p.id === plugin.forPlugin.id && p.version === plugin.forPlugin.version)) throw new Error(`DOM plugin ${plugin.id} requires ${plugin.forPlugin.id}@${plugin.forPlugin.version}`);
-    for (const view of plugin.views) {
-      if (!editor.registry.block(view.type)) throw new Error(`View ${plugin.id} references unknown block ${view.type}`);
-      providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount }]);
-    }
-    for (const action of [...plugin.menus ?? [], ...plugin.keys ?? []]) {
-      if ((!!action.command === !!action.job) || (action.command && !editor.registry.command(action.command)) || (action.job && !editor.registry.job(action.job))) throw new Error(`Invalid surface action ${plugin.id}:${action.id}`);
-    }
-    menus.push(...plugin.menus ?? []);
-    for (const binding of plugin.keys ?? []) keys.set(binding.key, [...keys.get(binding.key) ?? [], binding]);
-  }
-  if (new Set(menus.map(m => m.id)).size !== menus.length) throw new Error("Duplicate menu action ID");
-  for (const [slot, owner] of Object.entries(options.resolve ?? {})) if (!slot.startsWith("view:") || !providers.get(slot.slice(5))?.some(v => v.plugin === owner)) throw new Error(`Invalid view resolution ${slot} -> ${owner}`);
-  for (const [type, entries] of providers) {
-    const owner = options.resolve?.[`view:${type}`];
-    if (entries.length > 1 && !owner) throw new Error(`Conflicting view:${type}`);
-    views.set(type, owner ? entries.find(e => e.plugin === owner)! : entries[0]!);
-  }
-  for (const [key, entries] of keys) {
-    if (new Set(entries.map(e => e.id)).size !== entries.length) throw new Error(`Duplicate key binding ID for ${key}`);
-    const order = options.keyOrder?.[key];
-    if (entries.length > 1 && !order) throw new Error(`Key ${key} requires an explicit keyOrder`);
-    if (order) {
-      if (new Set(order).size !== entries.length || order.length !== entries.length || order.some(id => !entries.some(e => e.id === id))) throw new Error(`Invalid keyOrder for ${key}`);
-      keys.set(key, order.map(id => entries.find(e => e.id === id)!));
-    }
-  }
-  for (const key of Object.keys(options.keyOrder ?? {})) if (!keys.has(key)) throw new Error(`Unknown keyOrder ${key}`);
+export function createSurface(editor: Editor): EditorSurface {
+  const root = document.createElement("div");
+  root.className = "nq-editor";
+  const status = document.createElement("div");
+  const body = document.createElement("div");
+  const settledArea = document.createElement("div");
+  root.append(status, body, settledArea);
 
-  const root = document.createElement("div"), status = document.createElement("div"), body = document.createElement("div"), history = document.createElement("div");
-  root.className = "nq-editor"; root.append(status, body, history);
-  const rows = new Map<string, Row>();
-  let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
-  let renderState: DocState | undefined;
-  let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
-  const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
-  const snapshot = () => {
-    if (snapshotCache?.revision !== editor.revision) snapshotCache = { revision: editor.revision, value: freezeSnapshot(renderState ?? editor.view) };
-    return snapshotCache.value;
-  };
-  const selection = (id: string): SelectionRequest => {
-    const area = rows.get(id)?.bindings[0]?.element;
-    return { block: id, anchor: area?.selectionStart ?? 0, head: area?.selectionEnd ?? 0 };
-  };
-  const actionContext = (id: string): SurfaceActionContext => ({ block: id, snapshot: snapshot(), selection: selection(id) });
-  const invoke = (action: SurfaceAction, id: string) => {
-    try {
-      const ctx = actionContext(id), args = action.args(ctx);
-      if (action.command) return editor.commands.run(action.command, args, { selection: ctx.selection });
-      const job = editor.jobs.start(action.job!, args);
-      void job.result.catch(cause => { if (!job.signal.aborted) fail(undefined, cause); });
-      return { status: "started" };
-    } catch (error) { fail(undefined, error); return { status: "failed" }; }
-  };
-  const closeMenu = () => { menu?.remove(); menu = undefined; };
-  const openMenu = (id: string) => {
-    closeMenu(); if (!menus.length) return;
-    menu = slashMenu({ items: menus.map(m => ({ label: m.label, type: m.id, glyph: m.glyph ?? "+", hint: m.hint ?? "", ai: !!m.job })),
-      onSelect: item => { closeMenu(); invoke(menus.find(m => m.id === item.type)!, id); }, onClose: closeMenu,
-    }); root.append(menu);
-  };
+  let focused: BlockId | null = null;
+  let focusRequest: { block: BlockId; offset?: number } | null = null;
+  let renderSeq = 0;
+  let destroyed = false;
+  let menu: { block: BlockId; element: HTMLElement } | null = null;
+  /** Derived suggestion states (DM-6.5): recomputed every render, never stored. */
+  let suggestionStatus = new Map<BlockId, SuggestionState>();
+  /** Peer inks are derived (async sha256), so resolve them per render pass. */
+  let peerInks = new Map<string, PeerInk>();
+  /** Live rows by block id — reused across renders (incremental rendering). */
+  const rows = new Map<BlockId, RowRecord>();
+  let lastOrder: BlockId[] = [];
 
-  function mountText(id: string, row: Row, label = "Text block"): Binding {
-    if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
-    const area = document.createElement("textarea"); area.className = "nq-input"; area.setAttribute("aria-label", label);
-    let value = (renderState ?? editor.view).blocks[id]?.text?.s ?? "", compositionBase = value;
-    area.value = value;
-    const controller = new AbortController();
-    const send = (changes: TextChange[]) => {
-      if (!changes.length) return;
-      if (rendering) { fail(undefined, new Error("Views cannot edit text while rendering")); return; }
-      try {
-        if (editor.registry.command("nooq.text.edit")) {
-          const result = editor.commands.run("nooq.text.edit", { block: id, changes });
-          if (result.status === "failed") throw result.error;
-          if (result.status === "denied") throw new Error(result.reason);
-          if (result.status === "not-applicable") area.value = editor.view.blocks[id]?.text?.s ?? "";
-        } else editor.applyTextChanges(id, changes);
-        value = editor.view.blocks[id]?.text?.s ?? "";
-      }
-      catch (cause) { fail(undefined, cause); area.value = value = editor.view.blocks[id]?.text?.s ?? ""; }
-    };
-    const binding: Binding = { element: area, composing: false,
-      update(block) {
-        const next = block.text?.s ?? "";
-        if (binding.composing) { value = next; return; }
-        if (area.value !== next) {
-          const delta = replaceChanges(value, next), start = caretAfterChanges(delta, area.selectionStart ?? 0), end = caretAfterChanges(delta, area.selectionEnd ?? 0);
-          area.value = next; if (document.activeElement === area) area.setSelectionRange(start, end);
-        } value = next;
-      }, destroy() { controller.abort(); },
-    };
-    const on = <K extends keyof HTMLElementEventMap>(type: K, callback: (event: HTMLElementEventMap[K]) => void) => area.addEventListener(type, callback, { signal: controller.signal });
-    on("compositionstart", () => { binding.composing = true; compositionBase = area.value; });
-    on("compositionend", () => {
-      if (!binding.composing) return;
-      binding.composing = false;
-      const local = replaceChanges(compositionBase, area.value), remote = replaceChanges(compositionBase, editor.view.blocks[id]?.text?.s ?? "");
-      let offset = 0, removed = 0, inserted = "", editing = false;
-      for (const step of local) {
-        if ("retain" in step && !editing) offset += step.retain;
-        if ("delete" in step) { editing = true; removed += step.delete; }
-        if ("insert" in step) { editing = true; inserted += step.insert; }
-      }
-      const from = caretAfterChanges(remote, offset), to = caretAfterChanges(remote, offset + removed);
-      send([{ retain: from }, { delete: Math.max(0, to - from) }, { insert: inserted }]);
-      area.value = value; area.setSelectionRange(from + inserted.length, from + inserted.length);
+  const unsubscribe = editor.onChange(scheduleRender);
+  scheduleRender();
+
+  function scheduleRender(): void {
+    const seq = ++renderSeq;
+    queueMicrotask(async () => {
+      if (destroyed || seq !== renderSeq) return;
+      const view = editor.view;
+      suggestionStatus = new Map(
+        await Promise.all(
+          Object.values(view.blocks)
+            .filter((block) => block.type === "nooq.suggestion/v1")
+            .map(async (block) => [block.id, (await editor.evaluate(block.id)).status] as const),
+        ),
+      );
+      if (destroyed || seq !== renderSeq) return;
+      peerInks = new Map(
+        await Promise.all([...editor.awareness.keys()].map(async (actor) => [actor, await peerInk(actor)] as const)),
+      );
+      if (destroyed || seq !== renderSeq) return;
+      render(view);
     });
-    on("input", () => {
-      if (binding.composing) return;
-      send(replaceChanges(editor.view.blocks[id]?.text?.s ?? "", area.value));
-      if (area.value === "/") openMenu(id); else closeMenu();
-    });
-    on("keydown", event => {
-      if (binding.composing || event.isComposing) return;
-      if (event.key === "Escape") { closeMenu(); return; }
-      const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
-      for (const action of keys.get(key) ?? []) try {
-        if (action.when && !action.when(actionContext(id))) continue;
-        const result = invoke(action, id);
-        if (result.status === "not-applicable") continue;
-        event.preventDefault(); break;
-      } catch (cause) { fail(undefined, cause); event.preventDefault(); break; }
-    });
-    row.bindings.push(binding); return binding;
   }
 
-  function fallback(id: string, row: Row): BlockView {
-    const element = document.createElement("section"), label = document.createElement("strong"), fields = document.createElement("pre");
-    const details = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "Stored fields"; details.append(summary, fields);
-    element.className = "nq-block nq-fallback"; element.append(label);
-    const block = (renderState ?? editor.view).blocks[id]!;
-    if (block.text || editor.registry.block(block.type)?.definition.text === "inline") element.append(mountText(id, row).element);
-    element.append(details, row.children);
-    return { element, update(block) { label.textContent = block.type; fields.textContent = JSON.stringify(block.fields, null, 2); } };
-  }
-  function cleanup(row: Row) {
-    row.abort.abort();
-    for (const binding of row.bindings.splice(0)) binding.destroy();
-    for (const dispose of row.cleanups.splice(0).reverse()) try { dispose(); } catch (cause) { fail(undefined, cause); }
-    try { row.view?.destroy?.(); } catch (cause) { fail(undefined, cause); }
-  }
-  function makeRow(id: string, block: Block): Row {
-    const shell = document.createElement("div"), children = document.createElement("div"), presence = document.createElement("div");
-    shell.dataset.nqBlock = id; children.className = "nq-children";
-    const row: Row = { shell, children, presence, view: undefined!, abort: new AbortController(), bindings: [], cleanups: [], signature: "", type: block.type };
-    const provider = views.get(block.type);
-    const signal = row.abort.signal;
-    const canAct = () => { if (signal.aborted || destroyed) throw new Error("View is disposed"); if (rendering) throw new Error("Views cannot dispatch while rendering"); };
-    const context: BlockViewContext = {
-      block: id, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
-      run: (command, args) => { try { canAct(); return editor.commands.run(command, args, { selection: selection(id) }); } catch (error) { return { status: "failed", error }; } }, selection: () => selection(id), snapshot,
-      onChange: listener => { if (signal.aborted) return () => {}; const off = editor.onChange(() => { if (!signal.aborted) try { listener(); } catch (cause) { fail(provider?.plugin, cause); } }); row.cleanups.push(off); return off; },
-      review: () => editor.reviewSuggestion(id), accept: async options => { canAct(); await editor.accept(id, { ...options, signal }); }, reject: () => { canAct(); editor.reject(id); }, report: cause => fail(provider?.plugin, cause),
-    };
-    try {
-      row.view = provider ? provider.mount(context) : fallback(id, row);
-      row.view.update(freezeSnapshot(block));
-      if (!row.view.element.contains(children)) throw new Error(`View ${provider?.plugin} must retain its children container`);
-    } catch (cause) {
-      fail(provider?.plugin, cause); cleanup(row); row.abort = new AbortController(); row.view = fallback(id, row); row.view.update(freezeSnapshot(block));
-    }
-    row.signature = JSON.stringify(block);
-    shell.append(presence, row.view.element); return row;
-  }
-  function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
-  function render() {
-    scheduled = false; if (destroyed) return;
-    rendering = true;
-    try {
-    const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
-    renderState = state;
-    const active = document.activeElement instanceof HTMLTextAreaElement ? document.activeElement : undefined;
-    status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }));
-    const walk = (ids: readonly string[], parent: HTMLElement) => {
-      let at = 0;
+  function render(view: DocState): void {
+    status.replaceChildren(
+      syncStatus({
+        state: editor.hasTransport ? (editor.synced ? "synced" : "syncing") : "local",
+        count: editor.awareness.size,
+      }),
+    );
+
+    // Desired order of renderable blocks: text rows and suggestion cards,
+    // depth-first (§7: every block equal, built-in or not).
+    const order: BlockId[] = [];
+    const walk = (ids: readonly BlockId[]): void => {
       for (const id of ids) {
-        const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
-        wanted.add(id);
-        let row = rows.get(id);
-        if (row && row.type !== block.type) { cleanup(row); row.shell.remove(); rows.delete(id); row = undefined; }
-        if (!row) { row = makeRow(id, block); rows.set(id, row); }
-        for (const binding of row.bindings) binding.update(block);
-        const signature = JSON.stringify(block);
-        if (signature !== row.signature) {
-          try { row.view.update(freezeSnapshot(block)); if (!row.view.element.contains(row.children)) throw new Error("View removed its children container"); }
-          catch (cause) { fail(views.get(block.type)?.plugin, cause); cleanup(row); row.abort = new AbortController(); row.view.element.remove(); row.view = fallback(id, row); row.view.update(freezeSnapshot(block)); row.shell.append(row.view.element); }
-          row.signature = signature;
-        }
-        const peers = [...editor.awareness.values()].filter(p => p.cursor?.block === id);
-        row.presence.replaceChildren(...peers.map(p => presenceCaret({ name: p.name ?? p.actor, ink: "slate" })));
-        if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
-        at++; walk(block.children, row.children);
+        const block = view.blocks[id];
+        if (!block) continue;
+        if (block.type === "nooq.suggestion/v1" || TEXT_KINDS[block.type]) order.push(id);
+        walk(block.children);
       }
     };
-    walk(state.roots, body);
-    const historic: string[] = [];
-    for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
-    walk(historic.filter(id => !alive.has(id)), history);
-    for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
-    if (active && root.contains(active) && document.activeElement !== active) { const start = active.selectionStart, end = active.selectionEnd; active.focus(); active.setSelectionRange(start, end); }
-    if (pendingSelection) {
-      const request = pendingSelection; pendingSelection = undefined;
-      const area = rows.get(request.block)?.bindings[0]?.element;
-      if (area && alive.has(request.block)) { area.focus(); area.setSelectionRange(request.anchor, request.head); }
+    walk(view.roots);
+
+    const seen = new Set<BlockId>();
+    for (const id of order) {
+      seen.add(id);
+      renderOne(view, id);
     }
-    } finally { rendering = false; renderState = undefined; }
+    for (const id of [...rows.keys()]) {
+      if (!seen.has(id)) {
+        rows.get(id)!.row.remove();
+        rows.delete(id);
+      }
+    }
+
+    // Reorder only when the order actually changed. Rows are reused, but
+    // moving a focused node can blur it — restore focus and selection after.
+    const orderChanged = order.length !== lastOrder.length || order.some((id, i) => lastOrder[i] !== id);
+    if (orderChanged) {
+      const active = document.activeElement as HTMLElement | null;
+      const selection =
+        active instanceof HTMLTextAreaElement
+          ? ([active.selectionStart, active.selectionEnd] as const)
+          : null;
+      for (const id of order) body.append(rows.get(id)!.row);
+      if (active && root.contains(active)) {
+        active.focus();
+        if (active instanceof HTMLTextAreaElement && selection) {
+          active.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
+        }
+      }
+      lastOrder = order;
+    }
+
+    // Settled suggestions (tombstoned with a verdict) render in the history area.
+    settledArea.replaceChildren();
+    const alive = liveTree(view).alive;
+    for (const block of Object.values(view.blocks)) {
+      if (block.type === "nooq.suggestion/v1" && !alive.has(block.id)) {
+        settledArea.append(renderSuggestionCard(view, block.id, block.fields.status as string | undefined));
+      }
+    }
+    applyFocus(view);
   }
-  const offChange = editor.onChange(schedule), offSelection = editor.onSelection(request => { pendingSelection = request; schedule(); });
-  let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
-  offClose = editor.onClose(destroy); schedule();
-  return { element: root, destroy };
+
+  function renderOne(view: DocState, id: BlockId): void {
+    const block = view.blocks[id];
+    if (!block) return;
+    if (block.type === "nooq.suggestion/v1") {
+      const record = rows.get(id);
+      const signature = JSON.stringify([suggestionStatus.get(id) ?? "fresh", editor.settledBy(id)]);
+      if (record && record.signature === signature) return;
+      const card = renderSuggestionCard(view, id, undefined);
+      if (record) record.row.replaceWith(card);
+      rows.set(id, { row: card, structure: signature, signature, value: "" });
+      return;
+    }
+    const kind = TEXT_KINDS[block.type]!;
+    const text = block.text?.s ?? "";
+    const marks = block.text?.marks ?? [];
+    const writer = block.attribution.text?.actor ?? block.attribution.created.actor;
+    const remote = [...editor.awareness.values()].filter((entry) => entry.cursor?.block === id);
+    const structure = JSON.stringify([block.type, writer, remote.map((e) => [e.actor, e.cursor?.offset])]);
+    const signature = JSON.stringify([structure, text, marks]);
+
+    const record = rows.get(id);
+    if (record && record.signature === signature) return; // untouched: caret survives by construction
+
+    if (record && record.structure === structure) {
+      const area = record.row.querySelector("textarea");
+      if (area) {
+        if (area.value !== text) {
+          const splice = replaceChanges(record.value, text);
+          if (document.activeElement === area) {
+            // Caret preservation is splice math, not a guess (EB-7.1).
+            const start = caretAfterChanges(splice, area.selectionStart ?? area.value.length);
+            const end = caretAfterChanges(splice, area.selectionEnd ?? area.value.length);
+            area.value = text;
+            area.setSelectionRange(start, end);
+          } else {
+            area.value = text;
+          }
+        }
+        record.value = text;
+        record.signature = signature;
+        return;
+      }
+    }
+
+    const row = renderTextRow(view, id, kind);
+    if (record) record.row.replaceWith(row);
+    rows.set(id, { row, structure, signature, value: text });
+  }
+
+  function renderTextRow(view: DocState, id: BlockId, kind: "paragraph" | "heading" | "quote"): HTMLElement {
+    const block = view.blocks[id]!;
+    const writer = block.attribution.text?.actor ?? block.attribution.created.actor;
+    const content: (Node | string)[] = [];
+    const remote = [...editor.awareness.values()].filter((entry) => entry.cursor?.block === id);
+    if (remote.length > 0) {
+      const first = remote[0]!;
+      content.push(presenceCaret({ name: first.name ?? first.actor, ink: peerInks.get(first.actor) ?? "slate" }));
+    }
+    content.push(textareaFor(id, block.text?.s ?? ""));
+    const row = blockRow({ content, kind, actor: actorKindOf(writer), writer, deleted: false });
+    row.dataset.nqBlock = id;
+    row.addEventListener("focusin", () => (focused = id));
+    return row;
+  }
+
+  function textareaFor(id: BlockId, value: string): HTMLTextAreaElement {
+    const area = document.createElement("textarea");
+    area.className = "nq-input";
+    area.value = value;
+    area.setAttribute("aria-label", "Text block");
+    area.addEventListener("input", () => {
+      if (area.value === "/") openMenu(id);
+      else if (menu?.block === id) closeMenu();
+      editor.editText(id, area.value); // diffs to a minimal splice (DM-4.3)
+    });
+    area.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        editor.editText(id, area.value);
+        const view = editor.view;
+        const parent = parentOf(view, id) ?? null;
+        const siblings = parent === null ? view.roots : view.blocks[parent]?.children ?? [];
+        const created = editor.insertBlock({ type: "nooq.paragraph/v1", parent, index: siblings.indexOf(id) + 1 });
+        focusRequest = { block: created, offset: 0 };
+      } else if (event.key === "Backspace" && area.value === "") {
+        event.preventDefault();
+        const order = aliveInOrder(editor.view);
+        const previous = order[order.indexOf(id) - 1];
+        editor.deleteBlock(id);
+        if (previous) focusRequest = { block: previous, offset: Number.MAX_SAFE_INTEGER };
+      } else if (event.key === "Escape") {
+        closeMenu();
+      }
+    });
+    return area;
+  }
+
+  const MENU_ITEMS: SlashMenuItem[] = [
+    { label: "Text", type: "nooq.paragraph/v1", glyph: "T", hint: "plain" },
+    { label: "Heading", type: "nooq.heading/v1", glyph: "H", hint: "##" },
+    { label: "Quote", type: "nooq.quote/v1", glyph: "❝", hint: ">" },
+    { label: "Improve this block", type: "nooq.ai.rewrite/v1", glyph: "✦", hint: "/ai", ai: true },
+  ];
+
+  function openMenu(block: BlockId): void {
+    closeMenu();
+    const element = slashMenu({
+      items: MENU_ITEMS,
+      onSelect: (item) => {
+        closeMenu();
+        editor.editText(block, "");
+        if (item.ai) {
+          void aiRewrite(block);
+          return;
+        }
+        const view = editor.view;
+        const parent = parentOf(view, block) ?? null;
+        const siblings = parent === null ? view.roots : view.blocks[parent]?.children ?? [];
+        const created = editor.insertBlock({ type: item.type, parent, index: siblings.indexOf(block) + 1 });
+        focusRequest = { block: created, offset: 0 };
+      },
+      onClose: closeMenu,
+    });
+    root.append(element); // outside `body`: re-renders must not destroy an open menu
+    menu = { block, element };
+  }
+
+  function closeMenu(): void {
+    if (menu) {
+      menu.element.remove();
+      menu = null;
+    }
+  }
+
+  /**
+   * A simulated model plugin, clearly labeled: it proposes an uppercase
+   * rewrite through the same public propose() a real model plugin calls.
+   * Swap in a real provider; nothing else changes.
+   */
+  async function aiRewrite(block: BlockId): Promise<void> {
+    const text = editor.view.blocks[block]?.text?.s ?? "";
+    const rewritten = text === "" ? "Written by a simulated model." : text.charAt(0).toUpperCase() + text.slice(1);
+    await editor.propose({
+      ops: [{ op: "textEdit", block, changes: replaceChanges(text, rewritten) }],
+      evidence: [block, ...ancestorsOf(editor.view, block)],
+      actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
+      intent: "rewrite-block",
+    });
+  }
+
+  function ancestorsOf(view: DocState, block: BlockId): BlockId[] {
+    const tree = liveTree(view);
+    const out: BlockId[] = [];
+    let current = tree.parentOf.get(block);
+    while (current) {
+      out.push(current);
+      current = tree.parentOf.get(current);
+    }
+    return out;
+  }
+
+  function renderSuggestionCard(view: DocState, id: BlockId, settled: string | undefined): HTMLElement {
+    const block = view.blocks[id]!;
+    const proposal = block.fields.proposal as unknown as Proposal;
+    const state = (settled ?? suggestionStatus.get(id) ?? "fresh") as SuggestionState;
+    const intent = intentFor(view, id);
+    return suggestionCard({
+      state,
+      actor: (proposal.context as { name?: string } | null)?.name ?? proposal.actor,
+      model: (proposal.context as { model?: string } | null)?.model,
+      ...(intent ? { intent } : {}),
+      diff: diffFor(view, proposal),
+      ...(state === "stale" || state === "conflicted" ? { reason: "The block changed while this suggestion waited (DM-6.5)." } : {}),
+      evidence: proposal.evidence.map((entry) => ({ kind: "evidence", value: entry.contentDigest.slice(7, 19) })),
+      ...(settled ? { settledBy: editor.settledBy(id) } : {}),
+      onAccept: () => {
+        void editor
+          .accept(id, { force: state !== "fresh" })
+          .catch(() => undefined) // a forced accept may fail loudly (DM-6.3)
+          .finally(scheduleRender);
+      },
+      onReject: () => {
+        editor.reject(id);
+      },
+    });
+  }
+
+  /** DM-4 durable intent: the proposing transaction's intent, shown as written. */
+  function intentFor(view: DocState, id: BlockId): string | undefined {
+    for (let i = view.log.length - 1; i >= 0; i--) {
+      const tx = view.log[i]!;
+      if (tx.ops.some((op) => op.op === "insert" && op.block.id === id)) return tx.intent;
+    }
+    return undefined;
+  }
+
+  function diffFor(view: DocState, proposal: Proposal): DiffSegment[] {
+    const segments: DiffSegment[] = [];
+    for (const op of proposal.ops as Op[]) {
+      if (op.op === "textEdit") {
+        const before = (proposal.context as { before?: Record<string, string> } | null)?.before?.[op.block]
+          ?? view.blocks[op.block]?.text?.s ?? "";
+        try {
+          const after = applyTextChanges({ s: before, marks: [] }, op.changes).s;
+          if (before) segments.push({ del: before });
+          segments.push({ ins: after });
+        } catch {
+          segments.push({ text: `${before} (changed since proposal)` });
+        }
+      } else if (op.op === "setField") {
+        segments.push({ ins: `${op.key} = ${JSON.stringify(op.value)}` });
+      } else if (op.op === "insert") {
+        segments.push({ ins: `new ${op.block.type}` });
+      }
+    }
+    return segments.length > 0 ? segments : [{ text: "no visible changes" }];
+  }
+
+  function applyFocus(view: DocState): void {
+    const request = focusRequest;
+    focusRequest = null;
+    if (!request || !liveTree(view).alive.has(request.block)) return;
+    focused = request.block;
+    const area = body.querySelector<HTMLTextAreaElement>(`[data-nq-block="${request.block}"] textarea`);
+    area?.focus();
+    if (area) {
+      const at = Math.min(request.offset ?? area.value.length, area.value.length);
+      area.setSelectionRange(at, at);
+    }
+  }
+
+  return {
+    element: root,
+    destroy() {
+      destroyed = true;
+      unsubscribe();
+      closeMenu();
+      root.remove();
+    },
+  };
 }

@@ -12,13 +12,7 @@
 
 import * as Y from "yjs";
 import {
-  acceptTransaction,
-  StaleSuggestionError,
-  authorizeLocal,
-  canonicalJson,
-  isGenesisFor,
-  isSecuredDocId,
-  toBase64,
+  acceptChecked,
   computeDigests,
   evaluateSuggestion,
   liveTree,
@@ -41,22 +35,11 @@ import {
 import { replaceChanges } from "@nooq/core";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope } from "@nooq/yjs";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
-import { PluginRegistry, PluginRuntime, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
-import { layout } from "@nooq/yjs";
-
-export interface JobBinding { job: Job<any, any> | string; actor: ActorDescriptor; signer?: import("@nooq/core").ActorKey }
-export class AuthorizationError extends Error {
-  constructor(readonly reason: string, readonly retryable: boolean) { super(reason); this.name = "AuthorizationError"; }
-}
 
 export interface EditorOptions {
   docId: string;
   /** The local writer. */
-  actor: { actorId: string; name?: string; kind?: ActorDescriptor["kind"]; model?: string };
-  plugins?: readonly Plugin[];
-  resolve?: Readonly<Record<string, string>>;
-  jobBindings?: readonly JobBinding[];
-  onError?: (error: PluginError) => void;
+  actor: { actorId: string; name?: string };
   /** Absent: a local document with no peers — fully functional (§2). */
   transport?: SyncTransport;
   /** DM-12: the writer's Ed25519 key. Present => transactions ship signed. */
@@ -94,48 +77,9 @@ export class Editor {
   private readonly listeners = new Set<() => void>();
   private lamport = 0;
   private notifyScheduled = false;
-  readonly registry: PluginRegistry;
-  private readonly runtime: PluginRuntime;
-  readonly ready: Promise<void>;
-  private revisionValue = 0;
-  private closed = false;
-  private applying = false;
-  private currentTx?: Transaction;
-  private readonly events: ChangeEvent[] = [];
-  private readonly closeListeners = new Set<() => void>();
-  private readonly errorListeners = new Set<(error: PluginError) => void>();
-  readonly errors: PluginError[] = [];
-  private readonly identities = new Map<string, { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }>();
-  private readonly selectionListeners = new Set<(selection: SelectionRequest) => void>();
-
-  readonly commands = {
-    run: <Args>(command: Command<Args> | string, args: Args, options: { selection?: SelectionRequest } = {}): CommandResult => this.runtime.run(command, args, options) as CommandResult,
-    preview: <Args>(command: Command<Args> | string, args: Args, options: { selection?: SelectionRequest } = {}): PreparedCommand | CommandResult => this.runtime.run(command, args, { ...options, preview: true }),
-  };
-  readonly jobs = { start: <Args, Result>(job: Job<Args, Result> | string, args: Args): JobHandle<Result> => this.runtime.start(job, args) };
 
   constructor(private readonly options: EditorOptions) {
-    this.options = { ...options, actor: Object.freeze({ ...options.actor }) };
-    this.registry = new PluginRegistry(options.plugins, options.resolve);
-    const addIdentity = (id: string, actor: ActorDescriptor, key?: import("@nooq/core").ActorKey) => {
-      this.identities.set(id, { actor: Object.freeze({ ...actor }), ...(key ? { key: { private: key.private, publicBytes: new Uint8Array(key.publicBytes) }, publicKey: toBase64(key.publicBytes) } : {}), ready: !key });
-    };
-    addIdentity("local", this.localActor(), options.key);
-    if (options.aiKey) addIdentity("legacy-ai", { actorId: "legacy-ai", kind: "ai" }, options.aiKey);
-    for (const binding of options.jobBindings ?? []) {
-      const id = typeof binding.job === "string" ? binding.job : binding.job.id, entry = this.registry.job(id);
-      if (!entry || !entry.definition.publishes || this.identities.has(`job:${id}`)) throw new Error(`Invalid or duplicate job binding ${id}`);
-      addIdentity(`job:${id}`, { ...binding.actor, plugin: entry.plugin }, binding.signer);
-    }
-    for (const { definition } of this.registry.jobs) if (definition.publishes && !this.identities.has(`job:${definition.id}`)) throw new Error(`Publishing job ${definition.id} needs a host binding`);
     this.ydoc = newDocument(options.docId);
-    this.runtime = new PluginRuntime(this.registry, {
-      read: () => this.view, actor: this.localActor(),
-      commit: (prepared, actor) => this.commitCommand(prepared, actor),
-      jobActor: id => this.identities.get(`job:${id}`)?.actor,
-      publish: (job, proposal, intent) => this.publishJob(job, proposal, intent),
-      report: error => this.reportError(error),
-    });
     this.session = options.transport
       ? new SyncSession({
           doc: this.ydoc,
@@ -149,54 +93,9 @@ export class Editor {
           },
         })
       : null;
-    const changed = new Set<string>();
-    const changes = new Map<string, { fields: Set<string>; text: boolean; structure: boolean }>();
-    let rootsChanged = false, accessChanged = false;
-    const change = (id: string) => { changed.add(id); if (!changes.has(id)) changes.set(id, { fields: new Set(), text: false, structure: false }); return changes.get(id)!; };
-    const parts = layout(this.ydoc);
-    parts.blocks.observeDeep(events => {
-      for (const event of events) {
-        if (event.path.length) {
-          const item = change(String(event.path[0]));
-          if (event.path[1] === "fields" && event instanceof Y.YMapEvent) for (const key of event.keysChanged) item.fields.add(key);
-          else if (event.path[1] === "text") item.text = true;
-          else item.structure = true;
-        } else if (event instanceof Y.YMapEvent) for (const id of event.keysChanged) change(id).structure = true;
-      }
-    });
-    parts.placement.observe(event => { for (const id of event.keysChanged) change(id).structure = true; });
-    parts.roots.observe(() => { rootsChanged = true; });
-    parts.access.observe(() => { accessChanged = true; });
-    this.ydoc.on("update", (_update: Uint8Array, _origin: unknown, _doc: Y.Doc, transaction: Y.Transaction) => {
-      this.revisionValue++;
-      this.events.push(freezeSnapshot({ revision: this.revisionValue, origin: transaction.local ? "local" : "remote", blocks: [...changed],
-        changes: Object.fromEntries([...changes].map(([id, value]) => [id, { ...value, fields: [...value.fields] }])), roots: rootsChanged, access: accessChanged,
-        ...(this.currentTx ? { transaction: this.currentTx } : {}) }));
-      changed.clear(); changes.clear(); rootsChanged = accessChanged = false; this.scheduleNotify();
-    });
-    this.ready = Promise.all([...this.identities.values()].map(async identity => {
-      if (!identity.key) return;
-      const challenge = crypto.getRandomValues(new Uint8Array(32));
-      const signature = await crypto.subtle.sign("Ed25519", identity.key.private, challenge);
-      const publicKey = await crypto.subtle.importKey("raw", new Uint8Array(identity.key.publicBytes), "Ed25519", false, ["verify"]);
-      if (!await crypto.subtle.verify("Ed25519", publicKey, signature, challenge)) throw new Error(`Signing key mismatch for ${identity.actor.actorId}`);
-      identity.ready = true;
-    })).then(() => undefined);
-    void this.ready.catch(cause => { this.reportError({ phase: "setup", cause }); this.close(); });
-    try { this.runtime.setup(); } catch (error) { this.session?.close(); this.ydoc.destroy(); throw error; }
+    this.ydoc.on("update", () => this.scheduleNotify());
     this.session?.start();
   }
-
-  get revision(): number { return this.revisionValue; }
-  get isClosed(): boolean { return this.closed; }
-  diagnose(block: BlockId) { return this.runtime.diagnose(block); }
-  onError(listener: (error: PluginError) => void): () => void { this.errorListeners.add(listener); return () => this.errorListeners.delete(listener); }
-  reportError(error: PluginError): void {
-    this.errors.push(error);
-    for (const listener of [this.options.onError, ...this.errorListeners]) if (listener) try { listener(error); } catch (cause) { console.error("nooq error handler failed", cause); }
-  }
-  onClose(listener: () => void): () => void { if (this.closed) { listener(); return () => {}; } this.closeListeners.add(listener); return () => this.closeListeners.delete(listener); }
-  onSelection(listener: (selection: SelectionRequest) => void): () => void { this.selectionListeners.add(listener); return () => this.selectionListeners.delete(listener); }
 
   get docId(): string {
     return this.options.docId;
@@ -226,70 +125,34 @@ export class Editor {
    * seals and ships a microtask later, so the wire always carries it.
    */
   apply(tx: Transaction): void {
-    if (this.closed || this.runtime.busy || this.applying) throw new Error("Cannot mutate in this phase");
-    // Legacy propose() may supply its explicitly configured AI key. New plugins use jobBindings.
-    if (tx.actor.actorId !== this.localActor().actorId && !tx.adoptedBy && this.options.aiKey) {
-      this.applyBound(tx, { ...this.identities.get("legacy-ai")!, actor: tx.actor });
-    } else if (!isSecuredDocId(this.docId)) {
-      const identity = this.identities.get("local")!;
-      this.applyBound(tx, { ...identity, actor: { ...identity.actor, actorId: tx.adoptedBy ?? tx.actor.actorId } });
-    } else this.applyBound(tx, this.identities.get("local")!);
-  }
-
-  private applyBound(tx: Transaction, identity: { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }, genesis = false): void {
-    if (this.closed || this.applying) throw new Error("Cannot mutate in this phase");
-    if (!genesis) {
-      const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key });
-      if (verdict.reason === "invalid-transaction") throw new Error("Invalid transaction");
-      if (verdict.verdict !== "allow") throw new AuthorizationError(verdict.reason, verdict.verdict === "hold");
-    }
     this.lamport = Math.max(this.lamport, tx.lamport);
-    this.applying = true; this.currentTx = tx;
-    try {
-    if (identity.key) {
+    if (this.options.key && this.session) {
       // The signer is not always the author: adoptions are authored by the
       // proposing AI but signed by the accepting writer (DM-6.3, DM-13).
+      const aiAuthored = tx.actor.actorId.startsWith("ai:");
+      const key = aiAuthored && !tx.adoptedBy && this.options.aiKey ? this.options.aiKey : this.options.key;
       const signer = tx.adoptedBy ?? tx.actor.actorId;
-      const captured = applyCaptured(this.ydoc, tx, identity.key, signer);
+      const captured = applyCaptured(this.ydoc, tx, key, signer);
       void this.ship(captured);
       return;
     }
     applyToDoc(this.ydoc, tx);
-    } finally { this.currentTx = undefined; this.applying = false; }
-  }
-
-  private commitCommand(prepared: Extract<PreparedCommand, { status: "ready" }>, actor: ActorDescriptor): CommandResult {
-    try {
-      const tx = { ...this.tx([...prepared.ops], prepared.intent), actor };
-      this.applyBound(tx, this.identities.get("local")!);
-      if (prepared.selection) queueMicrotask(() => { if (!this.closed) for (const listener of this.selectionListeners) try { listener(prepared.selection!); } catch (cause) { this.reportError({ phase: "observer", cause }); } });
-      return { status: "applied", transaction: tx, ...(prepared.selection ? { selection: prepared.selection } : {}) };
-    } catch (error) {
-      if (error instanceof AuthorizationError) return { status: "denied", reason: error.reason, retryable: error.retryable };
-      throw error;
-    }
-  }
-  private publishJob(id: string, proposal: Proposal, intent?: string): PublicationResult {
-    const identity = this.identities.get(`job:${id}`)!;
-    const block = makeSuggestionBlock(proposal, identity.actor.actorId);
-    const tx = { ...this.tx([{ op: "insert", block, parent: null }], intent), actor: identity.actor };
-    try { this.applyBound(tx, identity); return { status: "published", suggestion: block.id }; }
-    catch (error) { if (error instanceof AuthorizationError) return { status: "denied", reason: error.reason, retryable: error.retryable }; throw error; }
   }
 
   private async ship(commit: { tx: Transaction; update: Uint8Array; key: import("@nooq/core").ActorKey; signer: string }): Promise<void> {
     try {
       const sealed = await sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer);
       this.session?.sendUpdate(commit.update, sealed);
-    } catch (cause) {
-      this.reportError({ phase: "signing", cause });
+    } catch {
+      // Signing failures surface via the session's error channel; the local
+      // document is already consistent.
     }
   }
 
   private tx(ops: Op[], intent?: string): Transaction {
     return {
       id: newBlockId(),
-      actor: this.localActor(),
+      actor: { actorId: this.options.actor.actorId, kind: "human" },
       lamport: ++this.lamport,
       causality: {},
       ...(intent !== undefined ? { intent } : {}),
@@ -356,17 +219,6 @@ export class Editor {
     this.apply(this.tx([{ op: "setAccess", access }], "set-access"));
   }
 
-  /** Async identity verification is completed before the synchronous genesis commit. */
-  async initializeAccess(access: import("@nooq/core").Access): Promise<void> {
-    await this.ready;
-    const identity = this.identities.get("local")!;
-    const value = structuredClone(access);
-    if (!isSecuredDocId(this.docId) || !await isGenesisFor(this.docId, value) || !identity.key
-      || identity.publicKey !== value.owner.key || identity.actor.actorId !== value.owner.actorId || identity.actor.kind !== value.owner.kind) throw new Error("Invalid genesis identity");
-    if (this.view.access || this.closed || this.runtime.busy) throw new Error("Genesis is no longer available");
-    this.applyBound(this.tx([{ op: "setAccess", access: value }], "genesis"), identity, true);
-  }
-
   // ---- suggestions (DM-6) ----
 
   /** Build a proposal against the current view and insert it as a suggestion block. */
@@ -410,37 +262,20 @@ export class Editor {
   }
 
   /** DM-6.3. Throws StaleSuggestionError unless fresh or force. */
-  async reviewSuggestion(suggestion: BlockId): Promise<{ revision: number; proposal: string; evaluation: Evaluation }> {
-    const state = this.view, revision = this.revision;
-    return { revision, proposal: canonicalJson(state.blocks[suggestion]?.fields.proposal), evaluation: await evaluateSuggestion(state, suggestion) };
-  }
-
-  async accept(suggestion: BlockId, options: { force?: boolean; reviewed?: { revision: number; proposal: string }; signal?: AbortSignal } = {}): Promise<Transaction> {
-    const reviewed = options.reviewed ?? { revision: this.revision, proposal: canonicalJson(this.view.blocks[suggestion]?.fields.proposal) };
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (this.closed || options.signal?.aborted) throw new Error("Acceptance cancelled");
-      const state = this.view, revision = this.revision, block = state.blocks[suggestion];
-      if (!block || !liveTree(state).alive.has(suggestion) || block.fields.status !== undefined) throw new Error("Suggestion already settled");
-      if (canonicalJson(block.fields.proposal) !== reviewed.proposal) throw new Error("Suggestion changed; review again");
-      if (options.force && revision !== reviewed.revision) throw new Error("Force approval expired; review again");
-      const evaluation = await evaluateSuggestion(state, suggestion);
-      if (this.closed || options.signal?.aborted) throw new Error("Acceptance cancelled");
-      if (this.revision !== revision) {
-        if (options.force) throw new Error("Force approval expired; review again");
-        continue;
-      }
-      if (!options.force && evaluation.status !== "fresh") throw new StaleSuggestionError(evaluation);
-      const tx = acceptTransaction({ state, suggestion, actor: this.localActor(), lamport: ++this.lamport });
-      this.apply(tx); // No await or plugin callback between revision check and commit.
-      return tx;
-    }
-    throw new Error("changed-during-validation");
+  async accept(suggestion: BlockId, options: { force?: boolean } = {}): Promise<Transaction> {
+    const tx = await acceptChecked({
+      state: this.view,
+      suggestion,
+      actor: this.localActor(),
+      lamport: ++this.lamport,
+      force: options.force,
+    });
+    this.apply(tx);
+    return tx;
   }
 
   /** DM-6.4. */
   reject(suggestion: BlockId): void {
-    const state = this.view;
-    if (!liveTree(state).alive.has(suggestion) || state.blocks[suggestion]?.fields.status !== undefined) throw new Error("Suggestion already settled");
     this.apply(
       rejectTransaction({ suggestion, actor: this.localActor(), lamport: ++this.lamport }),
     );
@@ -463,27 +298,19 @@ export class Editor {
   }
 
   close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.runtime.dispose();
-    for (const listener of this.closeListeners) try { listener(); } catch (cause) { this.reportError({ phase: "cleanup", cause }); }
-    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear();
     this.session?.close();
-    this.ydoc.destroy();
   }
 
   private localActor(): ActorDescriptor {
-    return { actorId: this.options.actor.actorId, kind: this.options.actor.kind ?? "human", ...(this.options.actor.model ? { model: this.options.actor.model } : {}) };
+    return { actorId: this.options.actor.actorId, kind: "human" };
   }
 
   private scheduleNotify(): void {
-    if (this.notifyScheduled || this.closed) return;
+    if (this.notifyScheduled) return;
     this.notifyScheduled = true;
     queueMicrotask(() => {
       this.notifyScheduled = false;
-      if (this.closed) return;
-      for (const event of this.events.splice(0)) this.runtime.emit(event);
-      for (const callback of this.listeners) try { callback(); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+      for (const callback of this.listeners) callback();
     });
   }
 }
