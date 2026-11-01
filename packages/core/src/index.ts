@@ -55,6 +55,7 @@ export {
 export {
   applyTransaction,
   freezeInPlace,
+  isValidated,
   tryValidateReadonly,
   validateTransaction,
   emptyDocument,

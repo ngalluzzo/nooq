@@ -1,7 +1,7 @@
 /** Logical authoring checks. Remote admission must still inspect physical updates. */
 import { authorize, isSecuredDocId, type Touched, type Verdict } from "./access.ts";
 import { canonicalJson } from "./canonical.ts";
-import { tryValidateReadonly, validateTransaction } from "./engine.ts";
+import { isValidated, tryValidateReadonly, validateTransaction } from "./engine.ts";
 import type { ActorDescriptor, DocState, Proposal, Transaction } from "./model.ts";
 
 
@@ -46,7 +46,9 @@ export function authorizeLocal(state: DocState, tx: Transaction, principal: Loca
   // cloned the whole state — ~26ms per keystroke at 2,000 blocks.)
   try {
     canonicalJson(tx);
-    if (!tryValidateReadonly(state, tx)) validateTransaction(fresh ? fresh() : structuredClone(state), tx);
+    // EB-6/8: single-use txs validated once per synchronous chain — the
+    // stamp (core) proves the runtime's validation already covered these ops.
+    if (!isValidated(tx) && !tryValidateReadonly(state, tx)) validateTransaction(fresh ? fresh() : structuredClone(state), tx);
   } catch { return deny("invalid-transaction"); }
   if (tx.adoptedBy) {
     if (adoptionMatchesState(state, tx) !== true) return deny("invalid-adoption");

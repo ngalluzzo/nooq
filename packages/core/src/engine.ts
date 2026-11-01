@@ -82,6 +82,15 @@ export function applyTransaction(state: DocState, tx: Transaction): DocState {
  * caller must treat the state as consumed. Cuts per-keystroke cost by the
  * whole-document clone applyTransaction pays to stay pure.
  */
+/** Single-use transactions validated once per synchronous chain (EB-6/8):
+ *  a structural op paid the full validation cascade up to three times —
+ *  runtime.run, authorizeLocal, applyToDoc — each building a fresh ~5ms
+ *  projection at 2k blocks. Replay is already impossible (the host's
+ *  `recorded` set rejects re-applied tx ids), so the stamp cannot outlive
+ *  its state. */
+const validatedTx = new WeakMap<object, true>();
+export function isValidated(tx: Transaction): boolean { return validatedTx.has(tx as object); }
+
 export function validateTransaction(state: DocState, tx: Transaction): void {
   if (tryValidateReadonly(state, tx)) return; // EB-6 fast path: O(ops) on the SHARED state, no copy, no mutation
   tx.ops.forEach((op, index) => {
@@ -92,6 +101,7 @@ export function validateTransaction(state: DocState, tx: Transaction): void {
       throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
     }
   });
+  validatedTx.set(tx as object, true);
 }
 
 function requireBlock(state: DocState, id: BlockId): Block {
@@ -262,6 +272,7 @@ export function tryValidateReadonly(state: DocState, tx: Transaction, selection?
     if (state.blocks[selection.block] && !tree.alive.has(selection.block)) return false;
     if (![selection.anchor, selection.head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
   }
+  validatedTx.set(tx as object, true);
   return true;
 }
 

@@ -20,7 +20,7 @@ import {
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
-import { tryValidateReadonly, validateTransaction } from "@nooq/core";
+import { isValidated, tryValidateReadonly, validateTransaction } from "@nooq/core";
 import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
@@ -71,8 +71,11 @@ export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown, 
   // EB-6 stage 2: the caller's SHARED projection (maintained, read-only)
   // serves the fast path for free; structural shapes pay a fresh read.
   // `base` remains what the FALLBACK may mutate — never pass a shared view.
+  // EB-6/8: validation cascade stamp — runtime.run and authorizeLocal have
+  // already validated this single-use transaction in the same synchronous
+  // chain; rebuilding a ~5ms projection a third time bought nothing.
   const fastView = shared ?? base ?? readState(doc);
-  if (!tryValidateReadonly(fastView, tx)) validateTransaction(base ?? readState(doc), tx);
+  if (!isValidated(tx) && !tryValidateReadonly(fastView, tx)) validateTransaction(base ?? readState(doc), tx);
   const registration = registrationOf(tx);
   useClientFor(doc, registration);
   doc.transact(() => {
@@ -153,8 +156,9 @@ function requireYBlock(doc: Y.Doc, id: BlockId): Y.Map<unknown> {
   return yb;
 }
 
-function checkParent(doc: Y.Doc, parent: BlockId | null): void {
+function checkParent(doc: Y.Doc, parent: BlockId | null, validated = false): void {
   if (parent === null) return;
+  if (validated) return; // EB-6/8: transaction validation already proved the parent alive
   const view = readState(doc);
   if (!view.blocks[parent]) throw new Error(`no such block ${parent}`);
   if (!liveTree(view).alive.has(parent)) throw new Error(`block ${parent} is tombstoned`);
@@ -172,7 +176,7 @@ function applyInsert(
   for (const child of block.children) {
     if (!blocks.has(child)) throw new Error(`no such block ${child}`);
   }
-  checkParent(doc, parent);
+  checkParent(doc, parent, isValidated(tx));
 
   // Integrate first, populate second: writes on unintegrated (prelim)
   // Yjs types are buffered and unsupported for some operations (Y.Text.format).
@@ -201,10 +205,14 @@ function applyMove(
   index: number | undefined,
   tx: Transaction,
 ): void {
-  const view = readState(doc);
-  const alive = liveTree(view).alive;
-  if (!view.blocks[id]) throw new Error(`no such block ${id}`);
-  if (!alive.has(id)) throw new Error(`block ${id} is tombstoned`);
+  // EB-6/8: a validated tx already proved liveness — the per-op readState
+  // here was ~5ms at 2,000 blocks, paid by every merge.
+  if (!isValidated(tx)) {
+    const view = readState(doc);
+    const alive = liveTree(view).alive;
+    if (!view.blocks[id]) throw new Error(`no such block ${id}`);
+    if (!alive.has(id)) throw new Error(`block ${id} is tombstoned`);
+  }
   if (newParent === id) throw new Error("cannot move a block under itself");
   if (newParent !== null) {
     if (!view.blocks[newParent]) throw new Error(`no such block ${newParent}`);
