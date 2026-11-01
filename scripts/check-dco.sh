@@ -7,7 +7,8 @@ set -eu
 bad=0
 # Merge commits are mechanical joins (GitHub PR merges carry no signoff);
 # every real commit — both parents' histories — is still walked and checked.
-for commit in $(git rev-list --all --no-merges); do
+# --all includes local stash refs ("index on main") — walk reachable history only.
+for commit in $(git rev-list --branches --tags --remotes --no-merges); do
   count=$(git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$commit" | grep -c . || true)
   if [ "$count" -eq 0 ]; then
     short=$(git log -1 --format='%h %s' "$commit")
