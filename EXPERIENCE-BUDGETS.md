@@ -182,6 +182,34 @@ The journey map's "every keystroke paints in one frame."
   are noisy; comparing against a sibling run is what keeps a regression
   from being silent (§3, "broken when").
 
+## EB-8. Budget (DRAFT): load to first editable
+
+The journey map's "a document opens ready to write." **Draft: measured,
+not yet gated** — the number is the product owner's call to set.
+
+- **Definition:** navigation start to the first frame in which the
+  surface holds focus and accepts a keystroke (`lab:editable`).
+- **Reference documents:** ref-small (50 blocks), ref-large (2,000),
+  ref-huge (10,000 — added with this draft).
+- **Measured 2026-11-01, this rig (see lab results for full marks):**
+
+  | document | native (1x) | rig profile (4x) |
+  |---|---|---|
+  | ref-small | 58 ms | ~150-280 ms |
+  | ref-large | 433 ms | 46 s to open; editable > minutes |
+  | ref-huge | 3,124 ms | not yet measured |
+
+  Native is roughly linear (5x blocks -> 7.2x time), no cliff. The rig
+  profile is where load collapses: mounting every row before the first
+  keystroke. The candidate fix is surface windowing (mount the viewport
+  plus overscan, keyed by the signature index, anchored by the EB-7
+  pinning machinery) — it would flatten the row to a constant and is
+  also the prerequisite the 0003 binding contract wants anyway.
+
+  *(Finding on the way: the reference-doc generator replayed one
+  transaction per block — minutes of CPU at ref-huge. Generation is now
+  one merged, validated transaction: 0.9 s for the 5 MB update.)*
+
 ## EB-7. Invariant: remote changes never move the local caret or viewport
 
 The journey map's "remote edits never move my caret or my scroll."

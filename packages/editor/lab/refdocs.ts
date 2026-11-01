@@ -10,11 +10,12 @@ import * as Y from "yjs";
 import type { ActorDescriptor, Block, RenderedText, Transaction } from "@nooq/core";
 import { applyTransaction, newDocument } from "@nooq/yjs";
 
-export type RefDocName = "ref-small" | "ref-large";
+export type RefDocName = "ref-small" | "ref-large" | "ref-huge";
 
 const SPECS: Record<RefDocName, { blocks: number; seed: number }> = {
   "ref-small": { blocks: 50, seed: 0x5eed01 },
   "ref-large": { blocks: 2000, seed: 0x5eed02 },
+  "ref-huge": { blocks: 10000, seed: 0x5eed03 },
 };
 
 const ACTORS: ActorDescriptor[] = [
@@ -101,7 +102,13 @@ export function refUpdate(name: RefDocName, docId: string): Uint8Array {
   let update = cache.get(key);
   if (!update) {
     const doc = newDocument(docId);
-    for (const tx of refTransactions(name)) applyTransaction(doc, tx);
+    // One merged transaction: content-identical (fresh inserts, no LWW
+    // conflicts, attribution rides each block) but validated and applied
+    // once — per-tx replay was minutes at ref-huge's 10k blocks.
+    const txs = refTransactions(name);
+    doc.transact(() => {
+      applyTransaction(doc, { id: txs[0]!.id, actor: txs[0]!.actor, lamport: 1, causality: {}, intent: "ref-doc", ops: txs.flatMap(tx => tx.ops) } as typeof txs[number], "refdoc-merged");
+    });
     update = Y.encodeStateAsUpdate(doc);
     cache.set(key, update);
   }

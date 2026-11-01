@@ -42,6 +42,7 @@ document.getElementById("root")!.append(surface.element);
  * "Editable": the first frame where focus is inside the editor, with no help.
  */
 let frames = 0;
+const observedFrom = performance.now();
 function observe(): void {
   frames++;
   const rows = surface.element.querySelectorAll("[data-nq-block]").length;
@@ -50,7 +51,9 @@ function observe(): void {
     performance.mark("lab:editable");
     return;
   }
-  if (frames < 240) requestAnimationFrame(observe);
+  // Time-budgeted, not frame-budgeted: at 4x throttle a heavy mount exhausts
+  // 240 frames before editable; 60s of frames keeps EB-5/8 measurable.
+  if (performance.now() - observedFrom < 60_000) requestAnimationFrame(observe);
 }
 requestAnimationFrame(observe);
 
