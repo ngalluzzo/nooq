@@ -6,7 +6,8 @@ import { caretAfterChanges, replaceChanges, type RenderedText, type TextChange }
 import type { RichTextBinding, RichTextOptions, TextMark } from "@nooq/plugins/dom";
 import { charDiff } from "./pm-surface.ts";
 
-const schema = new Schema({ nodes: { doc: { content: "text*", marks: "_" }, text: {} }, marks: {
+// Native DOM edits must preserve literal newlines and spacing already in the model.
+const schema = new Schema({ nodes: { doc: { content: "text*", marks: "_", whitespace: "pre" }, text: {} }, marks: {
   strong: { toDOM: () => ["strong", 0], parseDOM: [{ tag: "strong" }, { tag: "b" }] },
   em: { toDOM: () => ["em", 0], parseDOM: [{ tag: "em" }, { tag: "i" }] },
   code: { toDOM: () => ["code", 0], parseDOM: [{ tag: "code" }] },

@@ -36,7 +36,7 @@ export const field = Object.freeze({
 
 /** Defaults apply only at creation. Diagnostics never normalize stored content. */
 export function defineBlockSchema<const S extends FieldSchema>(definition: {
-  type: string; label: string; text: "inline" | "none"; fields: S; initialText?: string;
+  type: string; label: string; text: "inline" | "none"; textMerge?: "same-type"; fields: S; initialText?: string;
   diagnose?(block: Immutable<import("@nooq/core").Block>): readonly Diagnostic[];
 }): Readonly<SchemaBlock<S>> {
   const fields = Object.freeze(Object.fromEntries(Object.entries(definition.fields).map(([key, spec]) => {
@@ -45,7 +45,7 @@ export function defineBlockSchema<const S extends FieldSchema>(definition: {
   }))) as S;
   const { type, label, text, initialText = "", diagnose } = definition;
   if (typeof initialText !== "string" || (text === "none" && initialText)) throw new Error("Invalid initial text");
-  return defineBlock({ type, label, text, fields,
+  return defineBlock({ type, label, text, fields, textMerge: definition.textMerge,
     create: () => ({ fields: structuredClone(Object.fromEntries(Object.entries(fields).map(([key, spec]) => [key, spec.default]))) as FieldValues<S>,
       ...(text === "inline" ? { text: { s: initialText, marks: Array.from({ length: initialText.length }, () => [] as string[]) } } : {}),
     }),

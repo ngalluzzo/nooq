@@ -142,9 +142,9 @@ rollback after denied edits, and cleanup. One text binding is allowed per view.
 
 Both text bindings retain the same text-command override behavior. The exported
 `insertAfterSelection` argument factory handles common slash-menu placement.
-Rich bindings are currently scoped to individual blocks; document-wide selection,
-collaborative undo, rich clipboard codecs, and arbitrary mark definitions remain
-separate work. See [proposal 0004](../../proposals/0004-plugin-authoring-v2.md).
+Rich bindings are scoped to individual blocks, with opt-in document selection
+coordinating ranges and compatible structural joins. Collaborative undo, rich
+clipboard codecs, and arbitrary mark definitions remain separate work. See [proposal 0004](../../proposals/0004-plugin-authoring-v2.md).
 
 ### Text policies
 
@@ -190,7 +190,7 @@ const result = surface.selection!.replace("Replacement text");
 
 Document mode requires a registered `nooq.text.edit` command. `surface.selection`
 is absent in the default block mode. The service exposes `get`, `set`, `clear`,
-`text`, `replace`, and `toggleMark`; logical endpoints use block IDs and UTF-16
+`text`, `replace`, `merge`, and `toggleMark`; logical endpoints use block IDs and UTF-16
 offsets. Returned values are detached. An invalid set clears the old range.
 Selection is local UI state and is never serialized into the document.
 
@@ -201,14 +201,55 @@ share the range replacement path. Mark toggles require every selected binding to
 support the mark and preserve unrelated/opaque marks. Legacy textareas and views
 whose child slot precedes their own text form barriers; they keep block editing.
 
-Replacement, Backspace/Delete, and Enter on a cross-block range edit text only:
-the first segment receives replacement text (Enter inserts a literal newline),
-and the remaining selected text is cleared. Every block, type, field, and child
-remains, including empty blocks. No implicit merge, reparenting, or block deletion
-occurs. Replacement text has no marks; surviving text keeps its marks. Structural
-range deletion/merging needs explicit per-block compatibility rules.
+For compatible blocks, replacement, cut/paste, Backspace/Delete, and Enter merge
+into the first block in document order (Enter inserts a literal newline).
+Compatibility requires the same registered type with `textMerge: "same-type"`,
+equal fields, no children, and consecutive siblings under the same parent. Writing
+Basics opts in for paragraphs, headings, and quotes; different types never join.
+Ordinary replacement across incompatible blocks retains the previous text-only
+behavior: insert into the first segment, clear the rest of the selected text, and
+keep every block, field, type, and child. Replacement text is unmarked; surviving
+prefix and suffix text retains all marks, including unfamiliar marks.
 
-Range edits call `editor.commands.batch("nooq.text.edit", inputs)` once. Batch
+`surface.selection.merge(text = "")` explicitly requests a structural join and
+returns `not-applicable` for incompatible ranges, with no text-only fallback.
+Backspace at a collapsed start or Delete at a collapsed end uses the same merge
+command for the adjacent block. Incompatible boundaries are consumed without
+falling through to legacy empty-block deletion. This includes blocks with children.
+
+### Structural merge contracts
+
+`textMerge` belongs to the portable block definition, not its DOM presentation.
+Third-party schemas can opt in through `defineBlockSchema({ ..., textMerge:
+"same-type" })`. The rule compares every field, including unknown fields, and
+permits nested leaf siblings without reparenting. Non-text siblings, different
+parents, unknown types, opt-out schemas (including Callouts), and child-bearing
+blocks are barriers. The first block's identity, type, and fields survive. Absorbed
+blocks become ordinary tombstones retaining their original content and fields;
+the operation does not rewrite them or introduce a stored schema migration.
+
+The selected `nooq.text.merge` command owns the atomic transaction and resulting
+caret. Its standard recipe prepares the selected `nooq.text.edit` for the survivor
+and `nooq.block.delete` for each absorbed sibling. Any refusal, exception, invalid
+result, or authorization denial prevents the entire commit. Once a compatible
+merge is attempted, failure never falls back to text-only replacement. The recipe
+requires each delegated provider to return exactly the planned operations: an
+override that transforms text or adds side effects must also provide its own
+merge command. Delegated caret requests are replaced by the merge command's caret
+at the join. A custom merge command's final caret is honored by the surface.
+
+Commands now have `ctx.blockDefinition(type)` and synchronous
+`ctx.prepare(command, args)`. Preparation resolves selected providers, validates
+and freezes arguments, shares one frozen snapshot, and never dispatches. Child
+contexts see their own provider identity; the final transaction uses the outer
+command's identity and authorization. The caller must return the prepared
+operations and propagate refusals. Recursion, asynchronous results, and using
+`ctx.prepare` after its callback returns are rejected. This is preparation
+composition, not nested transactions. Structural compatibility is recomputed at
+execution; concurrent unseen edits retain the underlying CRDT/tombstone semantics,
+not a promise of automatic relocation from an absorbed block.
+
+Text-only range edits call `editor.commands.batch("nooq.text.edit", inputs)` once. Batch
 prepares independent invocations of one selected command against one frozen
 snapshot, then validates, authorizes, and commits one operation batch with that
 plugin's identity. Any invalid, throwing, empty, or declined invocation prevents

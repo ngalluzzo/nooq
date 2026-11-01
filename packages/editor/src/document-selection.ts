@@ -1,5 +1,5 @@
 import { caretAfterChanges, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
-import { resolveTextRange, textBlockOrder, type CommandResult, type DocumentTextSelection, type TextPoint } from "@nooq/plugins";
+import { planTextMerge, resolveTextRange, textBlockOrder, type CommandResult, type DocumentTextSelection, type TextPoint } from "@nooq/plugins";
 import type { DocumentSelectionService, TextMark, TextSelection } from "@nooq/plugins/dom";
 import type { Editor } from "./controller.ts";
 
@@ -118,9 +118,29 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
     else if (result.status === "denied") editor.reportError({ phase: "view", cause: new Error(result.reason) });
     return result;
   }
+  function mergeRange(range: DocumentTextSelection, value: string): CommandResult {
+    if (disposed || blocked() || !supported(range) || !editor.registry.command("nooq.text.merge")) return declined();
+    const result = editor.commands.run("nooq.text.merge", { range, text: value });
+    if (result.status === "applied") {
+      // A custom merge provider owns its selection. Do not reuse endpoints of deleted blocks.
+      tracked = undefined;
+      if (result.selection) {
+        const s = result.selection; set({ anchor: { block: s.block, offset: s.anchor }, head: { block: s.block, offset: s.head } });
+      } else clear();
+    } else {
+      if (result.status === "failed") editor.reportError({ phase: "view", cause: result.error });
+      if (result.status === "denied") editor.reportError({ phase: "view", cause: new Error(result.reason) });
+      paint(false);
+    }
+    return result;
+  }
+  function merge(value = ""): CommandResult {
+    const range = get(); return range && typeof value === "string" ? mergeRange(range, value) : declined();
+  }
   function replace(value: string): CommandResult {
     if (typeof value !== "string") return declined();
     const range = get(), parts = range && supported(range); if (!parts) return declined();
+    if (editor.registry.command("nooq.text.merge") && planTextMerge(editor.view, range!, value, type => editor.registry.block(type)?.definition)) return mergeRange(range!, value);
     const args = parts.flatMap((p, index) => p.from !== p.to || (index === 0 && value.length) ? [{ block: p.block,
       changes: [{ retain: p.from }, { delete: p.to - p.from }, ...(index === 0 && value.length ? [{ insert: value, marks: [] }] : [])] as TextChange[],
     }] : []);
@@ -150,7 +170,7 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
     } else if (tracked) paint(false);
     return result;
   }
-  const service: DocumentSelectionService = { get, set, clear, text, replace, toggleMark };
+  const service: DocumentSelectionService = { get, set, clear, text, replace, merge, toggleMark };
   const handled = (event: Event) => { event.preventDefault(); event.stopPropagation(); };
   const isTextTarget = (target: EventTarget | null) => target === root || [...bindings().values()].some(b => b.marks !== null && target instanceof Node && b.element.contains(target));
   const edge = (end: boolean): TextPoint | undefined => {
@@ -165,6 +185,15 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
     const order = textBlockOrder(editor.view), block = order[order.indexOf(point.block) + direction];
     return block ? { block, offset: direction < 0 ? editor.view.blocks[block]!.text!.s.length : 0 } : undefined;
   }
+  function boundaryDelete(range: DocumentTextSelection, direction: -1 | 1): boolean {
+    if (cross(range) || range.anchor.offset !== range.head.offset) return false;
+    const point = range.head, length = editor.view.blocks[point.block]?.text?.s.length;
+    if (point.offset !== (direction < 0 ? 0 : length)) return false;
+    const neighbor = move(point, direction);
+    if (neighbor && neighbor.block !== point.block) mergeRange({ anchor: point, head: neighbor }, "");
+    // At an incompatible boundary do not let a legacy empty-block shortcut delete a subtree.
+    return true;
+  }
   root.addEventListener("keydown", event => {
     if (event.isComposing || !isTextTarget(event.target) || blocked()) return;
     const range = get(); if (!range) return;
@@ -177,6 +206,7 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
       if (head && (cross(range) || head.block !== range.anchor.block) && set({ anchor: range.anchor, head })) handled(event);
       return;
     }
+    if (!event.shiftKey && !mod && !event.altKey && ["Backspace", "Delete"].includes(event.key) && boundaryDelete(range, event.key === "Backspace" ? -1 : 1)) { handled(event); return; }
     if (!cross(range)) return;
     if (!event.shiftKey && !mod && ["ArrowLeft", "ArrowRight", "Escape"].includes(event.key)) {
       const parts = supported(range)!; const p = event.key === "ArrowRight" ? parts.at(-1)! : parts[0]!;
@@ -192,7 +222,9 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
   }, { capture: true, signal: abort.signal });
   root.addEventListener("beforeinput", event => {
     const input = event as InputEvent, range = get();
-    if (!range || !cross(range) || !input.cancelable || !isTextTarget(input.target)) return;
+    if (!range || !input.cancelable || !isTextTarget(input.target) || blocked()) return;
+    if (!input.isComposing && ["deleteContentBackward", "deleteContentForward"].includes(input.inputType) && boundaryDelete(range, input.inputType === "deleteContentBackward" ? -1 : 1)) { handled(input); return; }
+    if (!cross(range)) return;
     handled(input);
     if (input.isComposing) return; // A range is never partially edited by a composing block binding.
     if (input.inputType === "insertText" && input.data !== null) replace(input.data);

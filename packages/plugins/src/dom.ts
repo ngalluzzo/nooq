@@ -7,13 +7,15 @@ export * from "./actions.ts";
 export * from "./text-policy.ts";
 import type { DocumentTextSelection } from "./selection.ts";
 export type { DocumentTextSelection, TextPoint, TextRangeSegment } from "./selection.ts";
-/** A local surface selection. Range edits preserve block structure and commit atomically. */
+/** A local selection. Structural joins require compatible blocks; edits commit atomically. */
 export interface DocumentSelectionService {
   get(): DocumentTextSelection | undefined;
   set(selection: DocumentTextSelection): boolean;
   clear(): void;
   text(): string;
   replace(text: string): CommandResult;
+  /** Explicit structural join; incompatible ranges decline without text-only fallback. */
+  merge(text?: string): CommandResult;
   toggleMark(mark: TextMark): CommandResult;
 }
 export interface TextBinding { element: HTMLTextAreaElement; destroy(): void }

@@ -1,6 +1,6 @@
 # Proposal 0004: plugin authoring v2
 
-Status: slices 1–4 implemented; structural range editing, native IME acceptance, and performance gates remain open. Additive to plugin API version 1.
+Status: slices 1–4 and compatible leaf-block merging implemented; subtree restructuring, native IME acceptance, and performance gates remain open. Additive to plugin API version 1.
 Date: 2026-10-31.
 
 ## Decision
@@ -218,6 +218,57 @@ skipped), 168 Storybook checks passed across both themes, and typechecking and
 the static build passed. The independent native gate passed in Chromium
 156.0.8078.4 with no page errors. CI now runs both the Storybook and native gates;
 the workflow itself has not been run remotely as part of this local verification.
+
+## Slice 4b: compatible structural merging
+
+Document mode now joins compatible ranges during replacement, cut/paste, and
+Backspace/Delete; a collapsed boundary joins neighboring text blocks. The first
+block in document order survives with its type, fields, prefix, replacement text,
+and marked suffix. Other participating blocks become ordinary tombstones without
+rewriting their retained content. The caret lands between replacement and suffix.
+
+Compatibility is explicit and headless: `textMerge: "same-type"` on a registered
+block definition, identical types and fields, consecutive siblings under one
+parent, and no children on any participant. Writing Basics opts in. Nested leaf
+siblings work; cross-parent spans, containers, custom opt-out types, differing
+fields, and intervening non-text blocks cannot merge. Ordinary mixed replacement
+continues to preserve structure; explicit `surface.selection.merge()` declines
+at these barriers. Boundary deletion never falls through to an empty-block
+shortcut that could remove children.
+
+The selected `nooq.text.merge` prepares the selected text edit for the survivor
+and selected deletes for absorbed blocks, then commits once. A later declined,
+throwing, or mismatched preparation prevents all writes. The standard recipe
+accepts exactly its planned operations; transforming overrides need a compatible
+merge override. Failed compatible merges do not fall back to text-only editing.
+The standard merge owns the final caret; the surface honors an override's final
+selection.
+
+The small composition prerequisite is `ctx.prepare(command, args)`, sharing one
+immutable snapshot with no dispatch or partial commits. Child contexts carry the
+selected child provider's identity; the final transaction retains the outer
+provider identity and passes normal authorization. Recursive preparation, async
+results, and escaped preparation contexts are rejected. `ctx.blockDefinition`
+exposes the selected headless policy. There is no change to the persisted schema,
+wire format, or plugin API version.
+
+Tests cover forward/backward marked ranges, empty boundaries, nested siblings,
+barriers, selected provider refusals and transformations, signed reader denial,
+remote endpoint mapping, and peer convergence. Storybook exercises the editing
+flows in both themes, and the independent native Chromium gate covers real drag,
+clipboard, boundary deletion, and typing after a join. Subtree joins/reparenting,
+cross-type conversion, undo, native cross-range IME, and performance acceptance
+remain open. Unseen concurrent edits to an absorbed block follow existing CRDT
+and tombstone semantics; this slice does not relocate them automatically.
+
+Verification for slice 4b: a stable checkout passed 550 repository tests (eight
+opt-in lab skips), 180 Storybook checks across both themes, typechecking, and the
+native Chromium gate with no page errors. Native multiline paste followed by
+typing also exposed a rich-text parsing bug; the text schema now preserves literal
+whitespace so a subsequent native edit cannot normalize a newline into a space.
+The shared working tree passed the 39 relevant plugin/selection tests and
+typechecking after integration. No performance or cross-range IME qualification
+is claimed by these results.
 
 ## Subsequent slices and acceptance criteria
 

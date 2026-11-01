@@ -57,5 +57,45 @@ await page.keyboard.press(`${mod}+a`);await page.keyboard.press(`${mod}+b`);
 await page.waitForFunction(()=>document.querySelector('[aria-label="Callout text"] strong')?.textContent==='A callout');
 assert.equal(await page.getByRole('textbox',{name:'Text block'}).locator('strong').textContent(),'Unknown text');
 console.log('Native keyboard extension, select-all, and formatting across nested/unknown text passed');
+const mergeTexts = page.getByRole('textbox', { name: 'Text', exact: true });
+async function loadMerge() {
+  await page.goto(`${base}iframe.html?id=plugins-structural-merging--ready-to-merge&viewMode=story`);
+  await page.waitForFunction(() => document.getSelection()?.rangeCount && document.getSelection()!.getRangeAt(0).toString().includes('Middle'));
+}
+await loadMerge();
+const mergeIds = await page.locator('[data-nq-block]').evaluateAll(es => es.map(e => e.dataset.nqBlock));
+const start = await coord(mergeTexts.nth(2), 2), end = await coord(mergeTexts.nth(0), 2);
+await page.mouse.move(start.x, start.y); await page.mouse.down(); await page.mouse.move(end.x, end.y, { steps: 12 }); await page.mouse.up();
+await page.keyboard.press(`${mod}+c`);
+await page.waitForFunction(async () => await navigator.clipboard.readText() === 'pha 😀\nMiddle\nOm');
+await page.evaluate(() => navigator.clipboard.writeText('PASTED\ntext')); await page.keyboard.press(`${mod}+v`);
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'AlPASTED\ntextega');
+assert.deepEqual(await page.locator('[data-nq-block]').evaluateAll(es => es.map(e => e.dataset.nqBlock)), [mergeIds[0], mergeIds[3]]);
+assert.equal(await mergeTexts.locator('em').textContent(), 'ega');
+assert.equal(await mergeTexts.locator('[data-nq-marks]').textContent(), 'ega');
+await page.keyboard.type('!');
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'AlPASTED\ntext!ega');
+console.log('Native backward range drag, structural paste, opaque marks, and continued typing passed');
+
+await loadMerge(); await page.getByRole('button', { name: 'Place caret at second paragraph start' }).click();
+await page.keyboard.press('Backspace');
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'Alpha 😀Middle');
+await page.keyboard.type('!');
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'Alpha 😀!Middle');
+assert.equal(await mergeTexts.count(), 2);
+await loadMerge(); await mergeTexts.first().evaluate(el => {
+  el.focus(); const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = document.getSelection()!; s.removeAllRanges(); s.addRange(r);
+});
+await page.keyboard.press('Delete');
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'Alpha 😀Middle');
+assert.equal(await mergeTexts.count(), 2);
+console.log('Native boundary Backspace and Delete joins passed');
+
+await loadMerge(); await page.keyboard.press(`${mod}+x`);
+await page.waitForFunction(() => document.querySelector('[aria-label="Text"]')?.textContent === 'Alega');
+assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'pha 😀\nMiddle\nOm');
+assert.equal(await mergeTexts.count(), 1);
+assert.equal(await page.getByRole('textbox', { name: 'Callout text' }).textContent(), 'Protected callout');
+console.log('Native structural cut preserves the incompatible neighboring block');
 assert.deepEqual(errors,[]);console.log(`Native selection checks passed in Chromium ${browser.version()}; no page errors`);
 } finally { await browser?.close(); server.stop(true); }

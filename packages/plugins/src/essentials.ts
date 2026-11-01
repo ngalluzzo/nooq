@@ -1,7 +1,9 @@
 import { defineBlock, defineCommand, definePlugin } from "./definitions.ts";
+import { mergeText } from "./merge.ts";
+export { mergeText } from "./merge.ts";
 import type { Op, TextChange } from "@nooq/core";
 
-const textBlock = (type: string, label: string) => defineBlock({ type, label, text: "inline", create: () => ({ fields: {}, text: { s: "", marks: [] } }), diagnose: () => [] });
+const textBlock = (type: string, label: string) => defineBlock({ type, label, text: "inline", textMerge: "same-type", create: () => ({ fields: {}, text: { s: "", marks: [] } }), diagnose: () => [] });
 export const paragraph = textBlock("nooq.paragraph/v1", "Text");
 export const heading = textBlock("nooq.heading/v1", "Heading");
 export const quote = textBlock("nooq.quote/v1", "Quote");
@@ -60,5 +62,5 @@ export const splitBlock = defineCommand<{ block: string; anchor: number; head: n
   },
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, quote], commands: [insertBlock, editText, deleteBlock, splitBlock] },
+  contributes: { blocks: [paragraph, heading, quote], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText] },
 });
