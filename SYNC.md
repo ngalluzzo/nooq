@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 3 — pre-implementation.** Implements DM-8 of
+**Status: Draft 3.1 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -74,6 +74,11 @@ A client opens a session by sending:
   share it, because content only flows on new edits after connecting.
   Found by the first bootstrap test; doc changed before code, per
   SW-11.)*
+- In a secured document (DM-13) `update` MUST be `null`: unsigned state
+  never travels there. The client's own changes travel as envelopes from
+  its outbox instead (SW-4), resent after the reply. *(Draft 3.1: Draft 2
+  refused a secured hello's bare state but left the client nothing else to
+  send, so a secured document with local state could never reconnect.)*
 
 The responding peer replies:
 
@@ -96,7 +101,8 @@ The responding peer replies:
   checkpoint covers are archive and need not travel.
   *(Draft 3, proposals/0005.)*
 - Reconnection re-runs the handshake; the delta since the last state
-  vector is small by construction.
+  vector is small by construction. After every `hello-reply`, the client
+  resends each outbox envelope the reply does not confirm (SW-4).
 
 ## SW-4. Steady state
 
@@ -108,6 +114,13 @@ The responding peer replies:
 - A session MAY send `{ "t": "delta", "sv": "<base64>" }` at any time to
   request everything since a state vector; the reply is a `delta`
   message shaped like `hello-reply`'s (`delta`, `rootDigest?`).
+- **Outbox.** A session keeps every envelope it sends in an outbox until a
+  handshake confirms the peer has it: the reply's `sv` covers the
+  envelope's clocks, or its envelope log contains the envelope's
+  `updateDigest`. Sending while disconnected is not an error; the envelope
+  waits in the outbox (DM-4: durable intent precedes shipping). Resending
+  is free (SW-1.3). *(Draft 3.1: Draft 2 shipped envelopes once and kept
+  none, so edits sealed offline were lost.)*
 
 ## SW-5. Snapshots
 
@@ -140,6 +153,13 @@ A hosted nooq sync service is a peer that:
   ones exactly like any peer (DM-13 `authorize`), and applies no other
   policy. Conflict resolution happens in every client's CRDT; there is
   nothing to resolve server-side.
+- MUST log and relay each update once. An envelope whose update the
+  relay already admitted (same `updateDigest`) is a duplicate: it changes
+  nothing and is neither logged nor relayed again. A duplicate whose
+  signature does not verify is denied, like any forgery. *(Draft 3.1:
+  Draft 2 logged every retransmission, and its duplicate path skipped
+  signature checks, so forged envelopes over honest bytes reached the
+  envelope log.)*
 - MAY evict, rate-limit, or require transport-level authentication —
   these are operational policies on the *connection*, never on
   *document content*. A policy that distinguishes between documents'

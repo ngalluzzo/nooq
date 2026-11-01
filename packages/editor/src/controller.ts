@@ -474,6 +474,12 @@ export class Editor {
     this.session?.setCursor(cursor);
   }
 
+  /** SW-3: re-run the handshake over a new transport; unconfirmed envelopes resend (SW-4). */
+  reconnect(transport: SyncTransport): void {
+    if (!this.session) throw new Error("this editor was created without a transport");
+    this.session.restart(transport);
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;

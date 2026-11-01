@@ -23,7 +23,7 @@
     "prosemirror-state": "^1",
     "prosemirror-transform": "^1",
     "prosemirror-view": "^1",
-    "yjs": "^13.6.0"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@nooq/plugin-callouts": "workspace:*",

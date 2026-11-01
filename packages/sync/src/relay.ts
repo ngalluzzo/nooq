@@ -54,6 +54,10 @@ export class NooqRelay {
   private readonly envelopeLog = new Map<string, Array<{ envelope: Envelope; update: Uint8Array }>>();
   /** DM-13: validly signed envelopes awaiting grants. */
   private readonly held = new Map<string, HeldEnvelope[]>();
+  /** SW-6: update digests already admitted — each update is logged and relayed once. */
+  private readonly admitted = new Map<string, Set<string>>();
+  /** Messages per document are handled in arrival order, so a burst admits in sequence. */
+  private readonly queues = new Map<string, Promise<void>>();
 
   constructor(private readonly options: NooqRelayOptions = {}) {}
 
@@ -61,7 +65,10 @@ export class NooqRelay {
   connect(docId: string): SyncTransport {
     const { client, server } = createDuplex();
     server.onMessage((raw) => {
-      void this.handle(docId, server, raw);
+      // Arrival order: an outbox burst's later envelopes depend on earlier
+      // ones, and a held envelope is only retried after a later admission.
+      const next = (this.queues.get(docId) ?? Promise.resolve()).then(() => this.handle(docId, server, raw)).catch(() => {});
+      this.queues.set(docId, next);
     });
     return client;
   }
@@ -75,16 +82,23 @@ export class NooqRelay {
     return this.envelopeLog.get(docId) ?? [];
   }
 
-  /** Verify then admit, exactly like any peer (SW-6). Returns the verdict. */
-  private async verifyAndAdmit(docId: string, envelope: Envelope, update: Uint8Array, raw: string): Promise<"allow" | "hold" | "deny"> {
+  /**
+   * Verify then admit, exactly like any peer (SW-6). A duplicate (an update
+   * already admitted) changes nothing and is neither logged nor relayed.
+   */
+  private async verifyAndAdmit(docId: string, envelope: Envelope, update: Uint8Array, raw: string): Promise<"allow" | "hold" | "deny" | "duplicate"> {
     const doc = this.docs.get(docId) ?? this.open(docId);
+    const admitted = this.admitted.get(docId)!;
     const admission = await admitEnvelope(doc, envelope, update);
     if (admission.verdict === "allow") {
+      if (admission.reason === "duplicate" || admitted.has(envelope.updateDigest)) return "duplicate";
+      admitted.add(envelope.updateDigest);
       this.envelopeLog.get(docId)!.push({ envelope, update });
       return "allow";
     }
     if (admission.verdict === "hold") {
-      this.held.get(docId)!.push({ envelope, update, raw });
+      const held = this.held.get(docId)!;
+      if (!held.some((item) => item.envelope.updateDigest === envelope.updateDigest)) held.push({ envelope, update, raw });
       return "hold";
     }
     return "deny";
@@ -103,7 +117,7 @@ export class NooqRelay {
         }
       } else if (verdict === "hold") {
         remaining.push(item);
-      } // deny: dropped for good
+      } // deny: dropped for good; duplicate: already relayed once
     }
     this.held.set(docId, remaining);
   }
@@ -132,19 +146,21 @@ export class NooqRelay {
         // Draft 2: in access-controlled documents a bare hello update is
         // refused like any bare update — state cannot bypass the rules.
         if (message.update) {
+          let relay = true;
           if (message.envelope) {
             const verdict = await this.verifyAndAdmit(docId, message.envelope, fromBase64(message.update), raw);
             if (verdict === "deny") {
               server.send(encodeMessage(errorFor(docId, "envelope-denied", "hello update failed verification")));
               return;
             }
+            relay = verdict === "allow"; // held or duplicate: not relayed (SW-6)
           } else if (readState(doc).access) {
             server.send(encodeMessage(errorFor(docId, "envelope-denied", "unsigned hello update in an access-controlled document")));
             return;
           } else {
             Y.applyUpdate(doc, fromBase64(message.update), "relay-store");
           }
-          for (const peer of this.connections.get(docId)!) {
+          for (const peer of relay ? this.connections.get(docId)! : []) {
             if (peer !== server) {
               peer.send(encodeMessage({ v: 1, t: "update", doc: docId, update: message.update, ...(message.envelope ? { envelope: message.envelope } : {}) }));
             }
@@ -179,6 +195,7 @@ export class NooqRelay {
             return;
           }
           if (verdict === "hold") return; // held pending grants; not relayed yet
+          if (verdict === "duplicate") return; // already logged and relayed once (SW-6)
           for (const peer of this.connections.get(docId)!) {
             if (peer !== server) peer.send(raw); // relay unchanged (SW-6)
           }
@@ -226,6 +243,7 @@ export class NooqRelay {
     this.connections.set(docId, this.connections.get(docId) ?? new Set());
     this.envelopeLog.set(docId, this.envelopeLog.get(docId) ?? []);
     this.held.set(docId, this.held.get(docId) ?? []);
+    this.admitted.set(docId, this.admitted.get(docId) ?? new Set());
     return doc;
   }
 }

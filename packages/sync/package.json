@@ -13,6 +13,6 @@
   "dependencies": {
     "@nooq/core": "workspace:*",
     "@nooq/yjs": "workspace:*",
-    "yjs": "^13.6.0"
+    "yjs": "13.6.33"
   }
 }

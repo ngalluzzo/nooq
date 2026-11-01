@@ -494,7 +494,18 @@ export async function admitEnvelope(
       break;
     }
   }
+  const docId = documentHeader(doc).docId;
   if (alreadyIntegrated && (Y.decodeUpdate(update) as unknown as { structs: unknown[] }).structs.length > 0) {
+    // A duplicate changes nothing, but in a secured document it must still be
+    // what it claims: a forgery over honest bytes is denied, never logged or
+    // relayed (SW-6).
+    const access = isSecuredDocId(docId) ? readState(doc).access : undefined;
+    if (access) {
+      const key = keyFor(access, envelope.signer);
+      if (!key || !(await verifyEnvelope(envelope, docId, key))) {
+        return { verdict: "deny", reason: "duplicate with an invalid signature", touched: inspected.touched };
+      }
+    }
     return { verdict: "allow", reason: "duplicate", touched: inspected.touched };
   }
 
@@ -505,8 +516,6 @@ export async function admitEnvelope(
     if (settlement === false) return { verdict: "deny", reason: "adoption ops diverge from the proposal" };
     if (settlement === undefined) return { verdict: "hold", reason: "awaiting proposal" };
   }
-
-  const docId = documentHeader(doc).docId;
 
   // DM-13 Draft 1.7: secured or open is decided by the document's ID alone.
   if (isSecuredDocId(docId)) {

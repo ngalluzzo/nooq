@@ -16,7 +16,7 @@
     "@earendil-works/pi-ai": "0.85.1",
     "typebox": "1.3.7",
     "typescript": "^5.9.0",
-    "yjs": "^13.6.0",
+    "yjs": "13.6.33",
     "@nooq/editor": "workspace:*",
     "@nooq/design": "workspace:*",
     "playwright": "1.64.1",

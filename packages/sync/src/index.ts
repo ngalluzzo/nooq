@@ -15,6 +15,6 @@ export {
   type WireMessage,
 } from "./messages.ts";
 export { NooqRelay, type NooqRelayOptions } from "./relay.ts";
-export { REMOTE_ORIGIN, SyncSession, type AwarenessEntry, type SyncSessionOptions } from "./session.ts";
+export { REMOTE_ORIGIN, SyncSession, type AwarenessEntry, type OutboxEntry, type SyncSessionOptions } from "./session.ts";
 export type { SyncTransport } from "./transport.ts";
 export { settled } from "./transport.ts";

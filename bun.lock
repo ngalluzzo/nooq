@@ -56,7 +56,7 @@
         "prosemirror-state": "^1",
         "prosemirror-transform": "^1",
         "prosemirror-view": "^1",
-        "yjs": "^13.6.0",
+        "yjs": "13.6.33",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
@@ -81,7 +81,7 @@
         "storybook": "10.6.5",
         "typebox": "1.3.7",
         "typescript": "^5.9.0",
-        "yjs": "^13.6.0",
+        "yjs": "13.6.33",
       },
     },
     "packages/plugin-callouts": {
@@ -108,7 +108,7 @@
       "dependencies": {
         "@nooq/core": "workspace:*",
         "@nooq/yjs": "workspace:*",
-        "yjs": "^13.6.0",
+        "yjs": "13.6.33",
       },
     },
     "packages/yjs": {
@@ -116,7 +116,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@nooq/core": "workspace:*",
-        "yjs": "^13.6.0",
+        "yjs": "13.6.33",
       },
     },
   },

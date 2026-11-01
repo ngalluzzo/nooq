@@ -10,7 +10,7 @@
  */
 
 import * as Y from "yjs";
-import { rootDigest } from "@nooq/core";
+import { isSecuredDocId, rootDigest } from "@nooq/core";
 import { admitEnvelope, documentHeader, readState, registerHeader } from "@nooq/yjs";
 import type { Envelope } from "@nooq/core";
 import { fromBase64, toBase64 } from "./base64.ts";
@@ -47,19 +47,34 @@ export interface SyncSessionOptions {
   onSynced?: () => void;
   /** SW-2: surfaces envelope verdicts (denied updates were dropped; held ones pend). */
   onAdmission?: (verdict: "allow" | "hold" | "deny", reason?: string) => void;
+  /** SW-4: envelopes a previous session sent but no handshake confirmed (a host restores them). */
+  outbox?: ReadonlyArray<OutboxEntry>;
+}
+
+/** An envelope this session sent, kept until a handshake confirms the peer has it (SW-4). */
+export interface OutboxEntry {
+  envelope: Envelope;
+  update: Uint8Array;
 }
 
 export class SyncSession {
   private readonly options: SyncSessionOptions;
+  private transport: SyncTransport;
   private syncedFlag = false;
   private closed = false;
   /** DM-13: envelopes held pending grants; retried after every admission. */
   private readonly pending: Array<{ envelope: Envelope; update: Uint8Array }> = [];
+  /** SW-4: sent envelopes awaiting confirmation; resent after every handshake. */
+  private readonly outboxEntries: OutboxEntry[];
+  /** Inbound document messages are handled in arrival order (a relayed burst admits in sequence). */
+  private inbound: Promise<void> = Promise.resolve();
   private readonly handleTransportMessage: (raw: string) => void;
   private readonly handleDocUpdate: (update: Uint8Array, origin: unknown) => void;
 
   constructor(options: SyncSessionOptions) {
     this.options = options;
+    this.transport = options.transport;
+    this.outboxEntries = [...(options.outbox ?? [])];
     this.handleTransportMessage = (raw) => this.receive(raw);
     this.handleDocUpdate = (update, origin) => {
       if (origin === REMOTE_ORIGIN || origin === COMMIT_ORIGIN || origin === ADMIT_ORIGIN || this.closed) return;
@@ -69,12 +84,15 @@ export class SyncSession {
       // and — since the header left the CRDT (SYNC Draft 1.2) — items
       // start at clock 0, so even a peer that missed our base integrates
       // or pends-until-base, both correct.
-      this.options.transport.send(
-        encodeMessage({ v: WIRE_VERSION, t: "update", doc: this.docId, update: toBase64(update) }),
-      );
+      this.send({ v: WIRE_VERSION, t: "update", doc: this.docId, update: toBase64(update) });
     };
     options.transport.onMessage(this.handleTransportMessage);
     options.doc.on("update", this.handleDocUpdate);
+  }
+
+  /** SW-4: what still awaits confirmation — persist it to survive a restart. */
+  get outbox(): ReadonlyArray<OutboxEntry> {
+    return [...this.outboxEntries];
   }
 
   private get docId(): string {
@@ -85,52 +103,89 @@ export class SyncSession {
     return this.syncedFlag;
   }
 
-  /** SW-3: announce everything we have — our state (update) and what we want back (sv). */
+  /**
+   * SW-3: announce what we have (sv) and, in open documents, our state.
+   * A secured document never sends unsigned state: its changes travel as
+   * outbox envelopes, resent once the reply says what the peer lacks.
+   */
   start(): void {
     const hasState = this.hasAnyState();
-    this.options.transport.send(
-      encodeMessage({
-        v: WIRE_VERSION,
-        t: "hello",
-        doc: this.docId,
-        backend: BACKEND,
-        sv: hasState ? toBase64(Y.encodeStateVector(this.options.doc)) : null,
-        update: hasState ? toBase64(Y.encodeStateAsUpdate(this.options.doc)) : null,
-      }),
-    );
+    const bare = hasState && !isSecuredDocId(this.docId);
+    this.send({
+      v: WIRE_VERSION,
+      t: "hello",
+      doc: this.docId,
+      backend: BACKEND,
+      sv: hasState ? toBase64(Y.encodeStateVector(this.options.doc)) : null,
+      update: bare ? toBase64(Y.encodeStateAsUpdate(this.options.doc)) : null,
+    });
   }
 
-  /** SW-2: ship an update, optionally sealed in its envelope (DM-12). */
+  /** SW-3: re-run the handshake, over a new transport when given (reconnect). */
+  restart(transport?: SyncTransport): void {
+    if (this.closed) throw new Error("a closed session cannot restart");
+    if (transport && transport !== this.transport) {
+      this.transport.close();
+      this.transport = transport;
+      transport.onMessage(this.handleTransportMessage);
+    }
+    this.syncedFlag = false;
+    this.start();
+  }
+
+  /** SW-2/SW-4: ship an update; an envelope also waits in the outbox until confirmed. */
   sendUpdate(update: Uint8Array, envelope?: Envelope): void {
-    this.options.transport.send(
-      encodeMessage({
-        v: WIRE_VERSION,
-        t: "update",
-        doc: this.docId,
-        update: toBase64(update),
-        ...(envelope !== undefined ? { envelope } : {}),
-      }),
-    );
+    if (envelope !== undefined) this.outboxEntries.push({ envelope, update });
+    this.send({
+      v: WIRE_VERSION,
+      t: "update",
+      doc: this.docId,
+      update: toBase64(update),
+      ...(envelope !== undefined ? { envelope } : {}),
+    });
   }
 
   /** SW-7: announce a cursor (block identity + offset) or departure (null). */
   setCursor(cursor: Cursor): void {
-    this.options.transport.send(
-      encodeMessage({
-        v: WIRE_VERSION,
-        t: "awareness",
-        doc: this.docId,
-        actor: this.options.actor,
-        ...(this.options.name !== undefined ? { name: this.options.name } : {}),
-        cursor,
-      }),
-    );
+    this.send({
+      v: WIRE_VERSION,
+      t: "awareness",
+      doc: this.docId,
+      actor: this.options.actor,
+      ...(this.options.name !== undefined ? { name: this.options.name } : {}),
+      cursor,
+    });
   }
 
   close(): void {
     this.closed = true;
     this.options.doc.off("update", this.handleDocUpdate);
-    this.options.transport.close();
+    this.transport.close();
+  }
+
+  /** Disconnected is the default state (§2): a failed send waits for the next handshake. */
+  private send(message: WireMessage): void {
+    try {
+      this.transport.send(encodeMessage(message));
+    } catch {
+      // The outbox still holds every envelope; nothing else needs delivery.
+    }
+  }
+
+  /** SW-4: drop what the reply confirms, resend the rest. */
+  private flushOutbox(reply: Extract<WireMessage, { t: "hello-reply" }>): void {
+    const known = Y.decodeStateVector(fromBase64(reply.sv));
+    const logged = new Set((reply.envelopes ?? []).map((item) => item.envelope.updateDigest));
+    const unconfirmed = this.outboxEntries.filter(({ envelope }) => {
+      if (logged.has(envelope.updateDigest)) return false;
+      const carriesStructs = envelope.clocks.to >= envelope.clocks.from;
+      return !(carriesStructs && (known.get(envelope.client) ?? 0) > envelope.clocks.to);
+    });
+    this.outboxEntries.length = 0;
+    this.outboxEntries.push(...unconfirmed);
+    for (const { envelope, update } of unconfirmed) {
+      this.send({ v: WIRE_VERSION, t: "update", doc: this.docId, update: toBase64(update), envelope });
+    }
   }
 
   private hasAnyState(): boolean {
@@ -147,10 +202,10 @@ export class SyncSession {
     }
     switch (message.t) {
       case "hello-reply":
-        void this.bootstrap(message);
+        this.inOrder(() => this.bootstrap(message));
         return;
       case "update":
-        void this.receiveUpdate(message.update, message.envelope);
+        this.inOrder(() => this.receiveUpdate(message.update, message.envelope));
         return;
       case "delta":
         if (message.delta !== undefined) {
@@ -166,6 +221,12 @@ export class SyncSession {
       case "hello":
         return; // sessions do not act as relays
     }
+  }
+
+  private inOrder(task: () => Promise<void>): void {
+    this.inbound = this.inbound.then(task).catch((cause) => {
+      this.options.onError?.({ code: "receive-failed", message: cause instanceof Error ? cause.message : String(cause) });
+    });
   }
 
   private async receiveUpdate(updateB64: string, envelope?: Envelope): Promise<void> {
@@ -205,6 +266,7 @@ export class SyncSession {
       this.options.onError?.({ code: "backend-mismatch", message: `unsupported backend ${message.backend}` });
       return;
     }
+    this.flushOutbox(message);
     if (message.delta === null) {
       this.markSynced();
       return;
