@@ -145,4 +145,11 @@ Recorded as the slices land, each with the spec section it changed.
   state digest as replaying from genesis and as the relay; forged,
   ungranted, tampered and unproven checkpoints are refused; a checkpointer
   cannot write.
+- **Owner-only rebase (DM-16, Draft 1.9).** A secured genesis is owner-signed,
+  so only the owner rebases a secured document; the `rebasedFrom` pin lives
+  in the genesis access value and access writes must keep it. Open documents
+  have no genesis to pin. Gates: a rebase keeps the root digest, drops
+  tombstones and history (under half the bytes on the test document), and
+  a fresh peer admits the secured genesis; a version rebuilds its past state
+  exactly, attribution included.
 

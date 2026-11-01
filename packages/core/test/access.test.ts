@@ -155,6 +155,16 @@ describe("authorize (DM-13 Draft 1.7)", () => {
     expect(authorize(access, { tx: writerTx, signer: "human:writer", signerKey: "d3JpdGVy" }, { ...registered(writerTx), accessWrites: true, accessValues: [extended] })).toBe("deny");
   });
 
+  test("a lineage pin is set at genesis and never changes (DM-16)", () => {
+    const pinned: Access = { ...access, rebasedFrom: { docId: "nooq:sha256:" + "a".repeat(64), checkpoint: null } };
+    expect(wellFormedAccess(pinned)).toBe(true);
+    expect(wellFormedAccess({ ...access, rebasedFrom: { docId: "" } })).toBe(false);
+    expect(accessExtends(pinned, { ...pinned, grants: [...pinned.grants, { actorId: "human:new", key: "bmV3", kind: "human", role: "writer" }] })).toBe(true);
+    expect(accessExtends(pinned, access)).toBe(false); // dropped
+    expect(accessExtends(access, pinned)).toBe(false); // added later
+    expect(accessExtends(pinned, { ...pinned, rebasedFrom: { ...pinned.rebasedFrom!, checkpoint: "sha256:b" } })).toBe(false);
+  });
+
   test("adoption ops must canonically equal the proposal's", () => {
     const ops: Op[] = [{ op: "textEdit", block: "b", changes: [{ retain: 1 }, { insert: "x" }] }];
     expect(adoptionMatches(ops, structuredClone(ops))).toBe(true);

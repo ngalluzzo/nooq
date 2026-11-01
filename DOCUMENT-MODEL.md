@@ -475,9 +475,9 @@ The document header gains an optional `access` value:
   other ID) never gains `access`; securing it means forking to a new
   secured document. Absence of `access` therefore never turns a secured
   document open, and no arrival order decides who owns a document.
-- `access` is written only by owner-signed envelopes (DM-12). The owner
-  and nonce never change, and each write's grants MUST extend the
-  current grants unchanged (append-only in v1; revocation means forking,
+- `access` is written only by owner-signed envelopes (DM-12). The owner,
+  nonce and lineage pin (`rebasedFrom`, DM-16) never change, and each
+  write's grants MUST extend the current grants unchanged (append-only in v1; revocation means forking,
   DM-10.6). Deleting or rewriting `access` any other way is an access
   write and is denied.
 - **Kinds are granted.** Each grant (and the owner) binds a `kind`. An
@@ -559,8 +559,8 @@ measurements behind every rule here.)*
   policy; checkpoints (DM-15) decide what joiners still need.
 - **DM-14.5 Versions.** A version is a snapshot: the state vector and delete
   set of a past state. Because GC is off, live state plus a snapshot rebuilds
-  that state exactly. Hosts may store versions as snapshots or as deltas
-  between them.
+  that state exactly, attribution included, on any peer holding the state.
+  Hosts may store versions as snapshots or as deltas between them.
 
 ## DM-15. Checkpoints
 
@@ -610,13 +610,19 @@ replaying from genesis:
 Live state grows with every edit (DM-14.1). **Rebase** is the explicit
 compaction:
 
-- An owner or writer creates a new lineage whose genesis carries the current
-  visible state with fresh CRDT identities and no tombstones. In secured
-  documents the new lineage is a new secured ID with the same owner and
-  grants (a new nonce, DM-13).
-- The new genesis pins its origin: `rebasedFrom: {docId, checkpoint}`. The
-  old lineage becomes a read-only archive that still answers history,
-  attribution and versions before the rebase.
+- A new lineage's first transaction carries the current visible state with
+  fresh CRDT identities and no tombstones: every live block, parent before
+  child, with its fields and rendered text. In secured documents the new
+  lineage is a new secured ID with the same owner and grants (a new nonce,
+  DM-13), and its genesis is that one owner-signed transaction: so **only
+  the owner rebases a secured document**, because only the owner signs a
+  genesis. In open documents any writer may. *(Draft 1.9: Draft 1.8 let a
+  writer rebase, which a secured genesis cannot allow.)*
+- The new genesis pins its origin: `rebasedFrom: {docId, checkpoint}` is
+  part of the genesis access value, and every later access write MUST keep
+  it unchanged (DM-13). Open documents have no genesis to pin; their host
+  records the lineage. The old lineage becomes a read-only archive that
+  still answers history, attribution and versions before the rebase.
 - Rebase is an actor's decision, never automatic, because collaborators must
   move to the new lineage. Hosts warn and recommend; budgets are proposed in
   proposals/0005.

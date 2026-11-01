@@ -77,6 +77,8 @@ export interface Access {
   grants: Grant[];
   /** With `owner`, fingerprints into a secured document's ID (DM-13). */
   nonce: string;
+  /** DM-16: the lineage this one was rebased from. Set at genesis, never changed. */
+  rebasedFrom?: { docId: string; checkpoint: string | null };
 }
 
 export interface DocState {

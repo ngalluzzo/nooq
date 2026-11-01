@@ -50,8 +50,12 @@ export function wellFormedAccess(value: unknown): value is Access {
     const p = item as { actorId?: unknown; key?: unknown; kind?: unknown } | null;
     return !!p && typeof p.actorId === "string" && p.actorId !== "" && typeof p.key === "string" && p.key !== "" && KINDS.includes(p.kind as ActorKind);
   };
+  const lineage = (value: unknown) => {
+    const pin = value as { docId?: unknown; checkpoint?: unknown } | null;
+    return value === undefined || (!!pin && typeof pin.docId === "string" && pin.docId !== "" && (pin.checkpoint === null || typeof pin.checkpoint === "string"));
+  };
   return !!access && party(access.owner) && typeof access.nonce === "string" && access.nonce !== "" && Array.isArray(access.grants)
-    && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role));
+    && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role)) && lineage(access.rebasedFrom);
 }
 
 /** The owner or grant naming this actor, if any (owner first). */
@@ -78,10 +82,11 @@ export function keyMismatch(access: Access | undefined, actorId: string, key: st
   return party !== undefined && party.key !== key;
 }
 
-/** DM-13: an access write keeps owner and nonce and extends grants unchanged. */
+/** DM-13: an access write keeps owner, nonce and lineage (DM-16), and extends grants unchanged. */
 export function accessExtends(current: Access, next: unknown): boolean {
   if (!wellFormedAccess(next)) return false;
   if (canonicalJson(next.owner) !== canonicalJson(current.owner) || next.nonce !== current.nonce) return false;
+  if (canonicalJson(next.rebasedFrom ?? null) !== canonicalJson(current.rebasedFrom ?? null)) return false;
   if (next.grants.length < current.grants.length) return false;
   if (canonicalJson(next.grants.slice(0, current.grants.length)) !== canonicalJson(current.grants)) return false;
   const ids = new Set([current.owner.actorId]);
