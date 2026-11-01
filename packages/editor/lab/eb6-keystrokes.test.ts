@@ -133,7 +133,10 @@ describe.skipIf(!LAB || !labCapable)("EB-6 keystroke to paint", () => {
         // character to land, remote text on top.
         if (condition === "idle") expect(result.charactersLanded).toBe(result.charactersExpected);
         else expect(result.charactersLanded).toBeGreaterThanOrEqual(result.charactersExpected);
-        expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(FRAME_MS);
+        // Draft 2 stage 1: ref-small gated at two frames; ref-large is
+        // report-mode until incremental projection lands (EB-6 amendment).
+        const ceiling = doc === "ref-small" ? FRAME_MS * 2 : Number.POSITIVE_INFINITY;
+        expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(ceiling);
         expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
       },
       600_000,

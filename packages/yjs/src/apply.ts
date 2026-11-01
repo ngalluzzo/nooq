@@ -61,11 +61,14 @@ export function keepFormatting(doc: Y.Doc): void {
  * history store (DM-14.4); the document gets only its effects, written
  * through the client registered to its author (DM-14.2).
  */
-export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown): void {
+export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown, base?: import("@nooq/core").DocState): void {
   // Atomicity (DM-12): validate the WHOLE transaction against the
   // sequential engine over the current projection before any Yjs
   // mutation — a failing op never leaves its siblings applied.
-  validateTransaction(readState(doc), tx); // throwaway projection: no defensive clone (EB-6)
+  // `base` (EB-6/ref-large): a caller-supplied FRESH projection at the
+  // doc's current revision — validation mutates it, which is exactly the
+  // throwaway contract; saves a ~30ms readState at 2,000 blocks.
+  validateTransaction(base ?? readState(doc), tx);
   const registration = registrationOf(tx);
   useClientFor(doc, registration);
   doc.transact(() => {

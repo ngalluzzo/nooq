@@ -21,6 +21,7 @@ export interface EditorSurface {
   readonly lastDrift: number;
   readonly lastAnchorRect: { top: number; bottom: number } | null;
   readonly lastViewportTop: number;
+  readonly renderCounts: { targeted: number; full: number; presence: number };
 }
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
@@ -337,7 +338,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
   let mountedFocused = false;
   /** Lab/test observability: remote renders seen, pins applied (EB-7). */
-  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0 };
+  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0, renderCounts: { targeted: 0, full: 0, presence: 0 } };
 
   /** The anchor row keeping the viewport still across remote renders (EB-7):
    *  the FIRST row overlapping the viewport top — the same block the lab's
@@ -383,6 +384,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         for (const info of Object.values(event.changes ?? {})) if (info.structure) structural = true;
       }
     }
+    if (batch === null) stats.renderCounts.presence++; else if (changedIds === null) stats.renderCounts.full++; else stats.renderCounts.targeted++;
     if (remote) stats.remoteRenders++;
     const anchor = remote ? pickAnchor() : null;
     stats.lastAnchor = anchor?.row.getAttribute("data-nq-block") ?? null;
@@ -462,5 +464,5 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let offClose = () => {};
   const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; } };
+  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; } };
 }
