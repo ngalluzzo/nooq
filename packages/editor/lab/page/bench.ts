@@ -8,6 +8,7 @@
  */
 
 import * as Y from "yjs";
+import { applyTransaction } from "@nooq/yjs";
 import { newBlockId, type BlockId, type Op } from "@nooq/core";
 import { NooqRelay } from "@nooq/sync";
 import { Editor } from "../../src/controller.ts";
@@ -17,6 +18,8 @@ import { referencePlugins, referenceDOM, referenceJobBindings } from "../../src/
 const params = new URLSearchParams(location.search);
 const docName = params.get("doc") ?? "ref-small";
 const condition = params.get("condition") ?? "idle";
+const textMode = params.get("textMode") ?? "plain";
+if (textMode !== "plain" && textMode !== "rich") throw new Error("Unsupported lab text mode");
 const DOC_ID = `lab-${docName}`;
 
 const relay = condition === "sync-storm" ? new NooqRelay() : null;
@@ -29,7 +32,7 @@ const editor = new Editor({
 const update = new Uint8Array(await (await fetch(`/doc/${docName}?id=${DOC_ID}`)).arrayBuffer());
 Y.applyUpdate(editor.ydoc, update);
 const peer = relay ? new Editor({ docId: DOC_ID, actor: { actorId: "human:storm", name: "Storm" }, transport: relay.connect(DOC_ID) }) : null;
-const surface = createSurface(editor, { plugins: referenceDOM });
+const surface = createSurface(editor, { plugins: referenceDOM, textMode });
 document.getElementById("root")!.append(surface.element);
 
 /**
@@ -85,12 +88,23 @@ const unmarked = (s: string) => ({ s, marks: Array.from({ length: s.length }, ()
 /** The editor renders in microtasks; one macrotask later its DOM is current. */
 const rendered = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** Inspect native selection in either presentation; a missing range is not a passing probe. */
+function textSelection(element: Element | null): [number, number] | null {
+  if (element instanceof HTMLTextAreaElement) return [element.selectionStart, element.selectionEnd];
+  const selection = document.getSelection();
+  if (!(element instanceof HTMLElement) || !element.isContentEditable || !selection?.anchorNode || !selection.focusNode
+    || !element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return null;
+  const offset = (node: Node, at: number) => { const range = document.createRange(); range.selectNodeContents(element); range.setEnd(node, at); return range.toString().length; };
+  return [offset(selection.anchorNode, selection.anchorOffset), offset(selection.focusNode, selection.focusOffset)];
+}
+
 let storm: ReturnType<typeof setInterval> | null = null;
 
 /** Helpers the harness calls through view.evaluate(). */
 const lab = {
   docName,
   condition,
+  textMode,
   blockCount: () => surface.element.querySelectorAll("[data-nq-block]").length,
   marks: () =>
     Object.fromEntries(
@@ -100,7 +114,7 @@ const lab = {
       ]),
     ),
   textOf: (block: BlockId) => editor.view.blocks[block]?.text?.s ?? null,
-  totalChars: () => Array.from(surface.element.querySelectorAll("textarea")).reduce((n, t) => n + t.value.length, 0),
+  totalChars: () => lab.blockIds().reduce((n, id) => n + (editor.view.blocks[id]?.text?.s.length ?? 0), 0),
   focusLosses: () => focusLosses,
   /** Characters the local writer has in the document: the target block plus every block they created (Enter). */
   localChars: (target: BlockId) => {
@@ -121,20 +135,29 @@ const lab = {
     return null;
   },
   blockIds: () => Array.from(surface.element.querySelectorAll("[data-nq-block]")).map((row) => row.getAttribute("data-nq-block")!),
+  /** EB-7 observability: the surface's remote-render and pin counters. */
+  stats: () => ({ remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift }),
   /** Where focus and selection are, and where a given block sits on screen. */
   probe: (anchor: BlockId) => {
     const active = document.activeElement as HTMLTextAreaElement | null;
     const row = rowOf(anchor);
     return {
       focusedBlock: active?.closest("[data-nq-block]")?.getAttribute("data-nq-block") ?? null,
-      selection: active && "selectionStart" in active ? [active.selectionStart, active.selectionEnd] : null,
+      selection: textSelection(active),
       anchorTop: row ? row.getBoundingClientRect().top : null,
       scrollY: window.scrollY,
     };
   },
-  /** A remote writer's transaction, as if it had just merged in (EB-7). */
+  /** A remote writer's transaction, as if it had just merged in (EB-7):
+   *  applied through a shadow peer and merged as a REAL remote update —
+   *  the production arrival path (non-local transaction), not editor.apply,
+   *  which would look local to every observer. */
   remote: (op: Op) => {
-    editor.apply({ id: newBlockId(), actor: remoteActor, lamport: ++remoteLamport + 1_000_000, causality: {}, intent: "lab-remote", ops: [op] });
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(editor.ydoc));
+    applyTransaction(peer, { id: newBlockId(), actor: remoteActor, lamport: ++remoteLamport + 1_000_000, causality: {}, intent: "lab-remote", ops: [op] });
+    const delta = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(editor.ydoc));
+    Y.applyUpdate(editor.ydoc, delta, "lab-remote-merge");
   },
   /** EB-4 sync storm: the peer edits blocks other than `exclude`, `perSecond` times a second, through the relay. */
   startStorm: (exclude: BlockId, perSecond = 50) => {
@@ -161,11 +184,12 @@ const lab = {
    */
   fuzzRemote: async (options: { seed: number; ops: number; caret: BlockId }) => {
     const rand = random(options.seed);
-    const textarea = () => rowOf(options.caret)?.querySelector("textarea") ?? null;
+    const input = () => rowOf(options.caret)?.querySelector<HTMLElement>('textarea, [contenteditable="true"]') ?? null;
     const restore = () => {
-      const area = textarea();
+      const area = input();
       area?.focus();
-      area?.setSelectionRange(area.value.length, area.value.length);
+      if (area instanceof HTMLTextAreaElement) area.setSelectionRange(area.value.length, area.value.length);
+      else if (area) { const range = document.createRange(); range.selectNodeContents(area); range.collapse(false); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range); }
     };
     const counts = { focus: 0, selection: 0, viewport: 0 };
     const first: { op: number; kind: string; detail: string }[] = [];
@@ -176,7 +200,8 @@ const lab = {
     const started = performance.now();
     for (let i = 0; i < options.ops; i++) {
       const active = document.activeElement as HTMLTextAreaElement | null;
-      const selection = active?.selectionStart !== undefined ? [active.selectionStart, active.selectionEnd] : null;
+      const selection = textSelection(active);
+      if (!selection) throw new Error("Cannot measure EB-7 without a native text selection");
       const anchor = lab.topVisibleBlock();
       const anchorTop = anchor ? rowOf(anchor)!.getBoundingClientRect().top : null;
       const order = lab.blockIds();
@@ -214,7 +239,7 @@ const lab = {
         restore();
         continue;
       }
-      const after = [now!.selectionStart, now!.selectionEnd];
+      const after = textSelection(now);
       if (JSON.stringify(after) !== JSON.stringify(expected)) {
         const where = op.op === "textEdit" && op.block === options.caret ? " in the caret's block" : "";
         record(i, "selection", `${op.op}${where}: expected selection ${JSON.stringify(expected)}, got ${JSON.stringify(after)}`);

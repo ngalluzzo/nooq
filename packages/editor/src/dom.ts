@@ -1,19 +1,32 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
 import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
-import type { Action, BlockView, BlockViewContext, DOMPlugin, RichTextOptions, SurfaceAction, SurfaceActionContext, SurfaceActions, TextBinding, TextSelection } from "@nooq/plugins/dom";
+import { defineTextPolicy, type Action, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 
-export interface EditorSurface { element: HTMLElement; actions: SurfaceActions; destroy(): void }
+export interface EditorSurface {
+  element: HTMLElement;
+  actions: SurfaceActions;
+  destroy(): void;
+  /** EB-7 observability: remote renders seen, viewport pins applied. */
+  readonly remoteRenders: number;
+  readonly pins: number;
+  readonly lastAnchor: string | null;
+  readonly lastDrift: number;
+}
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
   resolve?: Readonly<Record<string, string>>;
   keyOrder?: Readonly<Record<string, readonly string[]>>;
+  /** Overrides presentation for mountTextEditor views; explicit legacy bindings stay explicit. */
+  textMode?: TextMode;
 }
-interface Binding { element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; destroy(): void }
+interface Binding { element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
+type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy };
+const defaultTextPolicy = defineTextPolicy();
 interface Row {
   id: string;
   shell: HTMLElement; children: HTMLElement; presence: HTMLElement; view: BlockView;
@@ -21,8 +34,10 @@ interface Row {
 }
 
 export function createSurface(editor: Editor, options: SurfaceOptions = {}): EditorSurface {
-  const plugins = options.plugins ?? [], views = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }>();
-  const providers = new Map<string, { plugin: string; mount: DOMPlugin["views"][number]["mount"] }[]>();
+  if (options.textMode !== undefined && options.textMode !== "plain" && options.textMode !== "rich") throw new Error("Invalid surface text mode");
+  const textMode = options.textMode;
+  const plugins = options.plugins ?? [], views = new Map<string, ViewProvider>();
+  const providers = new Map<string, ViewProvider[]>();
   const seen = new Set<string>(), menus: SurfaceAction[] = [];
   const definitions: Action[] = [], legacyIds = new Set(plugins.flatMap(p => [...p.menus ?? [], ...p.keys ?? []].map(a => a.id)));
   const keys = new Map<string, NonNullable<DOMPlugin["keys"]>[number][]>();
@@ -31,8 +46,12 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     seen.add(plugin.id);
     if (!editor.registry.plugins.some(p => p.id === plugin.forPlugin.id && p.version === plugin.forPlugin.version)) throw new Error(`DOM plugin ${plugin.id} requires ${plugin.forPlugin.id}@${plugin.forPlugin.version}`);
     for (const view of plugin.views) {
-      if (!editor.registry.block(view.type)) throw new Error(`View ${plugin.id} references unknown block ${view.type}`);
-      providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount }]);
+      const block = editor.registry.block(view.type);
+      if (!block) throw new Error(`View ${plugin.id} references unknown block ${view.type}`);
+      const policy = view.textPolicy ? defineTextPolicy(view.textPolicy) : undefined;
+      if (policy && block.definition.text !== "inline") throw new Error(`Text policy requires an inline block: ${view.type}`);
+      if (policy?.enter && policy.enter !== "newline" && !editor.registry.command(policy.enter.command)) throw new Error(`Unknown Enter command ${policy.enter.command}`);
+      providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount, textPolicy: policy }]);
     }
     for (const action of [...plugin.menus ?? [], ...plugin.keys ?? [], ...plugin.actions ?? []]) {
       if ((!!action.command === !!action.job) || (action.command && !editor.registry.command(action.command)) || (action.job && !editor.registry.job(action.job))) throw new Error(`Invalid surface action ${plugin.id}:${action.id}`);
@@ -144,16 +163,17 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     } catch (cause) { fail(undefined, cause); return true; }
     return false;
   }
-  function mountRichText(id: string, row: Row, options?: RichTextOptions) {
+  function mountRichText(id: string, row: Row, options?: RichTextOptions, input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }) {
     if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
     const rich = createRichText({ read: () => editor.view.blocks[id]?.text ?? { s: "", marks: [] },
-      commit: changes => sendText(id, row, changes), keyDown: event => keyDown(id, event),
+      commit: changes => sendText(id, row, changes), keyDown: event => input ? input.keyDown(event) : keyDown(id, event),
+      beforeInput: event => input?.beforeInput(event) ?? false,
       input: text => { if (text === "/") openMenu(id); else closeMenu(); },
     }, options);
     row.bindings.push({ ...rich, update: block => rich.update(block.text ?? { s: "", marks: [] }) });
     return rich;
   }
-  function mountText(id: string, row: Row, label = "Text block"): Binding & TextBinding {
+  function mountText(id: string, row: Row, label = "Text block", input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }): Binding & TextBinding {
     if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
     const area = document.createElement("textarea"); area.className = "nq-input"; area.setAttribute("aria-label", label);
     let value = (renderState ?? editor.view).blocks[id]?.text?.s ?? "", compositionBase = value;
@@ -167,13 +187,25 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     };
     const binding: Binding & TextBinding & { composing: boolean } = { element: area, composing: false,
       selection: () => ({ anchor: area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart, head: area.selectionDirection === "backward" ? area.selectionStart : area.selectionEnd }),
-      focus(selection) { if (controller.signal.aborted) return; area.focus(); if (selection) area.setSelectionRange(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head), selection.anchor > selection.head ? "backward" : "forward"); },
+      focus(selection) { if (controller.signal.aborted) return; area.focus({ preventScroll: true }); if (selection) area.setSelectionRange(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head), selection.anchor > selection.head ? "backward" : "forward"); },
+      insertText(text) {
+        if (controller.signal.aborted || binding.composing) return false;
+        const from = area.selectionStart, to = area.selectionEnd, direction = area.selectionDirection, before = area.value;
+        const accepted = sendText(id, row, [{ retain: from }, { delete: to - from }, { insert: text }]);
+        area.value = value = editor.view.blocks[id]?.text?.s ?? "";
+        if (accepted) area.setSelectionRange(from + text.length, from + text.length);
+        else {
+          const remote = replaceChanges(before, value);
+          area.setSelectionRange(caretAfterChanges(remote, from), caretAfterChanges(remote, to), direction);
+        }
+        return accepted;
+      },
       update(block) {
         const next = block.text?.s ?? "";
         if (binding.composing) { value = next; return; }
         if (area.value !== next) {
-          const delta = replaceChanges(value, next), start = caretAfterChanges(delta, area.selectionStart ?? 0), end = caretAfterChanges(delta, area.selectionEnd ?? 0);
-          area.value = next; if (document.activeElement === area) area.setSelectionRange(start, end);
+          const delta = replaceChanges(value, next), start = caretAfterChanges(delta, area.selectionStart ?? 0), end = caretAfterChanges(delta, area.selectionEnd ?? 0), direction = area.selectionDirection;
+          area.value = next; if (document.activeElement === area) area.setSelectionRange(start, end, direction);
         } value = next;
       }, destroy() { controller.abort(); },
     };
@@ -200,9 +232,43 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     });
     on("keydown", event => {
       if (binding.composing || event.isComposing) return;
-      if (keyDown(id, event)) event.preventDefault();
+      if (input ? input.keyDown(event) : keyDown(id, event)) event.preventDefault();
+    });
+    on("beforeinput", event => {
+      const before = event as InputEvent;
+      if (!binding.composing && !before.isComposing && before.cancelable && input?.beforeInput(before)) before.preventDefault();
     });
     row.bindings.push(binding); return binding;
+  }
+
+  function mountTextEditor(id: string, row: Row, label?: string, policy = defaultTextPolicy): TextEditorBinding {
+    const mode = textMode ?? policy.defaultMode ?? "plain";
+    let binding: Pick<Binding, "insertText"> & TextEditorBinding;
+    const enter = (lineBreak: boolean) => {
+      if (destroyed || row.abort.signal.aborted || rendering || !liveTree(editor.view).alive.has(id)) return;
+      // Admission may precede the queued render. Map the native range to the
+      // current text before sending a selection to a structural command.
+      row.bindings[0]?.update(editor.view.blocks[id]!);
+      if (lineBreak || !policy.enter || policy.enter === "newline") { binding.insertText("\n"); return; }
+      const current = selection(id);
+      const result = editor.commands.run(policy.enter.command, current, { selection: current });
+      if (result.status === "failed") fail(undefined, result.error);
+      else if (result.status === "denied") fail(undefined, new Error(result.reason));
+      // A declined/denied split is consumed. Falling back to a newline would be a different edit.
+    };
+    const input = {
+      keyDown(event: KeyboardEvent) {
+        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) { enter(event.shiftKey); return true; }
+        return keyDown(id, event);
+      },
+      beforeInput(event: InputEvent) {
+        if (event.inputType !== "insertParagraph" && event.inputType !== "insertLineBreak") return false;
+        enter(event.inputType === "insertLineBreak"); return true;
+      },
+    };
+    binding = mode === "rich" ? { ...mountRichText(id, row, { label, marks: policy.marks }, input), mode }
+      : { ...mountText(id, row, label, input), mode, toggleMark: () => false };
+    return binding;
   }
 
   function fallback(id: string, row: Row): BlockView {
@@ -210,7 +276,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const details = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "Stored fields"; details.append(summary, fields);
     element.className = "nq-block nq-fallback"; element.append(label);
     const block = (renderState ?? editor.view).blocks[id]!;
-    if (block.text || editor.registry.block(block.type)?.definition.text === "inline") element.append(mountText(id, row).element);
+    if (block.text || editor.registry.block(block.type)?.definition.text === "inline") element.append(mountTextEditor(id, row).element);
     element.append(details, row.children);
     return { element, update(block) { label.textContent = block.type; fields.textContent = JSON.stringify(block.fields, null, 2); } };
   }
@@ -230,6 +296,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const context: BlockViewContext = {
       block: id, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
       mountRichText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountRichText(id, row, options); },
+      mountTextEditor: options => { if (signal.aborted) throw new Error("View is disposed"); return mountTextEditor(id, row, options?.label, provider?.textPolicy); },
       actions: {
         list: placement => signal.aborted ? [] : actions.list(id, placement),
         run: action => signal.aborted ? { status: "unavailable", reason: "View is disposed." } : actions.run(action, id),
@@ -258,16 +325,21 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
   let mountedFocused = false;
+  /** Lab/test observability: remote renders seen, pins applied (EB-7). */
+  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0 };
 
-  /** The anchor row keeping the viewport still across remote renders (EB-7). */
+  /** The anchor row keeping the viewport still across remote renders (EB-7):
+   *  the FIRST row overlapping the viewport top — the same block the lab's
+   *  checker holds still (bottom > top edge), not the first fully-visible
+   *  row, which is a different block whenever one straddles the edge. */
   function pickAnchor(): { row: HTMLElement; top: number } | null {
     const scroller = document.scrollingElement;
     if (!scroller) return null;
     const viewportTop = scroller.getBoundingClientRect().top;
     let best: { row: HTMLElement; top: number } | null = null;
     for (const row of rows.values()) {
-      const top = row.shell.getBoundingClientRect().top;
-      if (top >= viewportTop && (!best || top < best.top)) best = { row: row.shell, top };
+      const rect = row.shell.getBoundingClientRect();
+      if (rect.bottom > viewportTop && (!best || rect.top < best.top)) best = { row: row.shell, top: rect.top };
     }
     return best;
   }
@@ -276,7 +348,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const scroller = document.scrollingElement;
     if (!scroller) return;
     const drift = anchor.row.getBoundingClientRect().top - anchor.top;
-    if (drift !== 0) scroller.scrollTop += drift;
+    stats.lastDrift = drift;
+    if (drift !== 0) { scroller.scrollTop += drift; stats.pins++; }
   }
 
   function render() {
@@ -295,7 +368,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         for (const info of Object.values(event.changes ?? {})) if (info.structure) structural = true;
       }
     }
+    if (remote) stats.remoteRenders++;
     const anchor = remote ? pickAnchor() : null;
+    stats.lastAnchor = anchor?.row.getAttribute("data-nq-block") ?? null;
     try {
     const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
     renderState = state;
@@ -364,5 +439,5 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let offClose = () => {};
   const destroy = () => { if (destroyed) return; destroyed = true; surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, destroy };
+  return { element: root, actions, destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; } };
 }

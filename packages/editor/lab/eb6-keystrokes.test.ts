@@ -128,7 +128,11 @@ describe.skipIf(!LAB || !labCapable)("EB-6 keystroke to paint", () => {
         // A hidden page gets no frames: the run measured nothing and is void.
         expect(result.pageHidden).toBe(0);
         if (!ENFORCE) return;
-        expect(result.charactersLanded).toBe(result.charactersExpected);
+        // The storm's remote writers add characters to the same block (EB-4):
+        // exact equality is idle-only; the storm requires every keystroke's
+        // character to land, remote text on top.
+        if (condition === "idle") expect(result.charactersLanded).toBe(result.charactersExpected);
+        else expect(result.charactersLanded).toBeGreaterThanOrEqual(result.charactersExpected);
         expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(FRAME_MS);
         expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
       },
