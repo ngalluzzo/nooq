@@ -29,10 +29,13 @@ const editor = new Editor({
   actor: { actorId: "human:lab", name: "Lab writer" },
   ...(relay ? { transport: relay.connect(DOC_ID) } : {}),
 });
-editor.attachMaintainedProjection(); // EB-6 stage 2: the lab measures the incremental projection
+// EB-8: the projection attaches AFTER the bulk apply — seeding it from one
+// readState outside the open Yjs transaction beats reseed-during-apply.
 const update = new Uint8Array(await (await fetch(`/doc/${docName}?id=${DOC_ID}`)).arrayBuffer());
 performance.mark("lab:fetched");
-Y.applyUpdate(editor.ydoc, update);
+editor.applySeed(update); // EB-8: bulk apply with tracking suspended
+performance.mark("lab:yjs-applied");
+editor.attachMaintainedProjection();
 performance.mark("lab:applied");
 const peer = relay ? new Editor({ docId: DOC_ID, actor: { actorId: "human:storm", name: "Storm" }, transport: relay.connect(DOC_ID) }) : null;
 const surface = createSurface(editor, { plugins: referenceDOM, textMode });

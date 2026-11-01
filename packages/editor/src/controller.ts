@@ -237,7 +237,11 @@ export class Editor {
     let rootsChanged = false, accessChanged = false;
     const change = (id: string) => { changed.add(id); if (!changes.has(id)) changes.set(id, { fields: new Set(), text: false, structure: false }); return changes.get(id)!; };
     const parts = layout(this.ydoc);
-    parts.blocks.observeDeep(events => {
+    const deepHandler = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>) => {
+      // EB-8: a bulk fan-out (initial sync of a 10k-block document) is one
+      // "everything changed" event — the initial render walks everything
+      // anyway, and 10k per-event changes bought nothing.
+      if (events.length > 500) { rootsChanged = true; for (const item of changes.values()) item.structure = true; return; }
       for (const event of events) {
         if (event.path.length) {
           const item = change(String(event.path[0]));
@@ -246,10 +250,29 @@ export class Editor {
           else item.structure = true;
         } else if (event instanceof Y.YMapEvent) for (const id of event.keysChanged) change(id).structure = true;
       }
-    });
-    parts.placement.observe(event => { for (const id of event.keysChanged) change(id).structure = true; });
-    parts.roots.observe(() => { rootsChanged = true; });
-    parts.access.observe(() => { accessChanged = true; });
+    };
+    parts.blocks.observeDeep(deepHandler as never);
+    const placementHandler = (event: Y.YMapEvent<never>) => {
+      // EB-8: bulk fan-outs (initial sync) collapse into the roots-changed
+      // flag — 10k per-key change() items fed a 10k-entry ChangeEvent clone.
+      if (event.keysChanged.size > 500) { rootsChanged = true; changes.clear(); return; }
+      for (const id of event.keysChanged) change(id).structure = true;
+    };
+    parts.placement.observe(placementHandler as never);
+    const rootsHandler = (): void => { rootsChanged = true; };
+    parts.roots.observe(rootsHandler);
+    const accessHandler = (): void => { accessChanged = true; };
+    parts.access.observe(accessHandler);
+    /** EB-8: unobserve for applySeed — bulk apply with no event dispatch. */
+    const suspendTracking = (): void => {
+      parts.blocks.unobserveDeep(deepHandler as never); parts.placement.unobserve(placementHandler as never);
+      parts.roots.unobserve(rootsHandler); parts.access.unobserve(accessHandler);
+    };
+    const resumeTracking = (): void => {
+      parts.blocks.observeDeep(deepHandler as never); parts.placement.observe(placementHandler as never);
+      parts.roots.observe(rootsHandler); parts.access.observe(accessHandler);
+    };
+    this.#seed = { suspend: suspendTracking, resume: resumeTracking, markRoots: () => { rootsChanged = true; } };
     this.ydoc.on("update", (_update: Uint8Array, _origin: unknown, _doc: Y.Doc, transaction: Y.Transaction) => {
       this.revisionValue++;
       this.events.push(freezeSnapshot({ revision: this.revisionValue, origin: transaction.local ? "local" : "remote", blocks: [...changed],
@@ -319,6 +342,23 @@ export class Editor {
     return cache.value;
   }
   attachMaintainedProjection(): void { if (!this.#maintained) this.#maintained = new MaintainedProjection(this.ydoc); }
+  #seed: { suspend(): void; resume(): void; markRoots(): void } = { suspend: () => {}, resume: () => {}, markRoots: () => {} };
+
+
+  /**
+   * EB-8: apply a document seed (initial bulk sync) with change-tracking
+   * suspended — Yjs constructs and dispatches ~one event per block to
+   * observers otherwise, which is most of a 10k-block document's load
+   * cost. Emits exactly one everything-changed event afterward; the
+   * surface then renders everything once, as it would have anyway.
+   */
+  applySeed(update: Uint8Array): void {
+    if (this.closed) throw new Error("Editor is closed");
+    this.#seed.suspend();
+    try { Y.applyUpdate(this.ydoc, update); }
+    finally { this.#seed.resume(); }
+    this.#seed.markRoots();
+  }
 
   onChange(callback: () => void): () => void {
     this.listeners.add(callback);

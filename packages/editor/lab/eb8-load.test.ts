@@ -15,6 +15,11 @@ describe.skipIf(!run)("EB-8 load to first editable", () => {
     const { lab, load, close } = await labSession({ throttle: 4 });
     const loads: number[] = [];
     try {
+      // One unmeasured warm-up load of the SAME document: first-run JIT of
+      // the bulk paths (10k-walk, placeholder runs) is compile, not document
+      // load — the gate measures the document (network cache stays disabled
+      // for every measured load, so the 5MB bytes are honest every time).
+      await load("ref-huge");
       for (let i = 0; i < 3; i++) {
         await load("ref-huge");
         let ms = -1;

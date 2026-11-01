@@ -401,7 +401,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   };
   const visibleWindow = (): [number, number] => {
     const vh = window.innerHeight || 800, top = window.scrollY || 0;
-    return [top - 2 * vh, top + 3 * vh]; // two screens of overscan above, three below
+    return [top - 2 * vh, top + 2 * vh]; // two screens of overscan each way (EB-8)
   };
   function onScroll(): void {
     if (scheduled || destroyed) return;
@@ -452,7 +452,6 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const peers = [...editor.awareness.values()];
     // EB-8 windowing: placeholders carry unmounted subtrees' estimated
     // height; the walk is O(doc) iteration + O(visible) DOM work.
-    const placeholders = new Map<string, HTMLElement>();
     const estMemo = new Map<string, number>();
     const estSubtree = (id: string): number => {
       const memo = estMemo.get(id); if (memo !== undefined) return memo;
@@ -464,36 +463,45 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const [winTop, winBottom] = visibleWindow();
     lastWindowAt = window.scrollY || 0;
     let walkY = 0;
-    const placeholderFor = (id: string, height: number, parent: HTMLElement, at: number): HTMLElement => {
-      let el: HTMLElement | undefined = placeholders.get(id);
-      if (!el) {
-        el = document.createElement("div");
+    /** One placeholder per skipped RUN (EB-8): a div per skipped block was
+     *  9,953 elements at ref-huge — 200ms of div creation in the first walk. */
+    const runs = new Map<HTMLElement, { el: HTMLElement; height: number }>();
+    let runParent: HTMLElement | null = null;
+    const placeholderRun = (parent: HTMLElement, id: string, height: number, at: number): void => {
+      if (runParent !== parent) {
+        runParent = parent;
+        const el = document.createElement("div");
         el.setAttribute("data-nq-block", id);
         el.setAttribute("data-nq-ph", "1");
         el.style.pointerEvents = "auto";
-        const node = el;
-        node.addEventListener("click", () => { node.scrollIntoView({ block: "center" }); requestAnimationFrame(() => requestAnimationFrame(() => render())); }, { signal: surfaceAbort.signal });
+        el.addEventListener("click", () => { el.scrollIntoView({ block: "center" }); requestAnimationFrame(() => requestAnimationFrame(() => render())); }, { signal: surfaceAbort.signal });
+        parent.insertBefore(el, parent.children[at] ?? null);
+        runs.set(parent, { el, height });
+      } else {
+        const run = runs.get(parent)!;
+        run.height += height;
+        run.el.setAttribute("data-nq-ph-last", id);
+        run.el.style.height = `${Math.max(1, Math.round(run.height))}px`;
       }
-      el!.style.height = `${Math.max(1, Math.round(height))}px`;
-      if (parent.children[at] !== el) parent.insertBefore(el, parent.children[at] ?? null);
-      return el;
     };
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
+      runParent = null;
       for (const id of ids) {
         const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
         const est = estSubtree(id);
         const mounted = rows.get(id);
         if (!mounted && (walkY + est < winTop || walkY > winBottom)) {
-          // Outside the window and never mounted: placeholder only.
-          placeholderFor(id, est, parent, at);
+          // Outside the window and never mounted: placeholder run only.
+          placeholderRun(parent, id, est, at);
           at++; walkY += est;
           continue;
         }
+        runParent = null; // a mounted row breaks the run
         if (mounted && walkY + est < winTop - (window.innerHeight || 800)) {
           // Mounted but far above the window: release it.
           cleanup(mounted); mounted.shell.remove(); rows.delete(id);
-          placeholderFor(id, est, parent, at);
+          placeholderRun(parent, id, est, at);
           at++; walkY += est;
           continue;
         }
@@ -537,6 +545,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       }
     }
     if (anchor) pinViewport(anchor);
+    if (!(globalThis as { __nqFirstRender?: boolean }).__nqFirstRender) { (globalThis as { __nqFirstRender?: boolean }).__nqFirstRender = true; try { performance.mark("nq:first-render"); } catch { /* non-browser */ } }
     if (active && root.contains(active.element) && !active.element.contains(document.activeElement)) active.focus(activeSelection);
     if (pendingSelection) {
       const request = pendingSelection; pendingSelection = undefined;

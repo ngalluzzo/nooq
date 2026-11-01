@@ -119,18 +119,16 @@ export class MaintainedProjection {
   }
 
   #index(): void {
-    const { blocks: yblocks, roots: yroots, placement } = layout(this.#doc);
+    // EB-8: ONLY the register index is eager (10k map reads). Physical
+    // arrays materialize lazily per touched container — eager toArray of
+    // every block's children was 10k allocations inside the load path.
+    const { blocks: yblocks, placement } = layout(this.#doc);
     this.#containerOf.clear();
     this.#physical.clear();
     this.#byContainer.clear();
     for (const id of yblocks.keys()) {
       const entry = placement.get(id);
       if (entry && !entry.tombstoned) { this.#containerOf.set(id, entry.parent); this.#indexMembership(id, entry.parent); }
-    }
-    this.#physical.set(null, yroots.toArray());
-    for (const [id, yb] of yblocks.entries()) {
-      const children = yb.get("children") as Y.Array<BlockId> | undefined;
-      if (children) this.#physical.set(id, children.toArray());
     }
   }
 
@@ -175,6 +173,11 @@ export class MaintainedProjection {
   #byContainer = new Map<BlockId | null, Set<BlockId>>();
 
   #childrenOf(container: BlockId | null): BlockId[] {
+    if (!this.#physical.has(container)) {
+      const { blocks: yblocks, roots: yroots } = layout(this.#doc);
+      this.#physical.set(container, container === null ? yroots.toArray()
+        : ((yblocks.get(container)?.get("children") as Y.Array<BlockId> | undefined)?.toArray() ?? []));
+    }
     const physical = this.#physical.get(container) ?? [];
     const out: BlockId[] = [];
     const seen = new Set<BlockId>();

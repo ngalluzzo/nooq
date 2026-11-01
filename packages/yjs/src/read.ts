@@ -112,7 +112,12 @@ export function readBlock(id: BlockId, yb: Y.Map<unknown>, childrenOf: (containe
   };
 }
 
-/** Canonical rendered {s, marks} from a Y.Text delta (DM-3.3 per-character marks). */
+/**
+ * Canonical rendered {s, marks} from a Y.Text delta (DM-3.3 per-character
+ * marks). EB-8: characters of one run share a single names array — marks
+ * are read-only by contract (the frozen snapshot freezes it), and the old
+ * per-character clone allocated ~1M throwaway arrays on a 10k-block read.
+ */
 function readText(yt: Y.Text): RenderedText {
   let s = "";
   const marks: string[][] = [];
@@ -123,7 +128,7 @@ function readText(yt: Y.Text): RenderedText {
       .filter((name) => Boolean(attrs[name]))
       .sort();
     s += str;
-    for (let i = 0; i < str.length; i++) marks.push([...names]);
+    for (let i = 0; i < str.length; i++) marks.push(names);
   }
   return { s, marks };
 }
