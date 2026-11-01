@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 3.2 — pre-implementation.** Implements DM-8 of
+**Status: Draft 3.3 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -204,11 +204,35 @@ A hosted nooq sync service is a peer that:
 
 ```json
 { "v": 1, "t": "awareness", "doc": "…", "actor": "<actorId>",
-  "name": "<display name|null>", "cursor": { "block": "<blockId>", "offset": 0 } | null }
+  "name": "<display name|null>",
+  "cursor": { "block": "<blockId>", "offset": 0,
+              "anchor": { "block": "<blockId>", "offset": 0 } } | null }
 ```
 
 - Cursors anchor to **block identity + character offset** (DM-4), never
   to positions — presence survives reorders and merges.
+- `block`/`offset` is the caret, a selection's moving end. `anchor` is
+  OPTIONAL: the fixed end of a selection that is not collapsed. Senders
+  SHOULD omit it for a collapsed caret; receivers MUST treat an `anchor`
+  equal to the caret as collapsed. A selection MAY span blocks: it covers
+  the live text blocks between its ends in document preorder.
+  *(Draft 3.3, proposals/0006: Draft 3.2 carried only the caret, though
+  DM-8 names selection as awareness.)*
+- Awareness is unauthenticated input. Receivers MUST ignore unknown
+  fields of `cursor`, and MUST drop a malformed `anchor` — not an object
+  with a string `block` and a non-negative integer `offset` — keeping
+  the caret. A malformed caret drops the whole cursor. *(Draft 3.3.)*
+- Offsets count against the sender's text when sent. Receivers SHOULD
+  map a held cursor through every text change they apply after receiving
+  it, by the rule that keeps the local selection on its characters
+  (EB-7), until the sender's next announcement replaces it. An offset
+  past the end of the receiver's text means the sender holds text the
+  receiver has not yet admitted (updates verify asynchronously, SW-6, and
+  awareness does not wait for them): receivers SHOULD hold it unmapped,
+  clamped for display, until that text arrives. *(Draft 3.3.)*
+- Senders SHOULD announce on every selection change. While a typing
+  burst is open (DM-14.3) a sender MAY hold the caret and announce it
+  when the burst seals. *(Draft 3.3.)*
 - Awareness is lossy-tolerant: senders SHOULD re-send on change and at
   least every 30s; receivers SHOULD expire entries after ~60s and MUST
   never persist them or fold them into document state.
@@ -252,6 +276,10 @@ content must not be peers.
    — checkpoints (DM-15) bound what joiners verify, and rebase (DM-16)
    bounds live state; a lineage is never truncated.
 5. Grant revocation and key rotation (DM-13 non-goals in v1).
+6. Unknown fields in known message types. SW-2 governs unknown `v` and
+   `t` only; SW-7 rules on `cursor` alone (Draft 3.3). One rule in SW-2
+   would let the next additive field land without its own
+   (proposals/0006).
 
 ## SW-11. What this spec is for
 
