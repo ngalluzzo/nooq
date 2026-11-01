@@ -1,4 +1,4 @@
-import { defineAction, defineDOMPlugin, insertAfterSelection } from "@nooq/plugins/dom";
+import { defineAction, defineDOMPlugin, defineTextPolicy, insertAfterSelection } from "@nooq/plugins/dom";
 import { callout, callouts, cycleTone, insertCallout } from "./index.ts";
 
 export const insertCalloutAction = defineAction({ id: "insert-callout", label: "Callout", glyph: "!",
@@ -12,13 +12,17 @@ export const cycleToneAction = defineAction({ id: "cycle-callout-tone", label: "
 
 function createCalloutsDOM(rich: boolean) { return defineDOMPlugin({ id: "nooq.callouts", forPlugin: callouts,
   actions: [insertCalloutAction, cycleToneAction],
-  views: [{ type: callout.type, mount(ctx) {
+  views: [{ type: callout.type, ...(rich ? { textPolicy: defineTextPolicy({ defaultMode: "rich" }) } : {}), mount(ctx) {
     const element = document.createElement("aside"), status = document.createElement("span");
     element.className = "nq-callout";
     element.style.cssText = "border-inline-start:4px solid currentColor;padding:1rem;margin:.5rem 0";
     const toolbar = ctx.mountActionToolbar({ label: "Callout actions" });
     status.setAttribute("aria-live", "polite");
-    const text = rich ? ctx.mountRichText({ label: "Callout text" }) : ctx.mountText({ label: "Callout text" });
+    // rich variant: the policy-aware mount — mode and Enter behavior come
+    // from the surface's textMode and this view's policy (rich by default).
+    // plain variant: an EXPLICIT legacy textarea, which keeps its
+    // presentation whatever the surface's textMode says.
+    const text = rich ? ctx.mountTextEditor({ label: "Callout text" }) : ctx.mountText({ label: "Callout text" });
     element.append(toolbar.element, status, text.element, ctx.children.element);
     return { element, update(block) { element.dataset.tone = String(block.fields.tone); status.textContent = `Tone: ${block.fields.tone}`; }, destroy: () => text.destroy() };
   } }],
