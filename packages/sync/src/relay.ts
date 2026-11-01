@@ -8,8 +8,8 @@
  */
 
 import * as Y from "yjs";
-import { rootDigest, type Envelope } from "@nooq/core";
-import { admitEnvelope, newDocument, readState } from "@nooq/yjs";
+import { checkpointId, checkpointSignerKey, rootDigest, toBase64 as keyToBase64, type ActorKey, type Checkpoint, type Envelope } from "@nooq/core";
+import { admitEnvelope, createCheckpoint, newDocument, readState } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import { BACKEND, decodeMessage, encodeMessage, errorFor } from "./messages.ts";
 import type { SyncTransport } from "./transport.ts";
@@ -39,6 +39,20 @@ function createDuplex(): Connection {
 export interface NooqRelayOptions {
   /** Lie about the root digest in hello-reply — for the verification test. Off, obviously. */
   lieAboutDigest?: boolean;
+  /**
+   * DM-15: the relay's checkpoint signer, granted the `checkpointer` role (or
+   * writer) in each document it attests. It checkpoints every `every`
+   * envelopes (1,000) or `bytes` of envelope log (1 MiB), whichever is first.
+   */
+  checkpointer?: { actorId: string; key: ActorKey; every?: number; bytes?: number };
+}
+
+interface Attested {
+  checkpoint: Checkpoint;
+  state: Uint8Array;
+  /** Envelopes before this index are covered: archive, not shipped to joiners. */
+  logIndex: number;
+  accessProof: Envelope;
 }
 
 interface HeldEnvelope {
@@ -58,6 +72,11 @@ export class NooqRelay {
   private readonly admitted = new Map<string, Set<string>>();
   /** Messages per document are handled in arrival order, so a burst admits in sequence. */
   private readonly queues = new Map<string, Promise<void>>();
+  /** DM-15: the latest checkpoint per document, and the log since it. */
+  private readonly attested = new Map<string, Attested>();
+  private readonly sinceCheckpoint = new Map<string, { count: number; bytes: number }>();
+  /** The latest owner-signed access write per document: proof of a checkpoint signer's grant. */
+  private readonly accessProofs = new Map<string, Envelope>();
 
   constructor(private readonly options: NooqRelayOptions = {}) {}
 
@@ -82,6 +101,28 @@ export class NooqRelay {
     return this.envelopeLog.get(docId) ?? [];
   }
 
+  /** The latest checkpoint, for tests and hosts. */
+  checkpointOf(docId: string): Checkpoint | undefined {
+    return this.attested.get(docId)?.checkpoint;
+  }
+
+  /** DM-15: attest the current state once enough log has accumulated since the last checkpoint. */
+  private async maybeCheckpoint(docId: string): Promise<void> {
+    const signer = this.options.checkpointer;
+    const doc = this.docs.get(docId);
+    const since = this.sinceCheckpoint.get(docId);
+    if (!signer || !doc || !since) return;
+    if (since.count < (signer.every ?? 1000) && since.bytes < (signer.bytes ?? 1 << 20)) return;
+    const access = readState(doc).access;
+    const accessProof = this.accessProofs.get(docId);
+    if (!access || !accessProof || checkpointSignerKey(access, signer.actorId) !== keyToBase64(signer.key.publicBytes)) return; // not granted here
+    const last = this.attested.get(docId);
+    const logIndex = this.envelopeLog.get(docId)!.length;
+    const { checkpoint, state } = await createCheckpoint(doc, signer, last ? await checkpointId(last.checkpoint) : null);
+    this.attested.set(docId, { checkpoint, state, logIndex, accessProof });
+    this.sinceCheckpoint.set(docId, { count: 0, bytes: 0 });
+  }
+
   /**
    * Verify then admit, exactly like any peer (SW-6). A duplicate (an update
    * already admitted) changes nothing and is neither logged nor relayed.
@@ -94,6 +135,10 @@ export class NooqRelay {
       if (admission.reason === "duplicate" || admitted.has(envelope.updateDigest)) return "duplicate";
       admitted.add(envelope.updateDigest);
       this.envelopeLog.get(docId)!.push({ envelope, update });
+      if (admission.touched?.accessWrites) this.accessProofs.set(docId, envelope);
+      const since = this.sinceCheckpoint.get(docId)!;
+      since.count++;
+      since.bytes += update.length;
       return "allow";
     }
     if (admission.verdict === "hold") {
@@ -172,7 +217,9 @@ export class NooqRelay {
         const sv = message.sv === null ? undefined : fromBase64(message.sv);
         const delta = toBase64(Y.encodeStateAsUpdate(doc, sv));
         const digest = await rootDigest(readState(doc));
-        const log = this.envelopeLog.get(docId) ?? [];
+        // SW-3: the latest checkpoint and the envelopes after it; covered envelopes are archive.
+        const point = this.attested.get(docId);
+        const log = (this.envelopeLog.get(docId) ?? []).slice(point?.logIndex ?? 0);
         server.send(
           encodeMessage({
             v: 1,
@@ -183,6 +230,7 @@ export class NooqRelay {
             delta,
             rootDigest: this.options.lieAboutDigest ? "sha256:" + "0".repeat(64) : digest,
             ...(log.length > 0 ? { envelopes: log.map(({ envelope, update }) => ({ envelope, update: toBase64(update) })) } : {}),
+            ...(point ? { checkpoint: { checkpoint: point.checkpoint, state: toBase64(point.state), accessProof: point.accessProof } } : {}),
           }),
         );
         return;
@@ -203,6 +251,7 @@ export class NooqRelay {
             if (peer !== server) peer.send(raw); // relay unchanged (SW-6)
           }
           await this.releaseHeld(docId, server);
+          await this.maybeCheckpoint(docId);
           return;
         }
         // Open documents accept bare updates (SW-2); access-controlled
@@ -246,6 +295,7 @@ export class NooqRelay {
     this.envelopeLog.set(docId, this.envelopeLog.get(docId) ?? []);
     this.held.set(docId, this.held.get(docId) ?? []);
     this.admitted.set(docId, this.admitted.get(docId) ?? new Set());
+    this.sinceCheckpoint.set(docId, this.sinceCheckpoint.get(docId) ?? { count: 0, bytes: 0 });
     return doc;
   }
 }

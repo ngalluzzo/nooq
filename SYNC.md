@@ -112,8 +112,14 @@ The responding peer replies:
   **checkpoint** (DM-15) and the **envelope log** after it, so a joining
   peer verifies the checkpoint and every later transaction. Before a
   document's first checkpoint, the log runs back to genesis. Envelopes a
-  checkpoint covers are archive and need not travel.
-  *(Draft 3, proposals/0005.)*
+  checkpoint covers are archive and need not travel. The reply carries
+  `"checkpoint": {"checkpoint": {…}, "state": "<base64>", "accessProof":
+  {…envelope…}}`: the checkpoint, the canonical encoding of the state it
+  attests (SW-5), and the owner-signed access write that proves its
+  signer's grant (DM-15). A receiver that cannot verify all three emits
+  `checkpoint-invalid` and applies nothing.
+  *(Draft 3, proposals/0005. Draft 3.2: the reply's shape and the access
+  proof.)*
 - Reconnection re-runs the handshake; the delta since the last state
   vector is small by construction. After every `hello-reply`, the client
   resends each outbox envelope the reply does not confirm (SW-4).
@@ -143,8 +149,10 @@ The responding peer replies:
 
 ## SW-5. Snapshots
 
-A snapshot is a checkpoint (DM-15) plus the state it attests, followed by
-the envelopes after it (SW-3).
+A snapshot is a checkpoint (DM-15) plus the state it attests, as its
+canonical encoding, followed by the envelopes after it (SW-3). A peer
+rebuilds the state from that encoding and MUST reproduce both `stateDigest`
+and `stateVector` before trusting it.
 
 - **Canonical state encoding.** `stateDigest` is the SHA-256 fingerprint
   of `Y.encodeStateAsUpdate` (Yjs v1) of the state. Peers holding the same

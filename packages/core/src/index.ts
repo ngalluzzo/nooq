@@ -45,6 +45,7 @@ export {
 } from "./text.ts";
 export { authorizeLocal, adoptionMatchesState, type LocalPrincipal, type LocalVerdict } from "./local-access.ts";
 export { registrationMatches, registrationOf, type ClientRegistration } from "./registry.ts";
+export { checkpointId, checkpointSignerKey, signCheckpoint, verifyCheckpoint, verifyCheckpointSignature, type Checkpoint } from "./checkpoint.ts";
 export {
   computeDigests,
   rootDigest,

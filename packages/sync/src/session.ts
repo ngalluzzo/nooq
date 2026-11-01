@@ -12,8 +12,8 @@
  */
 
 import * as Y from "yjs";
-import { isSecuredDocId, rootDigest } from "@nooq/core";
-import { admitEnvelope, documentHeader, keepFormatting, newDocument, readState } from "@nooq/yjs";
+import { isSecuredDocId, rootDigest, verifyCheckpoint } from "@nooq/core";
+import { admitEnvelope, documentHeader, keepFormatting, newDocument, readState, restoreCheckpoint } from "@nooq/yjs";
 import type { Envelope } from "@nooq/core";
 import { fromBase64, toBase64 } from "./base64.ts";
 import {
@@ -22,6 +22,7 @@ import {
   encodeMessage,
   WIRE_VERSION,
   type Cursor,
+  type WireCheckpoint,
   type WireMessage,
 } from "./messages.ts";
 import type { SyncTransport } from "./transport.ts";
@@ -289,7 +290,7 @@ export class SyncSession {
     }
     const delta = fromBase64(message.delta);
     const verified = isSecuredDocId(this.docId)
-      ? await this.verifyAgainstLog(delta, message.rootDigest, message.envelopes ?? [], unconfirmed)
+      ? await this.verifyAgainstLog(delta, message.rootDigest, message.envelopes ?? [], unconfirmed, message.checkpoint)
       : await this.verifyAgainstDigest(delta, message.rootDigest);
     if (!verified) return; // discard: never applied to the real document
     Y.applyUpdate(this.options.doc, delta, REMOTE_ORIGIN);
@@ -320,8 +321,9 @@ export class SyncSession {
   }
 
   /**
-   * Secured documents (SW-3): rebuild the peer's state from its envelope log,
-   * every transaction verified back to genesis, and check its digest claim.
+   * Secured documents (SW-3): rebuild the peer's state from its checkpoint
+   * (DM-15: signature, grant, owner-proven access, reproduced digest) or from
+   * genesis, then every envelope after it, and check its digest claim.
    * Then local state plus the delta must equal that state plus this
    * session's unconfirmed outbox, byte for byte: the delta may carry nothing
    * the log does not attest, and offline edits are expected, not a mismatch.
@@ -331,12 +333,20 @@ export class SyncSession {
     claimed: string | null,
     envelopes: ReadonlyArray<{ envelope: Envelope; update: string }>,
     unconfirmed: ReadonlyArray<OutboxEntry>,
+    checkpoint?: WireCheckpoint,
   ): Promise<boolean> {
     const fail = (code: string, message: string) => {
       this.options.onError?.({ code, message });
       return false;
     };
-    const attested = newDocument(this.docId);
+    let attested = newDocument(this.docId);
+    if (checkpoint) {
+      const restored = await restoreCheckpoint(this.docId, checkpoint.checkpoint, fromBase64(checkpoint.state));
+      if (!restored) return fail("checkpoint-invalid", "checkpoint state does not reproduce its digest");
+      const verdict = await verifyCheckpoint(checkpoint.checkpoint, { docId: this.docId, access: readState(restored).access, accessProof: checkpoint.accessProof });
+      if (!verdict.ok) return fail("checkpoint-invalid", verdict.reason);
+      attested = restored;
+    }
     for (const item of envelopes) {
       const admission = await admitEnvelope(attested, item.envelope, fromBase64(item.update));
       if (admission.verdict !== "allow") return fail("envelope-log-invalid", `bootstrap envelope log: ${admission.reason}`);

@@ -8,6 +8,13 @@ export const WIRE_VERSION = 1;
 
 /** An envelope as it travels the wire (DM-12): JSON through and through. */
 export type WireEnvelope = import("@nooq/core").Envelope;
+/** A checkpoint as it travels in a hello-reply (DM-15, SW-5). */
+export interface WireCheckpoint {
+  checkpoint: import("@nooq/core").Checkpoint;
+  /** base64 canonical encoding of the attested state. */
+  state: string;
+  accessProof: WireEnvelope;
+}
 /** The only backend registered in wire v1 (SW-3). */
 export const BACKEND = "yjs/1";
 
@@ -29,8 +36,10 @@ export type WireMessage =
       sv: string;
       delta: string | null;
       rootDigest: string | null;
-      /** DM-12/SW-3: the envelope log for access-controlled documents. */
+      /** DM-12/SW-3: the envelope log for access-controlled documents — after the checkpoint, when one ships. */
       envelopes?: Array<{ envelope: WireEnvelope; update: string }>;
+      /** DM-15/SW-5: the latest checkpoint, the state it attests, and the owner-signed access write that proves its signer. */
+      checkpoint?: WireCheckpoint;
     }
   | { v: typeof WIRE_VERSION; t: "update"; doc: string; update: string; envelope?: WireEnvelope }
   | { v: typeof WIRE_VERSION; t: "delta"; doc: string; sv?: string | null; delta?: string; rootDigest?: string }

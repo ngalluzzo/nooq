@@ -41,7 +41,7 @@ export interface Touched {
 export type Verdict = "allow" | "hold" | "deny";
 
 const KINDS: readonly ActorKind[] = ["human", "ai", "importer", "migration", "system"];
-const ROLES: readonly Role[] = ["writer", "suggester", "reader"];
+const ROLES: readonly Role[] = ["writer", "suggester", "reader", "checkpointer"];
 
 /** Shape check shared by the engine and the append-only rule. */
 export function wellFormedAccess(value: unknown): value is Access {

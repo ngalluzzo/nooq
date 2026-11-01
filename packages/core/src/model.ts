@@ -59,7 +59,8 @@ export interface Block {
   attribution: Attribution;
 }
 
-export type Role = "writer" | "suggester" | "reader";
+/** DM-13. A checkpointer signs checkpoints (DM-15) and nothing else. */
+export type Role = "writer" | "suggester" | "reader" | "checkpointer";
 
 export interface Grant {
   actorId: ActorId;

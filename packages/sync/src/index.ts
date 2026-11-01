@@ -12,6 +12,7 @@ export {
   errorFor,
   type Cursor,
   type CursorAnchor,
+  type WireCheckpoint,
   type WireMessage,
 } from "./messages.ts";
 export { NooqRelay, type NooqRelayOptions } from "./relay.ts";

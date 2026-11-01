@@ -581,15 +581,27 @@ replaying from genesis:
 - `stateDigest` is the fingerprint (DM-2) of the state's canonical encoding,
   which SYNC.md pins. Two peers with the same state MUST compute the same
   digest; the reference adapter gates this with a convergence test.
-- The signature covers the canonical JSON of every field but `sig`. In
-  secured documents the signer must be the owner, a writer, or an actor
-  granted the `checkpointer` role (DM-13): a checkpointer signs checkpoints
-  and nothing else. A host that persists documents (a relay, or a system
-  embedding nooq) is granted that role explicitly; it gains no other power.
-- A joiner verifies the latest checkpoint's signature and grant, checks the
-  received state against `stateDigest`, then admits the envelopes after the
-  checkpoint as usual. Envelopes the checkpoint covers are archive: peers
-  need not ship them to joiners, and keep them only as retention requires.
+- The signature covers the canonical JSON of every field but `sig`.
+  `previous` is the fingerprint (DM-2) of the previous checkpoint, sig
+  included, so checkpoints form a chain. In secured documents the signer
+  must be the owner, a writer, or an actor granted the `checkpointer` role
+  (DM-13): a checkpointer signs checkpoints and nothing else. A host that
+  persists documents (a relay, or a system embedding nooq) is granted that
+  role explicitly; it gains no other power.
+- **The access is the owner's.** The signer's grant is read from the
+  access header inside the attested state, which a forger could write. So
+  that access MUST be proven by the owner: its owner and nonce derive the
+  document ID (DM-13), and a checkpoint travels with its **access proof**,
+  the latest owner-signed envelope whose transaction writes access. That
+  envelope's last `setAccess` value MUST canonically equal the attested
+  access. Grants are append-only and owner-only, so the latest access write
+  determines them. *(Draft 1.9: Draft 1.8 checked the grant against the
+  attested state alone, so a forged state could grant its own signer.)*
+- A joiner rebuilds the attested state, reproduces `stateDigest` and
+  `stateVector` from it, verifies the access proof, the signer's grant and
+  the signature, then admits the envelopes after the checkpoint as usual.
+  Envelopes the checkpoint covers are archive: peers need not ship them to
+  joiners, and keep them only as retention requires.
 - Open documents may checkpoint unsigned; a joiner then trusts the peer it
   bootstraps from, exactly as before.
 

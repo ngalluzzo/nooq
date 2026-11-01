@@ -136,4 +136,13 @@ Recorded as the slices land, each with the spec section it changed.
   arrival left envelopes held forever in the reference relay, which retried
   once per admission; it now retries until none admits, and the editor
   sends envelopes in commit order.
+- **Checkpoint access proof (DM-15, Draft 1.9; SW-3, SYNC Draft 3.2).** A
+  checkpoint signer's grant lived only in the state it attests, so a forged
+  state could grant its own signer. A checkpoint now travels with the
+  latest owner-signed access write, which must carry exactly the attested
+  access; the docId binds the owner's key. Gate: a joiner bootstrapping from
+  the checkpoint and the envelopes after it reaches the same encoding and
+  state digest as replaying from genesis and as the relay; forged,
+  ungranted, tampered and unproven checkpoints are refused; a checkpointer
+  cannot write.
 
