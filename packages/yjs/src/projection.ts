@@ -184,8 +184,10 @@ export class MaintainedProjection {
       const children = (yblocks.get(container)?.get("children") as Y.Array<BlockId> | undefined) ?? undefined;
       if (children) this.#physical.set(container, children.toArray());
     }
+    // Blocks are frozen at build: REPLACE the entry, never mutate it (the
+    // property oracle caught a move mutating a frozen block's children).
     const block = container === null ? undefined : this.#state.blocks[container];
-    if (container !== null && block) block.children = this.#childrenOf(container);
+    if (container !== null && block) this.#state.blocks[container] = freezeInPlace({ ...block, children: this.#childrenOf(container) } as typeof block);
     if (container === null) this.#state.roots = this.#childrenOf(null);
   }
 
