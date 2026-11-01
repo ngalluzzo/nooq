@@ -131,6 +131,21 @@ test("shared actions reject ID collisions and require explicit shortcut preceden
   press(s.element.querySelector("textarea")!, "F8"); expect(e.view.blocks[id]!.fields.tone).toBe("warning"); e.close();
 });
 
+test("toolbar failure copy names the action and the remedy, and the cause still reaches the host", async () => {
+  const action = defineAction({ id: "explode", label: "Explode", command: cycleTone, placements: ["toolbar"],
+    args: () => { throw new Error("argument explosion"); } });
+  const dom = defineDOMPlugin({ id: "explode", forPlugin: callouts, actions: [action], views: [{ type: callout.type, mount(ctx) {
+    const element = document.createElement("div"); element.append(ctx.mountActionToolbar().element, ctx.children.element); return { element, update() {} };
+  } }] });
+  const e = make(), id = insert(e), s = createSurface(e, { plugins: [dom] });
+  document.body.append(s.element); await settled();
+  const button = s.element.querySelector<HTMLButtonElement>("button")!;
+  button.click();
+  expect(button.closest(".nq-action-toolbar")!.querySelector('[role="status"]')?.textContent).toBe("Explode failed. Try again.");
+  expect(e.errors.some(error => String(error.cause).includes("argument explosion"))).toBe(true);
+  e.close();
+});
+
 test("disposed views and surfaces retain no actionable toolbar or bound action scope", async () => {
   let ctx!: BlockViewContext;
   const view = defineDOMPlugin({ id: "lifecycle", forPlugin: callouts, actions: [cycleToneAction], views: [{ type: callout.type, mount(context) {

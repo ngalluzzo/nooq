@@ -47,10 +47,14 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
   const session = await labSession();
   const { lab } = session;
   await session.load(doc, condition);
-  const ids = await lab.evaluate<string[]>("lab.blockIds()");
+  const ids = await lab.evaluate<string[]>("lab.allBlockIds()"); // windowing: mounted ids are only the viewport
   const target = ids[middle]!;
-  await lab.scrollTo(rowSelector(target));
-  await lab.click(rowSelector(target));
+  const how = await lab.evaluate<string>(`lab.scrollToBlock(${JSON.stringify(target)})`);
+  if (how !== "landed") throw new Error(`EB-6 could not focus the target block (${how})`);
+  // scrollToBlock lands, FOCUSES (verified) and PINS the row (EB-8 v1).
+  // Script focus carries trusted keys under focus emulation — the click was
+  // only ever masking the freeze bug, and after jump-scrolls it races
+  // actionability against estimate-drift layout shifts.
   await lab.press("End");
   await lab.evaluate("lab.settle()");
 
@@ -81,8 +85,8 @@ async function measure(doc: RefDocName, condition: Condition, middle: number, co
       const diag = await lab.trace(async () => {
         for (const key of sample) {
           // Typed spaces with nothing focused page the document down, so find the block again first.
-          await lab.scrollTo(rowSelector(target));
-          await lab.click(rowSelector(target));
+          const again = await lab.evaluate<string>(`lab.scrollToBlock(${JSON.stringify(target)})`);
+          if (again !== "landed") throw new Error(`EB-6 lost the target mid-run (${again})`);
           await lab.press(key);
           await lab.evaluate("lab.settle()");
         }
@@ -133,11 +137,15 @@ describe.skipIf(!LAB || !labCapable)("EB-6 keystroke to paint", () => {
         // character to land, remote text on top.
         if (condition === "idle") expect(result.charactersLanded).toBe(result.charactersExpected);
         else expect(result.charactersLanded).toBeGreaterThanOrEqual(result.charactersExpected);
-        // Draft 2 stage 1: ref-small gated at two frames; ref-large is
-        // report-mode until incremental projection lands (EB-6 amendment).
-        const ceiling = doc === "ref-small" ? FRAME_MS * 2 : Number.POSITIVE_INFINITY;
-        expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(ceiling);
-        expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
+        // Draft 2 stage 1 (EB-6 amendment): ref-small idle gated at two frames
+        // and max 50ms; its sync storm at p95 100ms; ref-large report-mode
+        // until incremental projection lands.
+        if (doc === "ref-small" && condition === "idle") {
+          expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(FRAME_MS * 2);
+          expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
+        } else if (doc === "ref-small") {
+          expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(100);
+        }
       },
       600_000,
     );

@@ -25,6 +25,7 @@ export interface EditorSurface {
   readonly lastViewportTop: number;
   readonly renderCounts: { targeted: number; full: number; presence: number; windowed: number };
   readonly mountedRows: number;
+  estimateTop(id: string): number;
 }
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
@@ -100,7 +101,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const surfaceAbort = new AbortController();
   root.className = "nq-editor"; root.append(status, body, history);
   const rows = new Map<string, Row>();
-  const presence = createPresence(root, () => new Map([...rows].flatMap(([id, row]) => row.bindings[0]?.marks !== undefined ? [[id, row.bindings[0].element] as const] : [])));
+  // A freshly derived ink re-renders rows too: their chips wait for the ink
+  // rather than show a peer in a borrowed color, same as the overlay.
+  const presence = createPresence(root, () => new Map([...rows].flatMap(([id, row]) => row.bindings[0]?.marks !== undefined ? [[id, row.bindings[0].element] as const] : [])), schedule);
   let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
   let menuBlock: string | undefined;
   const actionRefreshers = new Set<() => void>();
@@ -110,7 +113,14 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const snapshot = () => {
     // renderState is a fresh throwaway per render (EB-6): freeze in place —
     // the clone cost ~1.4ms per keystroke in the render microtask.
-    if (snapshotCache?.revision !== editor.revision) snapshotCache = { revision: editor.revision, value: freezeInPlace(renderState ?? editor.view) };
+    if (snapshotCache?.revision !== editor.revision) {
+      const state = renderState ?? editor.view;
+      // EB-6/8: the maintained projection is frozen AT BUILD (O(changed));
+      // freezing the shared state here again was fine when renders owned a
+      // throwaway — with the projection it froze live state and broke writes.
+      const alreadyFrozen = state.roots.length === 0 || Object.isFrozen(state.roots[0]);
+      snapshotCache = { revision: editor.revision, value: alreadyFrozen ? state : freezeInPlace(state) };
+    }
     return snapshotCache.value;
   };
   const selection = (id: string): SelectionRequest => {
@@ -395,9 +405,21 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // ---- EB-8 windowing: mount only what the viewport needs -----------------
   // Estimated row height drives placeholder sizing; measured rows correct it.
   let lastWindowAt = -Infinity, scrollSignal: AbortController | undefined;
-  const estimateOf = (block: { text?: { s: string }; children: readonly string[] }): number => {
+  /** Measured heights by id (EB-8): every render measures its mounted rows;
+   *  estimates converge to reality as blocks are visited, so placeholder
+   *  heights and window decisions stop drifting from the real document. */
+  const heightCache = new Map<string, number>();
+  const estimateOf = (id: string, block: { text?: { s: string }; children: readonly string[] }): number => {
+    const measured = heightCache.get(id);
+    if (measured !== undefined) return measured;
     const lines = Math.max(1, Math.ceil((block.text?.s.length ?? 0) / 90));
     return 8 + lines * 21 + (block.children.length ? 4 : 0);
+  };
+  const measureMounted = (): void => {
+    for (const [id, row] of rows) {
+      const h = row.shell.getBoundingClientRect().height;
+      if (h > 0) heightCache.set(id, h);
+    }
   };
   const visibleWindow = (): [number, number] => {
     const vh = window.innerHeight || 800, top = window.scrollY || 0;
@@ -414,6 +436,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       render();
     });
   }
+  // (EB-8 v1: placeholder drift anchoring is a named follow-up — the focused-row
+  // pin and measured-height cache carry typing; jump-scroll alignment needs a
+  // measurement cache the walk itself consumes.)
   scrollSignal?.abort();
   scrollSignal = new AbortController();
   window.addEventListener("scroll", onScroll, { passive: true, signal: scrollSignal.signal });
@@ -456,7 +481,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const estSubtree = (id: string): number => {
       const memo = estMemo.get(id); if (memo !== undefined) return memo;
       const block = state.blocks[id];
-      const total = block ? estimateOf(block) + block.children.reduce((n, child) => n + estSubtree(child), 0) : 0;
+      const total = block ? estimateOf(id, block) + block.children.reduce((n, child) => n + estSubtree(child), 0) : 0;
       estMemo.set(id, total);
       return total;
     };
@@ -498,8 +523,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
           continue;
         }
         runParent = null; // a mounted row breaks the run
-        if (mounted && walkY + est < winTop - (window.innerHeight || 800)) {
-          // Mounted but far above the window: release it.
+        if (mounted && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
+          // Mounted but far above the window: release it — never the focused
+          // row (it is by definition visible; estimate drift must not eat it).
           cleanup(mounted); mounted.shell.remove(); rows.delete(id);
           placeholderRun(parent, id, est, at);
           at++; walkY += est;
@@ -519,10 +545,14 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
           row.signature = signature;
         }
         // The presence overlay places carets in rich text; a textarea or text-less view shows its peers as a chip.
-        const chips = row.bindings[0]?.marks === undefined ? peers.filter(p => p.cursor?.block === id) : [];
-        row.presence.replaceChildren(...chips.map(p => presenceCaret({ name: p.name ?? p.actor, ink: "slate" })));
+        // Chips carry each writer's derived ink (peerInk, like the overlay) and appear only once it resolves.
+        const chips = row.bindings[0]?.marks === undefined ? peers.flatMap(peer => {
+          const ink = presence.inkOf(peer.actor);
+          return ink && peer.cursor?.block === id ? [presenceCaret({ name: peer.name ?? peer.actor, ink })] : [];
+        }) : [];
+        row.presence.replaceChildren(...chips);
         if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
-        at++; walkY += estimateOf(block); walk(block.children, row.children);
+        at++; walkY += estimateOf(id, block); walk(block.children, row.children);
       }
     };
     walk(state.roots, body);
@@ -535,6 +565,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     for (const el of Array.from(body.querySelectorAll("[data-nq-ph]"))) if (!el.isConnected || wanted.has(el.getAttribute("data-nq-block") ?? "")) el.remove();
     stats.renderCounts.windowed = rows.size;
     presence.update(state, peers);
+    if (rows.size) measureMounted();
     // EB-5: editable in the frame the surface becomes visible — no clicking.
     if (!mountedFocused && root.isConnected) {
       mountedFocused = true;
@@ -574,5 +605,6 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let offClose = () => {};
   const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; } };
+  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
+    estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
 }

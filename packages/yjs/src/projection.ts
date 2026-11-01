@@ -12,6 +12,7 @@
  */
 
 import * as Y from "yjs";
+import { freezeInPlace } from "@nooq/core";
 import type { Block, BlockId, DocState, JsonValue, RenderedText } from "@nooq/core";
 import { REGISTER, documentHeader, layout, type Placement } from "./layout.ts";
 import { readBlock, readState } from "./read.ts";
@@ -29,14 +30,26 @@ export class MaintainedProjection {
   #physical = new Map<BlockId | null, BlockId[]>();
   #dirty = false;
   #offs: Array<() => void> = [];
+  /** The served state: a SHALLOW-frozen shell over the mutable internals.
+   *  Block values are frozen at build (shared, safe); the record itself is
+   *  copied per sync (O(doc) shallow, once per transaction) so consumers that
+   *  freeze-what-they-read — the command preparer's owned path — no-op
+   *  instead of freezing the projection's live record (EB-6/8 regression:
+   *  one keystroke froze it; the next write died). */
+  #public: DocState = {} as DocState;
+  #publish(): void {
+    this.#public = Object.freeze({ ...this.#state, blocks: Object.freeze({ ...this.#state.blocks }) }) as DocState;
+  }
 
   constructor(doc: Y.Doc) {
     this.#doc = doc;
-    this.#state = readState(doc); // seed from the pure projection
+    this.#state = readState(doc); // seed from the pure projection (mutable internals)
+    for (const id of Object.keys(this.#state.blocks)) this.#state.blocks[id] = freezeInPlace(this.#state.blocks[id]!);
+    this.#publish();
     this.#index();
     const { blocks: yblocks, roots: yroots, placement, access: yaccess } = layout(doc);
 
-    const deep = (events: Y.YEvent<never>[]): void => {
+    const deepHandler = (events: Y.YEvent<never>[]): void => {
       // Coalesce rebuilds per block. EB-8: a huge fan-out (initial sync of a
       // 10k-block document fires one event per block) rebuilds cheaper as ONE
       // bulk re-seed from readState than as N incremental readBlocks.
@@ -58,8 +71,7 @@ export class MaintainedProjection {
       for (const id of rebuild) if (!drop.has(id)) this.#rebuildBlock(id);
       this.#dirty = true;
     };
-    const deepHandler = deep as never;
-    yblocks.observeDeep(deepHandler);
+
     const placementHandler = (event: Y.YMapEvent<Placement>): void => {
       // Coalesce: one event may carry thousands of keys (initial sync);
       // recompute each AFFECTED container once, not once per key (EB-6).
@@ -73,22 +85,25 @@ export class MaintainedProjection {
       for (const container of touchedContainers) this.#recomputeChildren(container);
       this.#dirty = true;
     };
-    placement.observe(placementHandler);
+
     const rootsHandler = (): void => {
       this.#physical.set(null, yroots.toArray());
       this.#dirty = true;
     };
-    yroots.observe(rootsHandler);
     const accessHandler = (): void => {
       const entry = yaccess.get("access");
       if (entry === undefined) delete this.#state.access;
       else this.#state.access = structuredClone(entry) as DocState["access"];
       this.#dirty = true;
     };
+
+    yblocks.observeDeep(deepHandler as never);
+    placement.observe(placementHandler as never);
+    yroots.observe(rootsHandler);
     yaccess.observe(accessHandler);
     this.#offs = [
-      () => yblocks.unobserveDeep(deepHandler),
-      () => placement.unobserve(placementHandler),
+      () => yblocks.unobserveDeep(deepHandler as never),
+      () => placement.unobserve(placementHandler as never),
       () => yroots.unobserve(rootsHandler),
       () => yaccess.unobserve(accessHandler),
     ];
@@ -100,7 +115,7 @@ export class MaintainedProjection {
 
   /** The maintained state, frozen read-only (the shared `view` contract). */
   get value(): DocState {
-    return this.#state;
+    return this.#public;
   }
 
   /** Heal + canonical roots/children recomputation; call before serving. */
@@ -108,6 +123,7 @@ export class MaintainedProjection {
     if (!this.#dirty) return;
     this.#dirty = false;
     this.#state.roots = this.#childrenOf(null);
+    this.#publish();
   }
 
   // --- indexing -----------------------------------------------------------
@@ -115,6 +131,8 @@ export class MaintainedProjection {
   /** Rebuild everything from the pure projection (bulk fan-outs, EB-8). */
   #reseed(): void {
     this.#state = readState(this.#doc);
+    for (const id of Object.keys(this.#state.blocks)) this.#state.blocks[id] = freezeInPlace(this.#state.blocks[id]!);
+    this.#publish();
     this.#index();
   }
 
@@ -133,13 +151,15 @@ export class MaintainedProjection {
   }
 
   #rebuildBlock(id: string): void {
-    const { blocks: yblocks, placement } = layout(this.#doc);
+    const { blocks: yblocks } = layout(this.#doc);
     const yb = yblocks.get(id) as Y.Map<unknown> | undefined;
     if (!yb) { this.#dropBlock(id); return; }
     const children = yb.get("children") as Y.Array<BlockId> | undefined;
     if (children) this.#physical.set(id, children.toArray());
-    this.#state.blocks[id] = readBlock(id, yb, container => this.#childrenOf(container));
-    void placement;
+    // Immutable by construction (EB-6/8): blocks are frozen as they are
+    // built, O(changed) — so the surface's snapshot needs no second freeze
+    // pass over the shared state (which froze it and broke the next write).
+    this.#state.blocks[id] = freezeInPlace(readBlock(id, yb, container => this.#childrenOf(container)));
   }
 
   #dropBlock(id: string): void {

@@ -342,6 +342,7 @@ export class Editor {
     return cache.value;
   }
   attachMaintainedProjection(): void { if (!this.#maintained) this.#maintained = new MaintainedProjection(this.ydoc); }
+
   #seed: { suspend(): void; resume(): void; markRoots(): void } = { suspend: () => {}, resume: () => {}, markRoots: () => {} };
 
 

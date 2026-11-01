@@ -93,7 +93,9 @@ export function mountActionToolbar(host: {
         button.addEventListener("mousedown", event => { if (event.button === 0) event.preventDefault(); }, { signal: abort.signal });
         button.addEventListener("click", () => {
           const result = host.run(state.id);
-          feedback.textContent = result.status === "denied" || result.status === "unavailable" ? result.reason : result.status === "failed" ? "The action failed. Please try again." : "";
+          // Content fundamentals: name what failed and what to do. The cause
+          // itself goes to the host's error channel via the runner's report.
+          feedback.textContent = result.status === "failed" ? `${state.label} failed. Try again.` : result.status === "denied" || result.status === "unavailable" ? result.reason : "";
           refresh();
         }, { signal: abort.signal });
         entry = { wrapper, button, reason }; entries.set(state.id, entry);

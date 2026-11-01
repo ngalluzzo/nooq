@@ -1,5 +1,5 @@
 /** Portable plugin definitions. No DOM, CRDT, signing keys, or global registration. */
-import { liveTree, makeBlock } from "@nooq/core";
+import { freezeInPlace,  liveTree, makeBlock  } from "@nooq/core";
 import type { ActorDescriptor, Block, DocState, JsonValue, Op, RenderedText, Transaction } from "@nooq/core";
 import type { Job } from "./jobs.ts";
 
@@ -110,7 +110,7 @@ export function definePlugin<T extends Plugin>(definition: T): DefinedPlugin<T> 
 
 export function freezeSnapshot<T>(value: T): Immutable<T> {
   const copy = structuredClone(value);
-  return freezeInPlace(copy);
+  return freezeInPlace(copy) as Immutable<T>;
 }
 
 /**
@@ -120,16 +120,7 @@ export function freezeSnapshot<T>(value: T): Immutable<T> {
  * projection nobody else holds, so cloning before freezing bought nothing.
  * For caller-owned values, keep freezeSnapshot.
  */
-export function freezeInPlace<T>(value: T): Immutable<T> {
-  function freeze(item: unknown): void {
-    if (item && typeof item === "object" && !Object.isFrozen(item)) {
-      Object.freeze(item);
-      for (const child of Object.values(item)) freeze(child);
-    }
-  }
-  freeze(value);
-  return value as Immutable<T>;
-}
+export { freezeInPlace } from "@nooq/core"; // moved to core: yjs needs it (EB-8)
 
 /**
  * Shared synchronous preparation engine. Resolution belongs to the host

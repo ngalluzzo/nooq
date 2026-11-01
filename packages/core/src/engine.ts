@@ -276,3 +276,17 @@ function splicesInScope(base: { s: string }, changes: readonly import("./text.ts
   }
   return at <= base.s.length;
 }
+
+
+/** Freeze a graph in place — no clone (EB-6). For THROWAWAY or
+ *  build-time values only; caller-owned graphs use the host's clone path. */
+export function freezeInPlace<T>(value: T): T {
+  function freeze(item: unknown): void {
+    if (item && typeof item === "object" && !Object.isFrozen(item)) {
+      Object.freeze(item);
+      for (const child of Object.values(item)) freeze(child);
+    }
+  }
+  freeze(value);
+  return value;
+}

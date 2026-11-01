@@ -78,6 +78,18 @@ describe("presence overlay (SW-7)", () => {
     alice.close(); bob.close();
   });
 
+  test("a plain-text row shows its peer as a chip in the writer's derived ink, never a borrowed one", async () => {
+    const { alice, bob, first } = await world();
+    const surface = createSurface(bob, { plugins: [essentialsDOM] }); // no textMode: the textarea host
+    document.body.append(surface.element);
+    alice.setCursor({ block: first, offset: 3 });
+    await painted();
+    const chip = surface.element.querySelector<HTMLElement>(`[data-nq-block="${first}"] .nq-peer`);
+    expect(chip?.getAttribute("data-ink")).toBe(await peerInk("human:alice"));
+    expect(chip?.textContent).toContain("Alice");
+    surface.destroy(); alice.close(); bob.close();
+  });
+
   test("remote cursors stay on their characters through later edits, and wait for text they are ahead of (EB-7)", async () => {
     const registry = fakeHighlights();
     const { alice, bob, first, second } = await world();

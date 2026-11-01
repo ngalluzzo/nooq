@@ -15,7 +15,11 @@ function createCalloutsDOM(rich: boolean) { return defineDOMPlugin({ id: "nooq.c
   views: [{ type: callout.type, ...(rich ? { textPolicy: defineTextPolicy({ defaultMode: "rich" }) } : {}), mount(ctx) {
     const element = document.createElement("aside"), status = document.createElement("span");
     element.className = "nq-callout";
-    element.style.cssText = "border-inline-start:4px solid currentColor;padding:1rem;margin:.5rem 0";
+    // The brand book rules out a colored side border: state lives in the tone
+    // word above and the outline ("Radii, borders, shadows"). Plugins have no
+    // block container yet, so this frame borrows the host theme's tokens —
+    // a rule outline, token spacing — instead of drawing its own chrome.
+    element.style.cssText = "border:1px solid var(--nq-rule);padding:var(--nq-space-4);margin:var(--nq-space-2) 0";
     const toolbar = ctx.mountActionToolbar({ label: "Callout actions" });
     status.setAttribute("aria-live", "polite");
     // rich variant: the policy-aware mount — mode and Enter behavior come

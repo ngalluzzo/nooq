@@ -116,6 +116,40 @@ const lab = {
   condition,
   textMode,
   blockCount: () => surface.element.querySelectorAll("[data-nq-block]").length,
+  /** Diagnostics: the direct engine path, bypassing the command runtime. */
+  diagApply: (id: string) => { editor.applyTextChanges(id, [{ insert: "Z" }]); return lab.textOf(id)?.slice(0, 60) ?? null; },
+  diagRun: (id: string) => { const r = editor.commands.run("nooq.text.edit", { block: id, changes: [{ insert: "W" }] }); return { status: r.status, text: lab.textOf(id)?.slice(0, 60) ?? null }; },
+  /** EB-6/EB-8: scroll to a block by id, through windowing placeholders. */
+  scrollToBlock: async (id: string): Promise<string> => {
+    const direct = document.querySelector(`[data-nq-block="${CSS.escape(id)}"]`);
+    if (direct && !direct.hasAttribute("data-nq-ph")) {
+      direct.scrollIntoView({ block: "center" });
+      const area = direct.querySelector("textarea, [contenteditable='true']") as HTMLElement | null;
+      area?.focus({ preventScroll: true });
+      return area && document.activeElement === area ? "landed" : "unfocused";
+    }
+    // Converge through the height cache: estimated tops approach reality as
+    // rows are measured, so a couple of scroll-and-remeasure passes land it.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const top = (surface as { estimateTop(id: string): number }).estimateTop(id);
+      if (top < 0) return "missing";
+      window.scrollTo({ top: Math.max(0, top - window.innerHeight / 2) });
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      const real = document.querySelector(`[data-nq-block="${CSS.escape(id)}"]`);
+      if (real && !real.hasAttribute("data-nq-ph")) {
+        real.scrollIntoView({ block: "center" });
+        // Scrolling-to-type implies focus — and the focused row is PINNED
+        // against estimate-drift unmounts (EB-8 v1). "landed" MEANS focus
+        // verified: the old click was accidentally load-bearing.
+        const area = real.querySelector("textarea, [contenteditable='true']") as HTMLElement | null;
+        area?.focus({ preventScroll: true });
+        if (area && document.activeElement === area) return "landed";
+        return "unfocused";
+      }
+    }
+    return "still-ph";
+  },
   marks: () =>
     Object.fromEntries(
       ["lab:visible", "lab:editable", "nq:visible", "nq:editable", "first-contentful-paint", "first-paint"].map((name) => [
@@ -144,7 +178,15 @@ const lab = {
     }
     return null;
   },
+  /** Windowing-aware: mounted rows AND placeholders (EB-8). */
   blockIds: () => Array.from(surface.element.querySelectorAll("[data-nq-block]")).map((row) => row.getAttribute("data-nq-block")!),
+  /** Every block id in document order, mounted or not (projection walk). */
+  allBlockIds: () => {
+    const view = editor.view, out: string[] = [];
+    const walk = (ids: readonly string[]): void => { for (const id of ids) { const b = view.blocks[id]; if (!b) continue; out.push(id); walk(b.children); } };
+    walk(view.roots);
+    return out;
+  },
   /** EB-6 observability: per-keystroke phase marks through the real pipeline. */
   phaseArm: () => {
     if ((globalThis as { __phased?: boolean }).__phased) return;

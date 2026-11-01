@@ -21,6 +21,13 @@ interface Registry { get(name: string): RangeSet | undefined; set(name: string, 
 export interface Presence {
   /** Call after every render: remote cursors map through the edit now; painting waits for the next frame. */
   update(state: DocState, peers: readonly AwarenessEntry[]): void;
+  /**
+   * The actor's derived ink once it has resolved; undefined while the hash is
+   * still running, and resolution calls back into the surface so callers that
+   * showed nothing rather than borrow a color can repaint. Shares one cache
+   * with the overlay, so a writer is a single color everywhere.
+   */
+  inkOf(actor: string): PeerInk | undefined;
   destroy(): void;
 }
 
@@ -29,7 +36,7 @@ const highlightName = (ink: PeerInk) => `nq-peer-${ink}`;
 const isPoint = (value: unknown): value is Point =>
   typeof value === "object" && value !== null && typeof (value as Point).block === "string" && Number.isInteger((value as Point).offset) && (value as Point).offset >= 0;
 
-export function createPresence(root: HTMLElement, hosts: () => ReadonlyMap<string, HTMLElement>): Presence {
+export function createPresence(root: HTMLElement, hosts: () => ReadonlyMap<string, HTMLElement>, onInk?: () => void): Presence {
   const globals = globalThis as unknown as { CSS?: { highlights?: Registry }; Highlight?: new () => RangeSet };
   const registry = globals.CSS?.highlights, HighlightClass = globals.Highlight;
   const layer = document.createElement("div");
@@ -69,7 +76,7 @@ export function createPresence(root: HTMLElement, hosts: () => ReadonlyMap<strin
     const ink = inks.get(actor);
     if (!ink && !resolving.has(actor)) {
       resolving.add(actor);
-      void peerInk(actor).then(resolved => { inks.set(actor, resolved); resolving.delete(actor); if (latest) schedule(); });
+      void peerInk(actor).then(resolved => { inks.set(actor, resolved); resolving.delete(actor); if (latest) schedule(); onInk?.(); });
     }
     return ink;
   }
@@ -165,6 +172,7 @@ export function createPresence(root: HTMLElement, hosts: () => ReadonlyMap<strin
       if (!placed.length && !layer.childElementCount && !owned.size) { latest = undefined; return; }
       latest = { state, peers: placed }; schedule();
     },
+    inkOf,
     destroy() {
       destroyed = true;
       if (frame) cancelAnimationFrame(frame);
