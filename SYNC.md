@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 2 — pre-implementation.** Implements DM-8 of
+**Status: Draft 3 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -89,9 +89,12 @@ The responding peer replies:
   that delta. The receiver SHOULD apply the delta, project, and compare;
   on mismatch it MUST discard the delta, emit `error`
   (`verification-failed`) locally, and not treat the session as synced.
-- For documents with access rules, bootstrap ships the **envelope log**
-  (DM-12), so a joining peer verifies every transaction back to the
-  first (SW-3).
+- For documents with access rules, bootstrap ships the latest
+  **checkpoint** (DM-15) and the **envelope log** after it, so a joining
+  peer verifies the checkpoint and every later transaction. Before a
+  document's first checkpoint, the log runs back to genesis. Envelopes a
+  checkpoint covers are archive and need not travel.
+  *(Draft 3, proposals/0005.)*
 - Reconnection re-runs the handshake; the delta since the last state
   vector is small by construction.
 
@@ -108,10 +111,21 @@ The responding peer replies:
 
 ## SW-5. Snapshots
 
-A snapshot IS a full-history delta plus its root digest (SW-3); there is
-no separate snapshot format. Compaction (DM-8) MAY come later and MUST
-preserve provenance (DM-5); until then tombstones and history travel in
-every full delta.
+A snapshot is a checkpoint (DM-15) plus the state it attests, followed by
+the envelopes after it (SW-3).
+
+- **Canonical state encoding.** `stateDigest` is the fingerprint of the Yjs
+  v1 update produced by merging the state's full update with
+  `Y.mergeUpdates`, so structs are normalized and ordered the same way on
+  every peer. A peer MUST reject a checkpoint whose digest its own
+  canonical encoding of the received state does not reproduce.
+- **Compaction** is rebase (DM-16): a new lineage, not truncation of this
+  one. Tombstones and CRDT history still travel in a full delta of a
+  lineage, but history store entries before its latest checkpoint do not.
+
+*(Draft 3, proposals/0005. Draft 2 said tombstones and all history travel
+in every full delta until compaction existed; checkpoints and rebase now
+bound both. Doc changed before code, per SW-11.)*
 
 ## SW-6. Server-as-peer contract
 
@@ -179,7 +193,9 @@ content must not be peers.
    Sessions exchange bare per-transaction increments, and
    pending-until-base is part of SW-4's semantics.
 3. Awareness piggybacking on `update` to cut message counts.
-4. Compaction/truncation of full-history deltas for very old documents.
+4. ~~Compaction/truncation of full-history deltas.~~ **Resolved (Draft 3)**
+   — checkpoints (DM-15) bound what joiners verify, and rebase (DM-16)
+   bounds live state; a lineage is never truncated.
 5. Grant revocation and key rotation (DM-13 non-goals in v1).
 
 ## SW-11. What this spec is for

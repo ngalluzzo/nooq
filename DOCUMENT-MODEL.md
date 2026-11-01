@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.7 — pre-implementation.** This spec converts
+**Status: Draft 1.8 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -31,6 +31,10 @@ Normative language: MUST, SHOULD, MAY as usual.
    actors and their exact effects.
 9. **Access rules** (DM-13) — shared, pure, enforced identically by
    every peer.
+10. **History layers** (DM-14) — what live state carries, and where every
+    other kind of history lives.
+11. **Checkpoints** (DM-15) — attested states that joiners verify from.
+12. **Rebase** (DM-16) — explicit compaction into a new lineage.
 
 ## DM-2. Identity and canonical bytes
 
@@ -99,7 +103,8 @@ Rules:
 - **DM-3.4** Deletion is a **tombstone**: the block is removed from its
   parent's `children` but its map entry, fields, and inline state persist.
   A tombstoned block remains addressable (PHILOSOPHY §4) and recoverable;
-  garbage collection is a non-goal for v1.
+  garbage collection is a non-goal for v1. Live state is bounded by
+  explicit rebase instead (DM-16).
 - **DM-3.5** Positions are always derived (render-time), never stored as
   truth (PHILOSOPHY §4).
 
@@ -107,9 +112,13 @@ Rules:
 
 The **transaction** is the unit of change and the only entry point to the
 document — for humans, AI, importers, and migrations alike (PHILOSOPHY
-§1). Durable intent precedes state change (gooi lineage): a transaction is
-persisted in the document's append-only **intent log** before it is
-applied.
+§1). Durable intent precedes shipping (gooi lineage): a peer persists each
+transaction to its append-only **history store** (DM-14.4) before sending
+it. The history store is not replicated document state. A transaction is
+one action; text input coalesces into one transaction per burst (DM-14.3).
+*(Draft 1.8, proposals/0005: Draft 1.7 kept the intent log inside
+replicated state, 89% of a typed document's bytes. Doc changed before code,
+per DM-11.)*
 
 ```json
 {
@@ -194,10 +203,14 @@ Attribution is part of document state (PHILOSOPHY §5), not merely the log.
 - An **actor descriptor** travels with each transaction:
   `{actorId, kind: "human"|"ai"|"importer"|"migration"|"system",
   model?, plugin?}`.
-- Each block's `attribution` maintains, per field key and for `text`:
-  the last writing `(actorId, lamport)`, plus the creating actor.
-- The intent log retains every transaction, including rejected
-  suggestions' proposals (DM-6), for the document's life.
+- Each block keeps its creating actor, and each field register keeps its
+  last writing `(actorId, lamport)` (DM-3.2). Text is attributed per
+  character, by the client that created it (DM-14.2); there is no per-edit
+  text attribution register.
+- The history store (DM-14.4) retains transactions under its retention
+  policy; verification history is archived once a checkpoint covers it
+  (DM-15). Rejected proposals persist in their suggestion tombstones
+  (DM-6.4), so they remain in live state for the document's life.
 - **Adoption provenance:** when a suggestion is accepted, the applied
   transaction records BOTH the proposing actor and the adopting actor
   (`adoptedBy`). AI text in a human's document is never unattributed.
@@ -308,9 +321,9 @@ The proposal payload:
   and the server-as-peer contract are specified in [`SYNC.md`](SYNC.md)
   (SW-1..SW-11). A server, including a hosted nooq service, is a peer
   with no special authority (PHILOSOPHY §2).
-- A **snapshot** is a full-history delta plus its claimed root digest
-  (SW-3/SW-5); the **root digest** supports O(1) staleness checks between
-  peers and local verification of bootstrap data.
+- A **snapshot** is a checkpoint (DM-15) plus the state it attests; the
+  envelopes after it follow (SW-3/SW-5). The **root digest** still supports
+  O(1) staleness checks of the visible forest between peers.
 - Presence, cursors, and selection are ephemeral **awareness**, never
   document state; cursors anchor to block identity (SW-7, per DM-4).
 
@@ -326,6 +339,13 @@ The proposal payload:
 - The DM-4.7 resolution is implementable above either library's primitives
   as a merge-normalization pass; if a library's native semantics already
   guarantee it, the pass is a no-op assertion.
+- Garbage collection stays off (`new Y.Doc({ gc: false })`). Deleted items
+  keep their parents, so every peer classifies a delete the same way
+  (DM-12), and any past state can be rebuilt from live state and a snapshot
+  (DM-14.5). Measured cost: about 50% more state on delete-heavy text.
+- The client registry (DM-14.2) is a `clients` `Y.Map` from Yjs client ID
+  to actor descriptor, written once per client and never rewritten. The
+  reference adapter no longer writes `textBy` registers or a `log` array.
 
 ## DM-10. Open problems (tracked honestly)
 
@@ -333,8 +353,9 @@ The proposal payload:
    deterministically, but the UX of "lost" moves needs study.
 2. **Mark churn** under heavy concurrent formatting; per-character marks
    may bloat; may need mark-run compaction (does not change semantics).
-3. **Very large documents** — snapshot compaction and lazily materialized
-   subtrees; v1 assumes whole-document residency.
+3. **Very large documents** — explicit rebase bounds live state (DM-16);
+   lazily materialized subtrees remain open, and v1 assumes
+   whole-document residency.
 4. **Evidence granularity** — block digests pin whole blocks; finer
    (per-run) evidence would reduce false staleness.
 5. **Suggestion UX for structural conflicts** — the data model distinguishes
@@ -353,9 +374,10 @@ changes first, in public, under governance.
 
 ## DM-12. Signed transactions
 
-A nooq transaction produces exactly one Yjs transaction and one
-incremental update. A **signed envelope** binds the transaction to its
-actor and its exact effects:
+A nooq transaction produces exactly one incremental update. For a coalesced
+text burst (DM-14.3) that update is the merge of the burst's local Yjs
+transactions; otherwise it is one Yjs transaction. A **signed envelope**
+binds the transaction to its actor and its exact effects:
 
 ```json
 {
@@ -382,11 +404,16 @@ actor and its exact effects:
   In an adoption, `tx.actor` MUST be the proposing actor recorded in the
   settled suggestion block. A transaction that names `adoptedBy` without
   settling a suggestion is malformed.
-- **One log entry.** The update's only write to the intent log is exactly
-  one entry, canonically equal to `tx`. No envelope deletes or rewrites a
-  log entry, and no envelope writes outside the document's own roots
-  (`blocks`, `roots`, `placement`, `access`, `log`). Bookkeeping is
-  document state: provenance (DM-5) is only as strong as the log.
+- **Own roots only.** No envelope writes outside the document's own roots
+  (`blocks`, `roots`, `placement`, `access`, `clients`). The envelope
+  itself carries `tx` into the history store (DM-14.4); the update carries
+  no copy of it. *(Draft 1.8: Draft 1.7 required exactly one replicated
+  log entry equal to `tx`; the log left replicated state, proposals/0005.)*
+- **Registered client.** An envelope's client MUST be registered to its
+  signer in the client registry (DM-14.2), with the signer's granted kind.
+  The update may write the registry only to register its own client, once.
+  Any other registry write is bookkeeping, and denied. Attribution is
+  therefore verified, not claimed.
 - **Causal readiness.** A struct or delete the receiver cannot resolve
   against the update itself or its local store has an unknown target.
   Such an envelope is **held**, exactly like an ungranted signer, and
@@ -434,6 +461,8 @@ The document header gains an optional `access` value:
   - **suggester** — may create and attach `nooq.suggestion/v1` blocks
     only. Actors of kind `ai` default to suggester (PHILOSOPHY §5).
   - **reader** — no ops.
+  - **checkpointer** — signs checkpoints (DM-15) and nothing else; no ops.
+    For hosts that persist documents. *(Draft 1.8, proposals/0005.)*
 - Accept and reject require a writer. An adoption is signed by its
   `adoptedBy` actor, and its ops MUST canonically equal the proposal's
   ops (DM-6.3's "verbatim" now verified, not promised).
@@ -450,3 +479,92 @@ The document header gains an optional `access` value:
 binding, append-only enforcement and access deletes, per the same
 comment period.)*
 
+
+## DM-14. History layers
+
+History is separated by purpose. Each kind has one place and one lifetime;
+nothing is stored twice. *(Draft 1.8, per proposals/0005, which records the
+measurements behind every rule here.)*
+
+| History | Purpose | Granularity | Lives in | Lifetime |
+| --- | --- | --- | --- | --- |
+| CRDT structure | Merge | Per item | Live state | While any peer may merge |
+| Attribution | Who wrote what | Per character | Live state (client registry) | Document life |
+| Verification | Prove each change was authorized | Per transaction | History store | Until a checkpoint covers it, then archive |
+| Intent and audit | What action was taken | Per action | History store | Retention policy |
+| Versions | Pin, diff, restore | Per version | Snapshots over live state | Policy |
+| Undo | One session | Per action | Memory | Session |
+
+- **DM-14.1 Live state.** Replicated document state is blocks, roots,
+  placement, `access` and the client registry. It MUST NOT carry a
+  per-transaction log or per-edit attribution rewrites. Live state grows
+  with edits (CRDT structure, GC off per DM-9), never with copies of them.
+- **DM-14.2 Attribution by client.** The client registry maps each Yjs
+  client ID, once, to an actor descriptor. A character's author is the
+  client of the item that holds it; a block's creator and each field's last
+  writer stay as DM-5 describes. In secured documents a registry entry binds
+  only the signer's own client with its granted kind (DM-12, DM-13).
+  Deletion authorship is answered by the history store, not live state.
+- **DM-14.3 Transactions are actions.** Text input within one block
+  coalesces into one transaction per burst. The local document applies
+  every keystroke immediately (EB-6); the burst's transaction, update and
+  envelope seal when input pauses, at a word boundary or selection change,
+  when another action starts, or at a maximum duration. Parameters are
+  proposed in proposals/0005. Remote peers see a burst when it seals.
+- **DM-14.4 The history store.** An append-only sequence of transactions,
+  outside replicated state. In secured documents it is the envelope log:
+  each envelope carries its `tx`, so intent, verification and audit are one
+  record. In open documents a history store is optional. A peer persists a
+  transaction to its history store before shipping it (DM-4). Retention is
+  policy; checkpoints (DM-15) decide what joiners still need.
+- **DM-14.5 Versions.** A version is a snapshot: the state vector and delete
+  set of a past state. Because GC is off, live state plus a snapshot rebuilds
+  that state exactly. Hosts may store versions as snapshots or as deltas
+  between them.
+
+## DM-15. Checkpoints
+
+A **checkpoint** attests a state, so joiners verify from it instead of
+replaying from genesis:
+
+```json
+{
+  "docId": "…",
+  "stateVector": "<base64>",
+  "stateDigest": "sha256:…",
+  "previous": "sha256:… | null",
+  "signer": "<actorId>",
+  "sig": "<base64 Ed25519 signature>"
+}
+```
+
+- `stateDigest` is the fingerprint (DM-2) of the state's canonical encoding,
+  which SYNC.md pins. Two peers with the same state MUST compute the same
+  digest; the reference adapter gates this with a convergence test.
+- The signature covers the canonical JSON of every field but `sig`. In
+  secured documents the signer must be the owner, a writer, or an actor
+  granted the `checkpointer` role (DM-13): a checkpointer signs checkpoints
+  and nothing else. A host that persists documents (a relay, or a system
+  embedding nooq) is granted that role explicitly; it gains no other power.
+- A joiner verifies the latest checkpoint's signature and grant, checks the
+  received state against `stateDigest`, then admits the envelopes after the
+  checkpoint as usual. Envelopes the checkpoint covers are archive: peers
+  need not ship them to joiners, and keep them only as retention requires.
+- Open documents may checkpoint unsigned; a joiner then trusts the peer it
+  bootstraps from, exactly as before.
+
+## DM-16. Rebase
+
+Live state grows with every edit (DM-14.1). **Rebase** is the explicit
+compaction:
+
+- An owner or writer creates a new lineage whose genesis carries the current
+  visible state with fresh CRDT identities and no tombstones. In secured
+  documents the new lineage is a new secured ID with the same owner and
+  grants (a new nonce, DM-13).
+- The new genesis pins its origin: `rebasedFrom: {docId, checkpoint}`. The
+  old lineage becomes a read-only archive that still answers history,
+  attribution and versions before the rebase.
+- Rebase is an actor's decision, never automatic, because collaborators must
+  move to the new lineage. Hosts warn and recommend; budgets are proposed in
+  proposals/0005.
