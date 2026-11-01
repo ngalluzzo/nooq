@@ -222,15 +222,21 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
   function mountText(id: string, row: Row, label = "Text block", input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }): Binding & TextBinding {
     if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
-    const area = document.createElement("textarea"); area.className = "nq-input"; area.setAttribute("aria-label", label);
+    // The host ships unstyled: the Document type class carries the typography.
+    const area = document.createElement("textarea"); area.className = "nq-input nq-doc-body"; area.setAttribute("aria-label", label);
     let value = (renderState ?? editor.view).blocks[id]?.text?.s ?? "", compositionBase = value;
     area.value = value;
+    // The empty-block hint rides the native placeholder: present only while
+    // the block is empty, gone with the first admitted character.
+    const syncPlaceholder = () => { if (value === "") area.setAttribute("placeholder", "Type / for blocks"); else area.removeAttribute("placeholder"); };
+    syncPlaceholder();
     const controller = new AbortController();
     const send = (changes: TextChange[]) => {
       if (!changes.length) return;
       const accepted = sendText(id, row, changes);
       value = editor.view.blocks[id]?.text?.s ?? "";
       if (!accepted) area.value = value;
+      syncPlaceholder();
     };
     const binding: Binding & TextBinding & { composing: boolean } = { element: area, composing: false,
       selection: () => ({ anchor: area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart, head: area.selectionDirection === "backward" ? area.selectionStart : area.selectionEnd }),
@@ -240,6 +246,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         const from = area.selectionStart, to = area.selectionEnd, direction = area.selectionDirection, before = area.value;
         const accepted = sendText(id, row, [{ retain: from }, { delete: to - from }, { insert: text }]);
         area.value = value = editor.view.blocks[id]?.text?.s ?? "";
+        syncPlaceholder();
         if (accepted) area.setSelectionRange(from + text.length, from + text.length);
         else {
           const remote = replaceChanges(before, value);
@@ -253,7 +260,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         if (area.value !== next) {
           const delta = replaceChanges(value, next), start = caretAfterChanges(delta, area.selectionStart ?? 0), end = caretAfterChanges(delta, area.selectionEnd ?? 0), direction = area.selectionDirection;
           area.value = next; if (document.activeElement === area) area.setSelectionRange(start, end, direction);
-        } value = next;
+        } value = next; syncPlaceholder();
       }, destroy() { controller.abort(); },
     };
     const on = <K extends keyof HTMLElementEventMap>(type: K, callback: (event: HTMLElementEventMap[K]) => void) => area.addEventListener(type, callback, { signal: controller.signal });
@@ -270,7 +277,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       }
       const from = caretAfterChanges(remote, offset), to = caretAfterChanges(remote, offset + removed);
       send([{ retain: from }, { delete: Math.max(0, to - from) }, { insert: inserted }]);
-      area.value = value; area.setSelectionRange(from + inserted.length, from + inserted.length);
+      area.value = value; syncPlaceholder(); area.setSelectionRange(from + inserted.length, from + inserted.length);
     });
     on("input", () => {
       if (binding.composing) return;
@@ -409,6 +416,10 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
    *  estimates converge to reality as blocks are visited, so placeholder
    *  heights and window decisions stop drifting from the real document. */
   const heightCache = new Map<string, number>();
+  /** Subtree estimates, persistent across renders (EB-6): structural
+   *  keystrokes pay full renders; rebuilding 2k estimates each time was
+   *  most of it. Cleared when structure or measured heights change. */
+  const estMemo = new Map<string, number>();
   const estimateOf = (id: string, block: { text?: { s: string }; children: readonly string[] }): number => {
     const measured = heightCache.get(id);
     if (measured !== undefined) return measured;
@@ -418,7 +429,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const measureMounted = (): void => {
     for (const [id, row] of rows) {
       const h = row.shell.getBoundingClientRect().height;
-      if (h > 0) heightCache.set(id, h);
+      if (h > 0 && h !== heightCache.get(id)) { heightCache.set(id, h); invalidateSubtree(id); }
+    }
+  };
+  const invalidateSubtree = (id: string): void => {
+    if (estMemo.delete(id)) {
+      const block = (renderState ?? editor.view).blocks[id];
+      if (block) for (const child of block.children) invalidateSubtree(child);
     }
   };
   const visibleWindow = (): [number, number] => {
@@ -477,7 +494,6 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const peers = [...editor.awareness.values()];
     // EB-8 windowing: placeholders carry unmounted subtrees' estimated
     // height; the walk is O(doc) iteration + O(visible) DOM work.
-    const estMemo = new Map<string, number>();
     const estSubtree = (id: string): number => {
       const memo = estMemo.get(id); if (memo !== undefined) return memo;
       const block = state.blocks[id];
@@ -487,48 +503,61 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     };
     const [winTop, winBottom] = visibleWindow();
     lastWindowAt = window.scrollY || 0;
+    // Structural change: invalidate only the CHANGED subtrees — a split
+    // moves one block, not the document (a full clear rebuilt 2k estimates
+    // and owned the ~90ms structural-keystroke tail). Ancestor sums drift by
+    // at most a row height; the two-screen overscan absorbs it until the
+    // next measurement corrects.
+    if (changedIds !== null) for (const id of changedIds) invalidateSubtree(id);
+    else if (structural) estMemo.clear(); // whole-document structure moved
     let walkY = 0;
-    /** One placeholder per skipped RUN (EB-8): a div per skipped block was
-     *  9,953 elements at ref-huge — 200ms of div creation in the first walk. */
-    const runs = new Map<HTMLElement, { el: HTMLElement; height: number }>();
-    let runParent: HTMLElement | null = null;
-    const placeholderRun = (parent: HTMLElement, id: string, height: number, at: number): void => {
-      if (runParent !== parent) {
-        runParent = parent;
+    /**
+     * Two reusable gap placeholders per container (EB-8): the window is
+     * contiguous, so at most one gap above the mounted run and one below.
+     * Elements persist across renders and only their heights update — the
+     * per-render create/delete version stopped a 33M-pixel height leak but
+     * churned layout; a div per skipped block was 9,953 elements at ref-huge.
+     */
+    const gaps = new Map<HTMLElement, { top?: HTMLElement; bottom?: HTMLElement }>();
+    const gapSums = new Map<HTMLElement, number>();
+    const usedGaps = new Set<HTMLElement>();
+    const gapFor = (parent: HTMLElement, which: "top" | "bottom", id: string, at: number): { el: HTMLElement; height: number } => {
+      let pair = gaps.get(parent);
+      if (!pair) { pair = {}; gaps.set(parent, pair); }
+      if (!pair[which]) {
         const el = document.createElement("div");
-        el.setAttribute("data-nq-block", id);
         el.setAttribute("data-nq-ph", "1");
         el.style.pointerEvents = "auto";
         el.addEventListener("click", () => { el.scrollIntoView({ block: "center" }); requestAnimationFrame(() => requestAnimationFrame(() => render())); }, { signal: surfaceAbort.signal });
-        parent.insertBefore(el, parent.children[at] ?? null);
-        runs.set(parent, { el, height });
-      } else {
-        const run = runs.get(parent)!;
-        run.height += height;
-        run.el.setAttribute("data-nq-ph-last", id);
-        run.el.style.height = `${Math.max(1, Math.round(run.height))}px`;
+        pair[which] = el;
       }
+      return { el: pair[which]!, height: 0 };
     };
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
-      runParent = null;
       for (const id of ids) {
         const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
         const est = estSubtree(id);
         const mounted = rows.get(id);
         if (!mounted && (walkY + est < winTop || walkY > winBottom)) {
-          // Outside the window and never mounted: placeholder run only.
-          placeholderRun(parent, id, est, at);
-          at++; walkY += est;
+          // Outside the window and never mounted: accumulate into the gap.
+          const which: "top" | "bottom" = walkY + est < winTop ? "top" : "bottom";
+          const gap = gapFor(parent, which, id, at);
+          gap.height += est;
+          gap.el.setAttribute("data-nq-block", gap.el.getAttribute("data-nq-block") ?? id);
+          gapSums.set(gap.el, (gapSums.get(gap.el) ?? 0) + est);
+          usedGaps.add(gap.el);
+          walkY += est;
           continue;
         }
-        runParent = null; // a mounted row breaks the run
         if (mounted && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
           // Mounted but far above the window: release it — never the focused
           // row (it is by definition visible; estimate drift must not eat it).
           cleanup(mounted); mounted.shell.remove(); rows.delete(id);
-          placeholderRun(parent, id, est, at);
-          at++; walkY += est;
+          const gap = gapFor(parent, "top", id, at);
+          gapSums.set(gap.el, (gapSums.get(gap.el) ?? 0) + est);
+          usedGaps.add(gap.el);
+          walkY += est;
           continue;
         }
         const stalePh = parent.children[at];
@@ -562,7 +591,18 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       walk(historic.filter(id => !alive.has(id)), history);
     }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
-    for (const el of Array.from(body.querySelectorAll("[data-nq-ph]"))) if (!el.isConnected || wanted.has(el.getAttribute("data-nq-block") ?? "")) el.remove();
+    for (const [parent, pair] of gaps) {
+      for (const which of ["top", "bottom"] as const) {
+        const el = pair[which];
+        if (!el) continue;
+        if (!usedGaps.has(el)) { el.remove(); pair[which] = undefined; continue; }
+        el.style.height = `${Math.max(1, Math.round(gapSums.get(el) ?? 0))}px`;
+        // position: the top gap sits before the first mounted row, the bottom
+        // gap after the last — rows insert positionally, gaps bracket them.
+        if (which === "top") parent.prepend(el);
+        else parent.append(el);
+      }
+    }
     stats.renderCounts.windowed = rows.size;
     presence.update(state, peers);
     if (rows.size) measureMounted();

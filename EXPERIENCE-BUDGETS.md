@@ -175,6 +175,13 @@ The journey map's "every keystroke paints in one frame."
     ~29.6 ms and the keystroke path still pays several per key
     (currently ~690 ms p50 on ref-large; renders are already targeted,
     the walks are the cost).
+  - **Stage 2 landed (2026-11-01, Draft 2.1 note):** the maintained
+    projection (the stage's named trigger) is in; ref-large idle re-enters
+    the gate at p95 ≤ 33.4 ms — measured 24.5-26.3, enforced. Its MAX is
+    reported, not gated: 90-104 ms GC pauses under allocation pressure,
+    worst keys scattered (not warmup); the per-transaction shallow-shell
+    publish is the named suspect and the next investigation. ref-small
+    keeps the full p95+max gate (20.3 / within 50).
   - **Goal line (retained):** p95 ≤ floor + 16.7 ms under every EB-4
     condition. Never redefined away; reached or explicitly not.
 - **Regression gate:** p95 MUST NOT regress by more than 10% against the

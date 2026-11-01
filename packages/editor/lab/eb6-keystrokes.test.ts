@@ -137,12 +137,15 @@ describe.skipIf(!LAB || !labCapable)("EB-6 keystroke to paint", () => {
         // character to land, remote text on top.
         if (condition === "idle") expect(result.charactersLanded).toBe(result.charactersExpected);
         else expect(result.charactersLanded).toBeGreaterThanOrEqual(result.charactersExpected);
-        // Draft 2 stage 1 (EB-6 amendment): ref-small idle gated at two frames
-        // and max 50ms; its sync storm at p95 100ms; ref-large report-mode
-        // until incremental projection lands.
-        if (doc === "ref-small" && condition === "idle") {
+        // Draft 2 stages 1+2 (EB-6 amendment): both documents gate idle at two
+        // frames and max 50ms — stage 2's condition (incremental projection)
+        // landed 2026-11-01. Storms: ref-small p95 100ms; ref-large report.
+        if (condition === "idle") {
           expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(FRAME_MS * 2);
-          expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
+          // ref-large max is REPORTED, not gated (Draft 2.1 note): 90-104ms
+          // GC pauses under allocation pressure — the per-transaction shell
+          // publish is the named suspect. ref-small keeps the max gate.
+          if (doc === "ref-small") expect(result.keystrokeToPaintMs.max).toBeLessThanOrEqual(50);
         } else if (doc === "ref-small") {
           expect(result.keystrokeToPaintMs.p95).toBeLessThanOrEqual(100);
         }
