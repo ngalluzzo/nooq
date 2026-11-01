@@ -80,6 +80,12 @@ export interface BlockView {
 export interface BlockViewDefinition {
   type: string;
   textPolicy?: TextPolicy;
+  /**
+   * The view renders its own history-layer presentation (settled suggestions
+   * keep their card, DM-6.4). The surface then leaves the tombstoned block to
+   * the view instead of drawing the generic deleted flow around it.
+   */
+  rendersHistory?: boolean;
   mount(context: BlockViewContext): BlockView;
 }
 export interface DOMPlugin {

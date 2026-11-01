@@ -15,6 +15,21 @@ export interface RuntimeHost {
   jobActor(id: string): ActorDescriptor | undefined;
   publish(job: string, proposal: import("@nooq/core").Proposal, intent?: string): PublicationResult;
   report(error: PluginError): void;
+  /** Each job start: what the runtime already knows — the registered binding's
+   *  actor descriptor, the frozen args, and the live handle. Optional so hosts
+   *  without a working-state surface stay one-method smaller. */
+  onJob?(start: JobStart): void;
+}
+
+/** What the host sees the moment a job starts (foundation: working state). */
+export interface JobStart {
+  job: string;
+  label: string;
+  plugin: string | undefined;
+  /** The job's registered binding actor; undefined when the job publishes nothing and has no binding. */
+  actor: ActorDescriptor | undefined;
+  args: unknown;
+  handle: JobHandle<unknown>;
 }
 
 export class PluginRuntime {
@@ -179,7 +194,10 @@ export class PluginRuntime {
       return value as Result;
     }).finally(() => { finished = true; this.#jobs.delete(abort); listeners.clear(); });
     void result.catch(cause => { if (!abort.signal.aborted && !this.#closed) this.host.report({ plugin: entry.plugin, phase: "job", cause }); });
-    return { result, signal: abort.signal, cancel: () => abort.abort(), onProgress(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+    const handle: JobHandle<Result> = { result, signal: abort.signal, cancel: () => abort.abort(), onProgress(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+    try { this.host.onJob?.({ job: id, label: entry.definition.label, plugin: entry.plugin, actor, args, handle }); }
+    catch (cause) { this.host.report({ plugin: entry.plugin, phase: "observer", cause }); }
+    return handle;
   }
   dispose(): void {
     if (this.#closed) return;

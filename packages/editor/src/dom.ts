@@ -6,8 +6,11 @@ import { notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
+import { createJobsUI } from "./jobs-ui.ts";
+import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
 import { createDocumentSelection } from "./document-selection.ts";
 import { createPresence } from "./presence.ts";
+import { createSurfaceStatus } from "./status.ts";
 import type { CursorAnchor } from "@nooq/sync";
 
 export interface EditorSurface {
@@ -37,7 +40,7 @@ export interface SurfaceOptions {
   selectionMode?: "block" | "document";
 }
 interface Binding { marks?: readonly TextMark[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
-type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy };
+type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy; /** View-level extra the raw definition carried (rendersHistory for tombstone-keeping views). */ rendersHistory?: boolean };
 const defaultTextPolicy = defineTextPolicy();
 interface Row {
   id: string;
@@ -65,7 +68,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       const policy = view.textPolicy ? defineTextPolicy(view.textPolicy) : undefined;
       if (policy && block.definition.text !== "inline") throw new Error(`Text policy requires an inline block: ${view.type}`);
       if (policy?.enter && policy.enter !== "newline" && !editor.registry.command(policy.enter.command)) throw new Error(`Unknown Enter command ${policy.enter.command}`);
-      providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount, textPolicy: policy }]);
+      providers.set(view.type, [...providers.get(view.type) ?? [], { plugin: plugin.id, mount: view.mount, textPolicy: policy, rendersHistory: view.rendersHistory === true ? true : undefined }]);
     }
     for (const action of [...plugin.menus ?? [], ...plugin.keys ?? [], ...plugin.actions ?? []]) {
       if ((!!action.command === !!action.job) || (action.command && !editor.registry.command(action.command)) || (action.job && !editor.registry.job(action.job))) throw new Error(`Invalid surface action ${plugin.id}:${action.id}`);
@@ -104,9 +107,17 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // A freshly derived ink re-renders rows too: their chips wait for the ink
   // rather than show a peer in a borrowed color, same as the overlay.
   const presence = createPresence(root, () => new Map([...rows].flatMap(([id, row]) => row.bindings[0]?.marks !== undefined ? [[id, row.bindings[0].element] as const] : [])), schedule);
+  // The status area's presence half (foundation P1): the roster beside the
+  // sync line and the shared announcer for joins, leaves and stale transitions.
+  const surfaceStatus = createSurfaceStatus(editor, presence);
+  // The history layer (0005, DM-14.4): tombstoned blocks as deleted rows with Restore.
+  const historyLayer = createHistoryLayer(editor, history, presence);
   let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
   let menuBlock: string | undefined;
   const actionRefreshers = new Set<() => void>();
+  // The working state (foundation P1): strips and draft previews for running
+  // jobs, re-attached by the row walk below. Mounts nothing until a job starts.
+  const jobs = createJobsUI(editor);
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
@@ -162,6 +173,16 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   };
   const selected = () => { refreshActions(); publishCursor(); };
   for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, selected, { signal: surfaceAbort.signal });
+  // The interactive change bar's contract: a view's blockRow dispatches one
+  // bubbling `nq:block-history` event from the bar (via onHistory); the host
+  // opens the popover, because only it sees the history store and the inks.
+  root.addEventListener("nq:block-history", (event) => {
+    const bar = event.target;
+    if (!(bar instanceof HTMLElement)) return;
+    const block = bar.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock;
+    if (block === undefined || !liveTree(editor.view).alive.has(block)) return;
+    void openBlockHistory(editor, bar, block, presence).catch(cause => editor.reportError({ phase: "view", cause }));
+  }, { signal: surfaceAbort.signal });
   root.ownerDocument.addEventListener("selectionchange", () => {
     if (root.contains(root.ownerDocument.activeElement)) selected();
   }, { signal: surfaceAbort.signal });
@@ -335,6 +356,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     return { element, update(block) { label.textContent = block.type; fields.textContent = JSON.stringify(block.fields, null, 2); } };
   }
   function cleanup(row: Row) {
+    jobs.unmount(row.id);
     row.abort.abort();
     for (const binding of row.bindings.splice(0)) binding.destroy();
     for (const dispose of row.cleanups.splice(0).reverse()) try { dispose(); } catch (cause) { fail(undefined, cause); }
@@ -490,8 +512,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     renderState = state;
     const active = [...rows.values()].flatMap(row => row.bindings).find(binding => binding.element.contains(document.activeElement));
     const activeSelection = active?.selection();
-    status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }));
     const peers = [...editor.awareness.values()];
+    status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }), surfaceStatus.element);
+    surfaceStatus.update(peers);
     // EB-8 windowing: placeholders carry unmounted subtrees' estimated
     // height; the walk is O(doc) iteration + O(visible) DOM work.
     const estSubtree = (id: string): number => {
@@ -581,6 +604,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         }) : [];
         row.presence.replaceChildren(...chips);
         if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
+        jobs.mount(row.shell, id); // every render re-placed: active job surfaces re-attach with their block
         at++; walkY += estimateOf(id, block); walk(block.children, row.children);
       }
     };
@@ -588,7 +612,12 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (structural || changedIds === null) {
       const historic: string[] = [];
       for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
-      walk(historic.filter(id => !alive.has(id)), history);
+      // Dead blocks draw two ways: a view that keeps its own history (the
+      // settled suggestion card) still mounts; everything else renders as the
+      // deleted BlockRow with Restore (DM-3.4) instead of the generic fallback.
+      const dead = historic.filter(id => !alive.has(id));
+      walk(dead.filter(id => viewKeepsHistory(views.get(state.blocks[id]?.type ?? ""))), history);
+      historyLayer.update(dead.filter(id => !viewKeepsHistory(views.get(state.blocks[id]?.type ?? ""))));
     }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
     for (const [parent, pair] of gaps) {
@@ -652,7 +681,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     notices.replaceChildren(notice({ kind: "error", word: `${who} failed in ${error.phase}: ${what}`, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
   });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };

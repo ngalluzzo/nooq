@@ -24,8 +24,9 @@ protocol to be visible to writers. P2 completes the reference app.
 | --- | --- |
 | Tokens | Color (2 themes, 28 tokens), type (12 styles), spacing, radius, control sizes, highlight strengths, motion, layering, shadow, editor geometry; compiled to `--nq-*` with nestable themes, all inside one `@layer nq` |
 | Brand | Wordmark, mark, app icon, the Move animation, self-hosted fonts with metric-matched fallbacks |
-| Components | Button, ActorChip, Digest, StateTag, SuggestionCard, BlockRow, PresenceCaret, SlashMenu, SyncStatus, BlockContainer, Notice, Popover, Tooltip, form controls (text field, select, segmented, toggle, checkbox) |
+| Components | Button, ActorChip, Digest, StateTag, SuggestionCard, BlockRow, PresenceCaret, SlashMenu, SyncStatus, BlockContainer, Notice, Popover, Tooltip, form controls (text field, select, segmented, toggle, checkbox), presence roster, announcer, working state + draft preview, block history panel |
 | Surface styles | `.nq-editor`, presence overlay with remote-selection highlights, document selection, generic fallback block, text hosts (plain and rich, pixel-identical apart from marks), block content (nesting, placeholders, windowed skeletons, list/code/divider), the block toolbar's visual contract |
+| Protocol-visible UI | Job working state + draft preview (published → SuggestionCard), block history on an interactive change bar (lamport-exact, deleted-with-later-edits + Restore), presence roster, the shared announcer (joined/left/stale) |
 | Plugin API surface | `blockContainer` re-exported from `@nooq/plugins/dom`; plugin-agent conformance fails a plugin that sets styles or colors directly |
 | Glyphs | The state glyphs, the drag handle, the AI mark, and the chrome set (close, more, chevron, undo, redo, history, access, verified, model, warning, stop) |
 | Guarantees | Contrast promises tested in both themes; every story an axe and keyboard test in both themes; generated files checked in sync |
@@ -45,33 +46,22 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-### Job progress and draft preview
+Four of the seven are built; three still want decisions (or the spec) first.
 
-0008 sends model text deltas to `ctx.progress` as an ephemeral preview, and every job has a cancel handle. Build the working state (who is working, on what, with Stop) and the draft preview: pencil text that is clearly not yet a proposal, replaced by the SuggestionCard when the job publishes. This is the "AI never types into my document" moment made visible.
+Built:
 
-### Formatting toolbar
+- **Job progress and draft preview.** The working state (who is working, which model, intent, Stop) and the draft preview — pencil text with no wash, explicitly not yet a proposal, replaced by the SuggestionCard on publish. Jobs surface through the Editor's `onJob`; `simulatedRewrite` streams its generation so the flow is real in-repo.
+- **Block history.** The change bar is the door: a button with a hover-and-focus tooltip ("Last edited by …") opening the history popover — writer, intent as written, lamport exact ("lamport 42"), newest first — and tombstoned blocks draw the deleted BlockRow with Restore and later-edits counts instead of the generic fallback. Views can keep their own history presentation (`rendersHistory` on the view).
+- **Presence roster.** Compact ink-dotted list beside the sync status; idle shows as a word. Idle is a local 5-minute recency heuristic — truthful idle wants a timestamp on the awareness wire, named below.
+- **Announcer.** One shared, persistent, rate-limited live region (750ms, latest-wins): "X joined.", "X left.", "Suggestion is now stale." Never per keystroke.
 
-The rich surface has formatting shortcuts (`Mod-b`) and text policies decide what each block allows. Build the selection-anchored toolbar for marks and links on top of Toolbar and Popover, showing only what the block's policy permits.
+Still to decide or build:
 
-### Block history
+- **Formatting toolbar.** Needs a links-in-the-text-model decision (marks are opaque strings today; a link needs a payload) and an appearance policy that respects §3. Built on Toolbar and Popover when decided.
+- **Access and signers.** Waiting on a home (the document header is P2) and on what peer-verification state the sync layer exposes (DM-12, DM-13).
+- **Away markers and lost moves.** The change-bar variant needs seen-state semantics; the lost-move notice is blocked until DM-10 resolves what a lost move observably is.
 
-From a change bar to a block's history: writer, time, intent, and Restore, using 0005's history layers. Includes the "deleted with later edits" flow, which BlockRow can already draw but the editor doesn't use.
-
-### Access and signers
-
-Who can edit and in what role, whether a writer's edits are signed and verified (DM-12, DM-13), and the read-only state with its reason. Built from ActorChip, Notice and form controls.
-
-### Presence roster
-
-Who is here, in which ink, idle or active, as a compact list for the document header. The overlay carets and highlights already exist.
-
-### Announcer
-
-A shared live region for "Tomás joined" and "Suggestion is now stale" style announcements, rate-limited, never per keystroke (§9).
-
-### Away markers and lost moves
-
-A change-bar variant for "changed since you last looked", and a notice for a move that lost a concurrent race (DM-4.7, DM-10).
+Named follow-ups from the landings: `Editor.close()` does not announce a local departure (only an explicit `setCursor(null)` does); the roster's self name falls back to the actor id until the Editor exposes a display name; true idle needs an awareness timestamp on the wire.
 
 ---
 

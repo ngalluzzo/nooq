@@ -170,7 +170,8 @@ test("writing views update author attribution without replacing the text control
   e.apply({ id: "remote-author", actor: { actorId: "ai:writer", kind: "ai" }, lamport: 20, causality: {}, ops: [{ op: "textEdit", block: id, changes: [{ insert: "Authored by a model" }] }] });
   await settled();
   expect(s.element.querySelector(`[data-nq-block="${id}"] [data-actor="ai"]`)).not.toBeNull();
-  expect(s.element.querySelector(`[aria-label="Written by ai:writer"]`)).not.toBeNull();
+  // The interactive history bar names the last writer in its action label (block history, task-10).
+  expect(s.element.querySelector(`[aria-label="Block history · last edited by ai:writer"]`)).not.toBeNull();
   expect(area(s, id)).toBe(text); e.close();
 });
 

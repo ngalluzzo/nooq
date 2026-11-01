@@ -3,6 +3,7 @@ import { cx, el, type Child } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
 import { inkVar, type Ink } from "./actor-chip.ts";
 import { button } from "./button.ts";
+import { tooltip } from "./tooltip.ts";
 
 export type BlockKind = "paragraph" | "heading" | "title" | "quote";
 
@@ -31,6 +32,13 @@ export interface BlockRowProps {
   /** Shows the drag handle without hover. */
   active?: boolean;
   onRestore?: () => void;
+  /**
+   * Opens this block's history. Present => the change bar becomes the button
+   * that does it: named for the last writer, with a design tooltip on hover
+   * AND focus (§9) instead of a `title` attribute. Absent => the bar stays
+   * the plain attribution mark.
+   */
+  onHistory?: () => void;
 }
 
 export function changeBarKind(actor: ActorKind): "human" | "ai" | "machine" {
@@ -43,7 +51,7 @@ export function deletedLabel(laterEdits: number): string {
 }
 
 /** One block on the writing surface, built-in or third-party alike (§7), with its gutter. */
-export function blockRow({ content, kind = "paragraph", actor = "human", ink = "self", writer, deleted, laterEdits = 0, active, onRestore }: BlockRowProps): HTMLDivElement {
+export function blockRow({ content, kind = "paragraph", actor = "human", ink = "self", writer, deleted, laterEdits = 0, active, onHistory, onRestore }: BlockRowProps): HTMLDivElement {
   const bar = changeBarKind(actor);
   const body = deleted
     ? el(
@@ -53,6 +61,27 @@ export function blockRow({ content, kind = "paragraph", actor = "human", ink = "
         el("div", { class: "nq-tomb-meta nq-ui-body" }, el("span", {}, deletedLabel(laterEdits)), button({ label: "Restore", variant: "quiet", onClick: () => onRestore?.() })),
       )
     : el(TAG[kind], { class: cx("nq-block-body", TYPE_STYLE[kind]) }, content);
+  // With onHistory the bar is the control that opens the history popover: a
+  // real button, named for the last writer, explained by a tooltip on hover
+  // AND keyboard focus — the reachable replacement for a title attribute.
+  // Without it, the bar stays the plain attribution mark, exactly as before.
+  const barElement = onHistory
+    ? (() => {
+        const control = el("button", {
+          type: "button",
+          class: cx("nq-bar", `nq-bar-${bar}`, "nq-bar-history"),
+          "aria-label": writer ? `Block history · last edited by ${writer}` : "Block history",
+          onclick: onHistory,
+        });
+        if (writer) tooltip({ anchor: control, text: `Last edited by ${writer}` });
+        return control;
+      })()
+    : el("span", {
+        class: cx("nq-bar", `nq-bar-${bar}`),
+        role: writer ? "img" : undefined,
+        "aria-label": writer ? `Last edited by ${writer}` : undefined,
+        title: writer ? `Last edited by ${writer}` : undefined,
+      });
   return el(
     "div",
     {
@@ -64,12 +93,7 @@ export function blockRow({ content, kind = "paragraph", actor = "human", ink = "
       "div",
       { class: "nq-gutter" },
       el("button", { type: "button", class: "nq-handle", "aria-label": "Move block" }, glyph("grip")),
-      el("span", {
-        class: cx("nq-bar", `nq-bar-${bar}`),
-        role: writer ? "img" : undefined,
-        "aria-label": writer ? `Last edited by ${writer}` : undefined,
-        title: writer ? `Last edited by ${writer}` : undefined,
-      }),
+      barElement,
     ),
     body,
   );

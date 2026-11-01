@@ -86,6 +86,24 @@
 .nq-block-heading .nq-block-body { padding-top: var(--nq-space-2); }
 .nq-block-deleted .nq-block-body > del { color: var(--nq-graphite-muted); text-decoration-thickness: 1.5px; }
 .nq-tomb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); margin-top: var(--nq-space-1); color: var(--nq-graphite-muted); font-family: var(--nq-font-sans); font-style: normal; }
+/* The interactive change bar (onHistory): same geometry, plus the pointer and
+   the keyboard focus ring that say it opens the block's history (§9). */
+.nq-bar-history { border: 0; padding: 0; cursor: pointer; }
+.nq-bar-history:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+
+/* Block history: the panel the interactive bar opens, one row per
+   transaction, newest first. The lamport is exact and in the digest face —
+   a machine's number is never translated into "a moment ago". */
+.nq-history { display: flex; flex-direction: column; gap: var(--nq-space-2); margin: 0; padding: 0; list-style: none; }
+.nq-history-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+.nq-history-intent { color: var(--nq-graphite-muted); }
+.nq-history-lamport { margin-inline-start: auto; color: var(--nq-graphite-muted); white-space: nowrap; }
+/* The deleted flow's Restore, set apart under one rule. */
+.nq-history-restore { display: flex; padding-top: var(--nq-space-2); border-top: 1px solid var(--nq-rule); }
+/* The surface's history layer, below the live document: what was deleted
+   stays reachable, struck through, with Restore (DM-3.4, DM-4.8). */
+.nq-history-layer { display: flex; flex-direction: column; gap: var(--nq-block-gap); }
+.nq-history-layer:not(:empty) { margin-top: var(--nq-block-gap); padding-top: var(--nq-block-gap); border-top: 1px solid var(--nq-rule); }
 
 /* Block container: the frame plugin blocks sit in, built-in or third-party (§7).
  * Blocks are rectangles (radius-sm, never a colored left border); a tone shows
@@ -178,6 +196,16 @@
 /* SyncStatus */
 .nq-sync { display: inline-flex; align-items: center; gap: 6px; color: var(--nq-graphite-muted); }
 
+/* Presence roster: who is here, in which ink, beside the sync line. Presence
+   dots are the system's only radius-full shapes. Idle always carries its word
+   — the name dims too, but dimming never states alone (§9). */
+.nq-roster { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); min-width: 0; color: var(--nq-graphite); }
+.nq-roster-self, .nq-roster-peer { display: inline-flex; align-items: center; gap: var(--nq-space-1); min-width: 0; }
+.nq-roster-dot { flex: none; width: var(--nq-space-2); height: var(--nq-space-2); border-radius: var(--nq-radius-full); background: var(--nq-peer, var(--nq-ink)); }
+.nq-roster-peer[data-idle] .nq-roster-name { color: var(--nq-graphite-muted); }
+.nq-roster-idle { color: var(--nq-graphite-muted); }
+
+
 /* Notice: a word, a glyph, an action — inline, never on the input path (§2, §3).
    A hold waits in graphite-muted; a denial states its reason in a rule-strong
    outline; error and model sit in a paper-sunken well. Never stamp: stamp is
@@ -188,6 +216,24 @@
 .nq-notice-hold { color: var(--nq-graphite-muted); }
 .nq-notice-error, .nq-notice-model { border-color: var(--nq-rule); background: var(--nq-paper-sunken); }
 .nq-notice-denial { border-color: var(--nq-rule-strong); }
+
+/* Working state (0008): who is working, on what, with Stop — the AI hand on
+    its pencil-soft ground (§5). The strip is the screen-reader channel for a
+    running job; the draft preview beside it is aria-hidden so text deltas
+    never churn assistive output (§9). */
+.nq-working { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); max-width: 100%; box-sizing: border-box; padding: var(--nq-space-1) var(--nq-space-2); border-radius: var(--nq-radius-sm); background: var(--nq-pencil-soft); color: var(--nq-pencil-text); }
+.nq-working-intent { color: var(--nq-graphite-muted); }
+.nq-working .nq-btn { height: var(--nq-control-sm); }
+/* Draft preview: pencil text under a dashed pencil underline, and NO wash —
+    the pencil-soft wash means "proposed", and this text is explicitly not
+    yet a proposal. Nothing streams into a wash before the writer has a
+    proposal to review. */
+.nq-draft { margin: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--nq-pencil-text); text-decoration: underline dashed var(--nq-pencil-text); text-decoration-thickness: 1px; text-underline-offset: var(--nq-space-1); }
+.nq-draft:empty { display: none; }
+/* Where a block's active jobs sit: below the block's content, keyed to the
+    content column past the gutter (the margin is where provenance lives). */
+.nq-jobs { display: flex; flex-direction: column; gap: var(--nq-space-1); min-width: 0; margin: var(--nq-space-1) 0 0; padding-inline-start: var(--nq-gutter); }
+.nq-jobs .nq-working { align-self: flex-start; }
 
 /* Popover: one anchored surface for the slash menu, overflow menus, hints and
    block history. Position arrives as --nq-x/--nq-y from collision math against

@@ -44,7 +44,7 @@ import { MaintainedProjection } from "@nooq/yjs";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, storeDocument, textAuthors, type Captured, type StoredDocument } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
 import { SyncSession, type AwarenessEntry, type Cursor, type OutboxEntry, type SyncTransport } from "@nooq/sync";
-import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
+import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type JobStart, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
 export interface JobBinding { job: Job<any, any> | string; actor: ActorDescriptor; signer?: import("@nooq/core").ActorKey }
@@ -168,6 +168,7 @@ export class Editor {
   readonly errors: PluginError[] = [];
   private readonly identities = new Map<string, { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }>();
   private readonly selectionListeners = new Set<(selection: SelectionRequest) => void>();
+  private readonly jobListeners = new Set<(start: JobStart) => void>();
   /** DM-14.4: the local history store — transactions committed here or admitted from peers, in arrival order. */
   private readonly historyEntries: Transaction[] = [];
   private readonly recorded = new Set<string>();
@@ -213,6 +214,7 @@ export class Editor {
       jobActor: id => this.identities.get(`job:${id}`)?.actor,
       publish: (job, proposal, intent) => this.publishJob(job, proposal, intent),
       report: error => this.reportError(error),
+      onJob: start => this.notifyJob(start),
     });
     this.session = options.transport
       ? new SyncSession({
@@ -305,6 +307,16 @@ export class Editor {
   }
   onClose(listener: () => void): () => void { if (this.closed) { listener(); return () => {}; } this.closeListeners.add(listener); return () => this.closeListeners.delete(listener); }
   onSelection(listener: (selection: SelectionRequest) => void): () => void { this.selectionListeners.add(listener); return () => this.selectionListeners.delete(listener); }
+  /**
+   * A job started: its registered binding actor, its frozen args and its live
+   * handle — what a working-state surface needs (foundation P1, 0008). The
+   * handle settles independently; keep no reference to its progress stream
+   * beyond `onProgress`'s own unsubscribe.
+   */
+  onJob(listener: (start: JobStart) => void): () => void { this.jobListeners.add(listener); return () => this.jobListeners.delete(listener); }
+  private notifyJob(start: JobStart): void {
+    for (const listener of [...this.jobListeners]) try { listener(start); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+  }
 
   get docId(): string {
     return this.options.docId;
@@ -741,7 +753,7 @@ export class Editor {
     this.closed = true;
     this.runtime.dispose();
     for (const listener of this.closeListeners) try { listener(); } catch (cause) { this.reportError({ phase: "cleanup", cause }); }
-    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear();
+    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear(); this.jobListeners.clear();
     this.session?.close();
     this.ydoc.destroy();
   }
