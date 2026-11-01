@@ -124,6 +124,28 @@ describe("typing bursts (DM-14.3)", () => {
     alice.close();
   });
 
+  test("the caret rides its burst: peers get it when the burst seals, not once per keystroke (SW-7)", async () => {
+    const { relay, docId, keys, editor } = await world();
+    const alice = editor("human:alice", keys.alice), bob = editor("human:bob", keys.bob);
+    await settled(8);
+    const block = alice.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "" });
+    await quiesce(relay, docId);
+    type(alice, block, "hello");
+    alice.setCursor({ block, offset: 5 }); // where typing left it: the burst stays open
+    await settled(10);
+    expect(bob.awareness.get("human:alice")).toBeUndefined();
+
+    alice.flush();
+    await quiesce(relay, docId); await settled(10);
+    expect(bob.awareness.get("human:alice")?.cursor).toEqual({ block, offset: 5 });
+    expect(bob.view.blocks[block]!.text!.s).toBe("hello");
+
+    alice.setCursor({ block, offset: 1, anchor: { block, offset: 4 } }); // a selection is not typing: it goes at once
+    await settled(10);
+    expect(bob.awareness.get("human:alice")?.cursor).toEqual({ block, offset: 1, anchor: { block, offset: 4 } });
+    alice.close(); bob.close();
+  });
+
   test("envelopes per typed character fall about fivefold on prose", async () => {
     const prose = "the quick brown fox jumps over the lazy dog and keeps on running";
     const count = async (burst: EditorOptions["burst"]) => {
