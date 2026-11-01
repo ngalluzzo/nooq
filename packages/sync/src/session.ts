@@ -1,17 +1,19 @@
 /**
  * Sync session — SYNC.md SW-3/SW-4/SW-7 from the client side.
  *
- * Bootstrap verification (SW-3): a hello-reply delta with a rootDigest
- * claim is applied to a THROWAWAY copy of the local document first; only
- * if the copy projects to the claimed digest is the delta applied for
- * real. That is how "discard on mismatch" is implemented — an applied
- * CRDT update cannot be un-applied, so it is never applied until
- * verified.
+ * Bootstrap verification (SW-3): a delta is applied to a THROWAWAY copy of
+ * the local document first, and to the real one only once verified. That
+ * is how "discard on mismatch" is implemented — an applied CRDT update
+ * cannot be un-applied, so it is never applied until verified. Open
+ * documents check the claimed root digest; secured documents rebuild the
+ * peer's state from its envelope log and accept a delta only when it adds
+ * nothing the log (and this session's own unconfirmed outbox) does not
+ * attest.
  */
 
 import * as Y from "yjs";
 import { isSecuredDocId, rootDigest } from "@nooq/core";
-import { admitEnvelope, documentHeader, readState, registerHeader } from "@nooq/yjs";
+import { admitEnvelope, documentHeader, keepFormatting, newDocument, readState } from "@nooq/yjs";
 import type { Envelope } from "@nooq/core";
 import { fromBase64, toBase64 } from "./base64.ts";
 import {
@@ -88,6 +90,7 @@ export class SyncSession {
     };
     options.transport.onMessage(this.handleTransportMessage);
     options.doc.on("update", this.handleDocUpdate);
+    keepFormatting(options.doc); // remote deltas never trigger unsigned local cleanup (DM-12)
   }
 
   /** SW-4: what still awaits confirmation — persist it to survive a restart. */
@@ -172,8 +175,8 @@ export class SyncSession {
     }
   }
 
-  /** SW-4: drop what the reply confirms, resend the rest. */
-  private flushOutbox(reply: Extract<WireMessage, { t: "hello-reply" }>): void {
+  /** SW-4: drop what the reply confirms, resend the rest (returned: the bootstrap check needs them). */
+  private flushOutbox(reply: Extract<WireMessage, { t: "hello-reply" }>): OutboxEntry[] {
     const known = Y.decodeStateVector(fromBase64(reply.sv));
     const logged = new Set((reply.envelopes ?? []).map((item) => item.envelope.updateDigest));
     const unconfirmed = this.outboxEntries.filter(({ envelope }) => {
@@ -186,6 +189,7 @@ export class SyncSession {
     for (const { envelope, update } of unconfirmed) {
       this.send({ v: WIRE_VERSION, t: "update", doc: this.docId, update: toBase64(update), envelope });
     }
+    return unconfirmed;
   }
 
   private hasAnyState(): boolean {
@@ -208,9 +212,7 @@ export class SyncSession {
         this.inOrder(() => this.receiveUpdate(message.update, message.envelope));
         return;
       case "delta":
-        if (message.delta !== undefined) {
-          Y.applyUpdate(this.options.doc, fromBase64(message.delta), REMOTE_ORIGIN);
-        }
+        if (message.delta !== undefined) this.inOrder(() => this.receiveDelta(message.delta!, message.rootDigest ?? null));
         return;
       case "awareness":
         this.options.onAwareness?.({ actor: message.actor, name: message.name ?? null, cursor: message.cursor });
@@ -266,47 +268,81 @@ export class SyncSession {
       this.options.onError?.({ code: "backend-mismatch", message: `unsupported backend ${message.backend}` });
       return;
     }
-    this.flushOutbox(message);
+    const unconfirmed = this.flushOutbox(message);
     if (message.delta === null) {
       this.markSynced();
       return;
     }
-    const claimed = message.rootDigest;
-    if (claimed !== null) {
-      // Verify against a throwaway copy before committing (SW-3).
-      const scratch = new Y.Doc({ gc: false });
-      Y.applyUpdate(scratch, Y.encodeStateAsUpdate(this.options.doc));
-      Y.applyUpdate(scratch, fromBase64(message.delta));
-      const actual = await rootDigest(readState(scratch));
-      if (actual !== claimed) {
-        this.options.onError?.({
-          code: "verification-failed",
-          message: `bootstrap digest mismatch: claimed ${claimed}, projected ${actual}`,
-        });
-        return; // discard: never applied to the real document
-      }
-    }
-    Y.applyUpdate(this.options.doc, fromBase64(message.delta), REMOTE_ORIGIN);
-    // SW-3: when the envelope log ships with the bootstrap, replay it on a
-    // scratch document — every transaction verified back to the first.
-    if (message.envelopes && message.envelopes.length > 0) {
-      const scratch = new Y.Doc({ gc: false }); // same classification as every peer (DM-12)
-      registerHeader(scratch, documentHeader(this.options.doc)); // side-channel parity for the comparison
-      for (const item of message.envelopes) {
-        const admission = await admitEnvelope(scratch, item.envelope, fromBase64(item.update));
-        if (admission.verdict !== "allow") {
-          this.options.onError?.({ code: "envelope-log-invalid", message: `bootstrap envelope log: ${admission.reason}` });
-          return;
-        }
-      }
-      const { canonicalJson } = await import("@nooq/core");
-      const { readState: project } = await import("@nooq/yjs");
-      if (canonicalJson(project(scratch)) !== canonicalJson(project(this.options.doc))) {
-        this.options.onError?.({ code: "envelope-log-mismatch", message: "bootstrap delta disagrees with its envelope log" });
-        return;
-      }
-    }
+    const delta = fromBase64(message.delta);
+    const verified = isSecuredDocId(this.docId)
+      ? await this.verifyAgainstLog(delta, message.rootDigest, message.envelopes ?? [], unconfirmed)
+      : await this.verifyAgainstDigest(delta, message.rootDigest);
+    if (!verified) return; // discard: never applied to the real document
+    Y.applyUpdate(this.options.doc, delta, REMOTE_ORIGIN);
+    await this.retryPending();
     this.markSynced();
+  }
+
+  /** SW-4: a bare delta reply — checked like a bootstrap delta, never trusted. */
+  private async receiveDelta(deltaB64: string, claimed: string | null): Promise<void> {
+    if (isSecuredDocId(this.docId)) {
+      this.options.onAdmission?.("deny", "unsigned delta in a secured document");
+      return;
+    }
+    const delta = fromBase64(deltaB64);
+    if (await this.verifyAgainstDigest(delta, claimed)) Y.applyUpdate(this.options.doc, delta, REMOTE_ORIGIN);
+  }
+
+  /** Open documents (SW-3): local state plus the delta must project to the claimed root digest. */
+  private async verifyAgainstDigest(delta: Uint8Array, claimed: string | null): Promise<boolean> {
+    if (claimed === null) return true;
+    const scratch = this.copyOfLocal();
+    Y.applyUpdate(scratch, delta);
+    const actual = await rootDigest(readState(scratch));
+    if (actual === claimed) return true;
+    this.options.onError?.({ code: "verification-failed", message: `bootstrap digest mismatch: claimed ${claimed}, projected ${actual}` });
+    return false;
+  }
+
+  /**
+   * Secured documents (SW-3): rebuild the peer's state from its envelope log,
+   * every transaction verified back to genesis, and check its digest claim.
+   * Then local state plus the delta must equal that state plus this
+   * session's unconfirmed outbox, byte for byte: the delta may carry nothing
+   * the log does not attest, and offline edits are expected, not a mismatch.
+   */
+  private async verifyAgainstLog(
+    delta: Uint8Array,
+    claimed: string | null,
+    envelopes: ReadonlyArray<{ envelope: Envelope; update: string }>,
+    unconfirmed: ReadonlyArray<OutboxEntry>,
+  ): Promise<boolean> {
+    const fail = (code: string, message: string) => {
+      this.options.onError?.({ code, message });
+      return false;
+    };
+    const attested = newDocument(this.docId);
+    for (const item of envelopes) {
+      const admission = await admitEnvelope(attested, item.envelope, fromBase64(item.update));
+      if (admission.verdict !== "allow") return fail("envelope-log-invalid", `bootstrap envelope log: ${admission.reason}`);
+    }
+    if (claimed !== null) {
+      const actual = await rootDigest(readState(attested));
+      if (actual !== claimed) return fail("verification-failed", `bootstrap digest mismatch: claimed ${claimed}, log projects ${actual}`);
+    }
+    for (const { envelope, update } of unconfirmed) await admitEnvelope(attested, envelope, update);
+    const candidate = this.copyOfLocal();
+    Y.applyUpdate(candidate, delta);
+    if (!sameBytes(Y.encodeStateAsUpdate(candidate), Y.encodeStateAsUpdate(attested))) {
+      return fail("envelope-log-mismatch", "bootstrap delta disagrees with its envelope log");
+    }
+    return true;
+  }
+
+  private copyOfLocal(): Y.Doc {
+    const scratch = newDocument(this.docId); // same classification as every peer (DM-12)
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(this.options.doc));
+    return scratch;
   }
 
   private markSynced(): void {
@@ -314,4 +350,10 @@ export class SyncSession {
     this.syncedFlag = true;
     this.options.onSynced?.();
   }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }

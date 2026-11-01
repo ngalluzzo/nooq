@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 3.1 — pre-implementation.** Implements DM-8 of
+**Status: Draft 3.2 — pre-implementation.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -91,9 +91,23 @@ The responding peer replies:
   client's `sv` does not — a full-history snapshot for a fresh client.
 - When `delta` is non-null, `rootDigest` MUST be the projected root
   digest (DM-6.1) of the responder's converged state after producing
-  that delta. The receiver SHOULD apply the delta, project, and compare;
-  on mismatch it MUST discard the delta, emit `error`
-  (`verification-failed`) locally, and not treat the session as synced.
+  that delta. A receiver verifies the delta on a scratch copy before
+  applying it; on any mismatch it MUST discard the delta, emit `error`
+  locally, and not treat the session as synced.
+  - **Open documents:** local state plus the delta MUST project to
+    `rootDigest` (`verification-failed`).
+  - **Secured documents:** the receiver rebuilds the responder's state
+    from the checkpoint and envelope log (below), every envelope verified
+    (`envelope-log-invalid`), and checks `rootDigest` against it
+    (`verification-failed`). Then local state plus the delta MUST equal
+    that state plus the receiver's own unconfirmed outbox (SW-4), in the
+    canonical encoding (SW-5) (`envelope-log-mismatch`). The delta can
+    carry nothing the log does not attest, and edits sealed offline are
+    expected, not a mismatch. A secured reply with state but no log fails.
+  *(Draft 3.2: Draft 3.1 applied the delta before checking the log,
+  accepted a secured document on `rootDigest` alone when no log came, and
+  failed every reconnect that carried offline edits, because local state
+  was ahead of the digest.)*
 - For documents with access rules, bootstrap ships the latest
   **checkpoint** (DM-15) and the **envelope log** after it, so a joining
   peer verifies the checkpoint and every later transaction. Before a
@@ -113,7 +127,10 @@ The responding peer replies:
   convergence is the CRDT's job, not the wire's.
 - A session MAY send `{ "t": "delta", "sv": "<base64>" }` at any time to
   request everything since a state vector; the reply is a `delta`
-  message shaped like `hello-reply`'s (`delta`, `rootDigest?`).
+  message shaped like `hello-reply`'s (`delta`, `rootDigest?`), verified
+  the same way when it carries a digest. A secured document never accepts
+  a bare `delta` (it carries no envelopes); its peers re-run the handshake.
+  *(Draft 3.2.)*
 - **Outbox.** A session keeps every envelope it sends in an outbox until a
   handshake confirms the peer has it: the reply's `sv` covers the
   envelope's clocks, or its envelope log contains the envelope's
@@ -127,11 +144,14 @@ The responding peer replies:
 A snapshot is a checkpoint (DM-15) plus the state it attests, followed by
 the envelopes after it (SW-3).
 
-- **Canonical state encoding.** `stateDigest` is the fingerprint of the Yjs
-  v1 update produced by merging the state's full update with
-  `Y.mergeUpdates`, so structs are normalized and ordered the same way on
-  every peer. A peer MUST reject a checkpoint whose digest its own
-  canonical encoding of the received state does not reproduce.
+- **Canonical state encoding.** `stateDigest` is the SHA-256 fingerprint
+  of `Y.encodeStateAsUpdate` (Yjs v1) of the state. Peers holding the same
+  updates produce identical bytes, because nothing unsigned ever changes a
+  secured document (DM-12). A peer MUST reject a checkpoint whose digest
+  its own encoding of the received state does not reproduce. *(Draft 3.2:
+  Draft 3 named `Y.mergeUpdates`, which returns a single update unchanged
+  and so normalizes nothing; the divergence it was meant to absorb came
+  from unsigned formatting cleanup, now disabled.)*
 - **Compaction** is rebase (DM-16): a new lineage, not truncation of this
   one. Tombstones and CRDT history still travel in a full delta of a
   lineage, but history store entries before its latest checkpoint do not.

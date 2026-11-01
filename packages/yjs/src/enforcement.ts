@@ -28,7 +28,7 @@ import {
   type Touched,
   type Verdict,
 } from "@nooq/core";
-import { applyTransaction, documentHeader } from "./index.ts";
+import { applyTransaction, documentHeader, keepFormatting } from "./index.ts";
 import { layout } from "./layout.ts";
 import { readState } from "./read.ts";
 
@@ -459,6 +459,7 @@ export async function admitEnvelope(
   update: Uint8Array,
   options: { openKeys?: Map<string, Uint8Array> } = {},
 ): Promise<Admission> {
+  keepFormatting(doc); // admitted updates never trigger unsigned local cleanup (DM-12)
   // Tampered bytes never match their envelope (DM-12).
   if ((await updateDigestOf(update)) !== envelope.updateDigest) {
     return { verdict: "deny", reason: "update digest mismatch" };
@@ -529,10 +530,15 @@ export async function admitEnvelope(
         inspected.touched.accessValues.length === 1 &&
         (await isGenesisFor(docId, genesis))
       ) {
-        const owner = (genesis as import("@nooq/core").Access).owner;
+        const established = genesis as Access;
+        const owner = established.owner;
         if (envelope.signer !== owner.actorId) return { verdict: "deny", reason: "genesis signer is not the owner" };
         const valid = await verifyEnvelope(envelope, docId, fromB64(owner.key));
         if (!valid) return { verdict: "deny", reason: "genesis signature" };
+        // The genesis is authorized against the access it establishes, like
+        // every later envelope: no bookkeeping, no partial view, no claimed kind.
+        const verdict = authorize(established, { tx: envelope.tx, signer: envelope.signer, signerKey: owner.key }, inspected.touched);
+        if (verdict !== "allow") return { verdict: "deny", reason: "genesis rules", touched: inspected.touched };
         Y.applyUpdate(doc, update, ADMIT_ORIGIN);
         return { verdict: "allow", touched: inspected.touched };
       }

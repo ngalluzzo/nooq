@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.8 — pre-implementation.** This spec converts
+**Status: Draft 1.9 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -414,6 +414,14 @@ binds the transaction to its actor and its exact effects:
   The update may write the registry only to register its own client, once.
   Any other registry write is bookkeeping, and denied. Attribution is
   therefore verified, not claimed.
+- **Nothing unsigned.** A peer's copy of a secured document holds exactly
+  the updates it sealed or admitted. A CRDT backend's own housekeeping
+  writes MUST be disabled: Yjs's formatting cleanup after remote text
+  changes runs as a local transaction that no envelope covers, so it never
+  replicates and the peers that ran it diverge. Redundant format markers
+  are harmless and identical everywhere. *(Draft 1.9: a secured fuzz of
+  concurrent marks diverged in 75 of 80 runs, by encoding and sometimes by
+  text, before the cleanup was turned off.)*
 - **Causal readiness.** A struct or delete the receiver cannot resolve
   against the update itself or its local store has an unknown target.
   Such an envelope is **held**, exactly like an ungranted signer, and
@@ -442,8 +450,9 @@ The document header gains an optional `access` value:
 - **Secured at genesis.** A document is secured or open from its first
   byte, decided by its ID alone: a secured document's ID is
   `nooq:` + the fingerprint (DM-2) of `{owner, nonce}`. Its first access
-  write is the genesis envelope, signed by that owner. Until a peer has
-  admitted genesis, every other envelope is held. An open document (any
+  write is the genesis envelope, signed by that owner and authorized
+  against the access it establishes, like every later envelope. Until a
+  peer has admitted genesis, every other envelope is held. An open document (any
   other ID) never gains `access`; securing it means forking to a new
   secured document. Absence of `access` therefore never turns a secured
   document open, and no arrival order decides who owns a document.
@@ -477,7 +486,9 @@ The document header gains an optional `access` value:
 
 *(Draft 1.6, per proposals/0001. Draft 1.7: secured-at-genesis IDs, kind
 binding, append-only enforcement and access deletes, per the same
-comment period.)*
+comment period. Draft 1.9: the genesis is authorized too; Draft 1.8's
+genesis path checked only its signature, so it could carry writes outside
+the document's roots.)*
 
 
 ## DM-14. History layers

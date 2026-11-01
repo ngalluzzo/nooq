@@ -90,3 +90,25 @@ Separate history by purpose, each with its own place and lifetime:
 Per-character deletion attribution in live state (deletions are answered by
 the history store); lazily materialized subtrees (DM-10.3 remains open for
 residency); automatic rebase without an actor's decision.
+
+## Amendments found in implementation
+
+Recorded as the slices land, each with the spec section it changed.
+
+- **Nothing unsigned (DM-12, Draft 1.9).** Yjs's formatting cleanup after
+  remote text changes is a local, unsigned transaction. In secured
+  documents it never replicates: a fuzz of concurrent marks diverged in 75
+  of 80 runs. nooq documents turn it off. Checkpoints depend on this, since
+  peers must reproduce each other's state digest.
+- **Canonical encoding (SW-5, SYNC Draft 3.2).** `Y.mergeUpdates([x])`
+  returns `x`, so it normalized nothing. The canonical encoding is
+  `Y.encodeStateAsUpdate`, identical on peers holding the same updates.
+- **Secured bootstrap (SW-3, SYNC Draft 3.2).** Verification rebuilds the
+  peer's state from its log and requires local state plus the delta to
+  equal it plus the receiver's own unconfirmed outbox. Draft 3.1 applied
+  the delta before checking the log and failed every reconnect that
+  carried offline edits.
+- **Genesis is authorized (DM-13, Draft 1.9).** The genesis path checked
+  only the owner's signature, so a genesis could carry writes outside the
+  document's roots.
+

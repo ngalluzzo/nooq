@@ -29,7 +29,29 @@ export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
   // so every peer classifies a delete the same way, whenever it arrives (DM-12).
   const doc = new Y.Doc({ gc: false });
   registerHeader(doc, { docId, schemaVersion }); // side-channel: clocks 0+ stay for real content
+  keepFormatting(doc);
   return doc;
+}
+
+const kept = new WeakSet<Y.Doc>();
+
+/**
+ * Turn off Yjs's formatting cleanup for this document (DM-12, SW-5).
+ *
+ * After a REMOTE text change, Yjs deletes redundant formatting items in a
+ * local transaction of its own. In a secured document that cleanup is
+ * unsigned and never replicates, so peers that ran it diverge. Redundant
+ * markers are harmless and identical everywhere; a document that holds
+ * exactly its signed updates is the one every peer can digest. Yjs emits
+ * afterTransaction just before the cleanup runs (yjs 13.6.33,
+ * Transaction.js), which is where it is cancelled. Idempotent.
+ */
+export function keepFormatting(doc: Y.Doc): void {
+  if (kept.has(doc)) return;
+  kept.add(doc);
+  doc.on("afterTransaction", (transaction: Y.Transaction) => {
+    (transaction as unknown as { _needFormattingCleanup: boolean })._needFormattingCleanup = false;
+  });
 }
 
 /** Apply a nooq transaction to a Y.Doc. Durable intent is logged with the ops (DM-4). */

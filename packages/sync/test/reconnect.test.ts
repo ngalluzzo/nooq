@@ -7,7 +7,8 @@ import { describe, expect, test } from "bun:test";
 import type * as Y from "yjs";
 import { createActorKey, createSecuredDocument, makeBlock, newBlockId, toBase64, type Access, type ActorKey, type Op, type Transaction } from "@nooq/core";
 import { commitSigned, newDocument, readState } from "@nooq/yjs";
-import { encodeMessage, NooqRelay, settled, SyncSession, type SyncTransport } from "../src/index.ts";
+import * as YDoc from "yjs";
+import { decodeMessage, encodeMessage, NooqRelay, settled, SyncSession, type SyncTransport, type WireMessage } from "../src/index.ts";
 import { rt } from "./rt.ts";
 
 let lamport = 0;
@@ -69,7 +70,8 @@ describe("secured reconnect and the outbox (SW-3/SW-4, Draft 3.1)", () => {
 
     session.restart(relay.connect(docId));
     await settled(8);
-    expect(errors).not.toContain("envelope-denied");
+    expect(errors).toEqual([]); // offline edits are expected, not a verification failure
+    expect(session.synced).toBe(true);
     expect(relay.envelopesOf(docId)).toHaveLength(4);
     expect(readState(relay.stored(docId)!).blocks[block.id]!.text!.s).toBe("written offline");
 
@@ -77,6 +79,7 @@ describe("secured reconnect and the outbox (SW-3/SW-4, Draft 3.1)", () => {
     session.restart(relay.connect(docId));
     await settled(8);
     expect(session.outbox).toHaveLength(0);
+    expect(session.synced).toBe(true);
 
     // A joiner sees the offline edits, verified through the envelope log.
     const joined = newDocument(docId);
@@ -102,9 +105,12 @@ describe("secured reconnect and the outbox (SW-3/SW-4, Draft 3.1)", () => {
     first.close();
     expect(persisted).toHaveLength(2);
 
-    const second = new SyncSession({ doc, transport: relay.connect(docId), actor: "human:owner", outbox: persisted });
+    const errors: string[] = [];
+    const second = new SyncSession({ doc, transport: relay.connect(docId), actor: "human:owner", outbox: persisted, onError: (error) => errors.push(error.code) });
     second.start();
     await settled(8);
+    expect(errors).toEqual([]);
+    expect(second.synced).toBe(true);
     expect(relay.envelopesOf(docId)).toHaveLength(2);
     expect(readState(relay.stored(docId)!).blocks[block.id]!.text!.s).toBe("kept");
   });
@@ -147,5 +153,71 @@ describe("the relay logs and relays each update once (SW-6, Draft 3.1)", () => {
     expect(replies).toContain("envelope-denied");
     expect(relay.envelopesOf(docId)).toHaveLength(2);
     expect(relayed).toEqual([]);
+  });
+});
+
+/** A peer that answers every hello with a reply of its own making. */
+function scriptedPeer(reply: (hello: Extract<WireMessage, { t: "hello" }>) => WireMessage[]): SyncTransport {
+  let handler: ((raw: string) => void) | undefined;
+  return {
+    send: (raw) => {
+      const message = decodeMessage(raw);
+      if (message?.t === "hello") for (const out of reply(message)) queueMicrotask(() => handler?.(encodeMessage(out)));
+    },
+    onMessage: (h) => (handler = h),
+    close: () => (handler = undefined),
+  };
+}
+
+describe("secured bootstrap verifies before it applies (SW-3, Draft 3.1)", () => {
+  test("a delta carrying state its envelope log does not attest is discarded", async () => {
+    const { owner, docId, doc, genesis } = await securedDoc();
+    const block = makeBlock({ type: "nooq.paragraph/v1", text: rt("unattested") }, "human:owner");
+    await edit(doc, owner, [{ op: "insert", block, parent: null }]); // honest bytes, never logged
+    const fresh = newDocument(docId);
+    const errors: string[] = [];
+    const reply = (): WireMessage[] => [{
+      v: 1, t: "hello-reply", doc: docId, backend: "yjs/1",
+      sv: toBase64(YDoc.encodeStateVector(doc)),
+      delta: toBase64(YDoc.encodeStateAsUpdate(doc)), // genesis + the unlogged insert
+      rootDigest: null,
+      envelopes: [{ envelope: genesis.envelope, update: toBase64(genesis.update) }],
+    }];
+    const session = new SyncSession({ doc: fresh, transport: scriptedPeer(reply), actor: "human:reader", onError: (error) => errors.push(error.code) });
+    session.start();
+    await settled(8);
+    expect(errors).toEqual(["envelope-log-mismatch"]);
+    expect(session.synced).toBe(false);
+    expect(readState(fresh).blocks[block.id]).toBeUndefined(); // never applied
+  });
+
+  test("a secured document with state but no envelope log is not accepted", async () => {
+    const { docId, doc } = await securedDoc();
+    const fresh = newDocument(docId);
+    const errors: string[] = [];
+    const reply = (): WireMessage[] => [{
+      v: 1, t: "hello-reply", doc: docId, backend: "yjs/1",
+      sv: toBase64(YDoc.encodeStateVector(doc)), delta: toBase64(YDoc.encodeStateAsUpdate(doc)), rootDigest: null,
+    }];
+    const session = new SyncSession({ doc: fresh, transport: scriptedPeer(reply), actor: "human:reader", onError: (error) => errors.push(error.code) });
+    session.start();
+    await settled(8);
+    expect(errors).toEqual(["envelope-log-mismatch"]);
+    expect(readState(fresh).access).toBeUndefined();
+  });
+
+  test("a bare delta message in a secured document is refused", async () => {
+    const { docId, doc } = await securedDoc();
+    const fresh = newDocument(docId);
+    const verdicts: string[] = [];
+    const reply = (): WireMessage[] => [
+      { v: 1, t: "hello-reply", doc: docId, backend: "yjs/1", sv: toBase64(YDoc.encodeStateVector(fresh)), delta: null, rootDigest: null },
+      { v: 1, t: "delta", doc: docId, delta: toBase64(YDoc.encodeStateAsUpdate(doc)) },
+    ];
+    const session = new SyncSession({ doc: fresh, transport: scriptedPeer(reply), actor: "human:reader", onAdmission: (verdict, reason) => verdicts.push(`${verdict}: ${reason}`) });
+    session.start();
+    await settled(8);
+    expect(verdicts).toEqual(["deny: unsigned delta in a secured document"]);
+    expect(readState(fresh).access).toBeUndefined();
   });
 });

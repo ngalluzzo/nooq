@@ -4,7 +4,7 @@
  * into the plain DocState every @nooq/core function understands.
  */
 
-export { applyChanges, applyTransaction, newDocument, setText } from "./apply.ts";
+export { applyChanges, applyTransaction, keepFormatting, newDocument, setText } from "./apply.ts";
 export { REGISTER, documentHeader, layout, registerHeader, type DocumentHeader, type Placement, type Register, type YjsLayout } from "./layout.ts";
 export { normalize } from "./normalize.ts";
 export { admitEnvelope, applyCaptured, commitSigned, inspectUpdate, sealEnvelope, type Admission, type Committed } from "./enforcement.ts";

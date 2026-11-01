@@ -9,7 +9,7 @@
 
 import * as Y from "yjs";
 import { rootDigest, type Envelope } from "@nooq/core";
-import { admitEnvelope, readState, registerHeader } from "@nooq/yjs";
+import { admitEnvelope, newDocument, readState } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import { BACKEND, decodeMessage, encodeMessage, errorFor } from "./messages.ts";
 import type { SyncTransport } from "./transport.ts";
@@ -237,8 +237,7 @@ export class NooqRelay {
   }
 
   private open(docId: string): Y.Doc {
-    const doc = new Y.Doc({ gc: false }); // same classification as every peer (DM-12)
-    registerHeader(doc, { docId, schemaVersion: 1 }); // side-channel header (SYNC Draft 1.2)
+    const doc = newDocument(docId); // same classification as every peer (DM-12); side-channel header (SYNC Draft 1.2)
     this.docs.set(docId, doc);
     this.connections.set(docId, this.connections.get(docId) ?? new Set());
     this.envelopeLog.set(docId, this.envelopeLog.get(docId) ?? []);
