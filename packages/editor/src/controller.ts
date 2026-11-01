@@ -110,6 +110,7 @@ export class Editor {
   private readonly selectionListeners = new Set<(selection: SelectionRequest) => void>();
 
   readonly commands = {
+    batch: <Args>(command: Command<Args> | string, inputs: readonly Args[]): CommandResult => this.runtime.runBatch(command, inputs),
     run: <Args>(command: Command<Args> | string, args: Args, options: { selection?: SelectionRequest } = {}): CommandResult => this.runtime.run(command, args, options) as CommandResult,
     preview: <Args>(command: Command<Args> | string, args: Args, options: { selection?: SelectionRequest } = {}): PreparedCommand | CommandResult => this.runtime.run(command, args, { ...options, preview: true }),
   };

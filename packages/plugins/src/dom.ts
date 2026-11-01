@@ -5,6 +5,17 @@ import { defineAction, type Action, type ActionToolbar, type BlockActions, type 
 import { defineTextPolicy, type TextMode, type TextMark, type TextPolicy } from "./text-policy.ts";
 export * from "./actions.ts";
 export * from "./text-policy.ts";
+import type { DocumentTextSelection } from "./selection.ts";
+export type { DocumentTextSelection, TextPoint, TextRangeSegment } from "./selection.ts";
+/** A local surface selection. Range edits preserve block structure and commit atomically. */
+export interface DocumentSelectionService {
+  get(): DocumentTextSelection | undefined;
+  set(selection: DocumentTextSelection): boolean;
+  clear(): void;
+  text(): string;
+  replace(text: string): CommandResult;
+  toggleMark(mark: TextMark): CommandResult;
+}
 export interface TextBinding { element: HTMLTextAreaElement; destroy(): void }
 export interface TextSelection { anchor: number; head: number }
 /** Host-owned rich text. Positions use UTF-16; no editor-engine objects escape. */

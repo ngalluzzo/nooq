@@ -167,8 +167,70 @@ Declined splits never fall back to a different edit; rejected replacements
 restore text and the original directional range. Optional marks restricts
 formatting actions while preserving existing and opaque marks.
 
-These are authoring policies, not admission rules. Cross-block selection,
-rich clipboard codecs, dynamic policies, and collaborative undo are separate work.
+These are authoring policies, not admission rules. Rich clipboard codecs,
+dynamic policies, and collaborative undo are separate work.
+
+### Document-wide text selection
+
+Enable the surface coordinator when composing rich views:
+
+```ts
+const surface = createSurface(editor, {
+  plugins: [essentialsDOM, calloutsDOM],
+  textMode: "rich",
+  selectionMode: "document",
+});
+surface.selection!.set({
+  anchor: { block: firstBlock, offset: 2 },
+  head: { block: lastBlock, offset: 5 },
+});
+const selectedText = surface.selection!.text();
+const result = surface.selection!.replace("Replacement text");
+```
+
+Document mode requires a registered `nooq.text.edit` command. `surface.selection`
+is absent in the default block mode. The service exposes `get`, `set`, `clear`,
+`text`, `replace`, and `toggleMark`; logical endpoints use block IDs and UTF-16
+offsets. Returned values are detached. An invalid set clears the old range.
+Selection is local UI state and is never serialized into the document.
+
+Mouse dragging, Shift+Left/Right, Ctrl/Meta+Shift+Home/End, and Ctrl/Meta+A work
+across mounted rich-text bindings in model order. Copy joins selected text with
+newlines, excluding controls, labels, and stored fields. Cut and plain-text paste
+share the range replacement path. Mark toggles require every selected binding to
+support the mark and preserve unrelated/opaque marks. Legacy textareas and views
+whose child slot precedes their own text form barriers; they keep block editing.
+
+Replacement, Backspace/Delete, and Enter on a cross-block range edit text only:
+the first segment receives replacement text (Enter inserts a literal newline),
+and the remaining selected text is cleared. Every block, type, field, and child
+remains, including empty blocks. No implicit merge, reparenting, or block deletion
+occurs. Replacement text has no marks; surviving text keeps its marks. Structural
+range deletion/merging needs explicit per-block compatibility rules.
+
+Range edits call `editor.commands.batch("nooq.text.edit", inputs)` once. Batch
+prepares independent invocations of one selected command against one frozen
+snapshot, then validates, authorizes, and commits one operation batch with that
+plugin's identity. Any invalid, throwing, empty, or declined invocation prevents
+the entire commit. Inputs do not observe each other's proposed edits. This API is
+not an asynchronous transaction or a general mixed-command composition mechanism.
+
+Remote text maps both endpoints before execution, including before a queued
+render. Changes to span membership (insertions within it, moves, deletions) cancel
+the range instead of selecting unintended content. Focus leaving the surface and
+disposal invalidate it. Denied/declined edits keep the original selection.
+
+This slice does not qualify native IME replacement of cross-block ranges, touch
+selection handles, vertical/word-granularity range extension, rich clipboard
+codecs, drag/drop editing, collaborative undo, or performance budgets. Native
+cross-block drag/drop is suppressed rather than allowed to edit plugin DOM.
+The existing block-scoped composition behavior remains available after collapsing
+the range. The independent Chromium gate is:
+
+```sh
+bun run --cwd packages/design test:selection-browser
+```
+
 
 ### Shared actions
 

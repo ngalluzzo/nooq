@@ -1,6 +1,6 @@
 # Proposal 0004: plugin authoring v2
 
-Status: slices 1–3 implemented; document-wide selection and performance gates remain open. Additive to plugin API version 1.
+Status: slices 1–4 implemented; structural range editing, native IME acceptance, and performance gates remain open. Additive to plugin API version 1.
 Date: 2026-10-31.
 
 ## Decision
@@ -167,6 +167,57 @@ gates remain open.
 The next slice is document-wide selection that preserves arbitrary plugin blocks,
 children, opaque marks, and the selected command boundary. The private
 full-document ProseMirror experiment does not yet meet that contract.
+
+## Slice 4: document-wide text selection
+
+An opt-in `selectionMode: "document"` surface with `textMode: "rich"` coordinates
+native selection across the existing plugin text bindings. It preserves custom
+views and child slots instead of converting them into the private experiment's
+fixed block schema. The public `surface.selection` service uses directional
+block-ID/UTF-16 endpoints and supports read/set/clear, text extraction, replacement,
+and mark toggles. Default block-mode behavior remains unchanged.
+
+The native interaction path supports mouse dragging, horizontal Shift extension,
+document-edge extension, select-all, and plain-text clipboard operations. Clipboard
+text excludes plugin chrome. Mixed and nested Writing Basics, Callouts, and
+unfamiliar fallback blocks are covered. Textarea bindings and incompatible DOM
+ordering are barriers. Selected text can be replaced or cleared atomically;
+blocks, fields, types, and children remain, even when their text becomes empty.
+Cross-range Enter inserts a literal newline. Structural merging/deletion needs
+separate block compatibility rules and is deliberately not inferred here.
+
+`editor.commands.batch(command, inputs)` prepares one selected command repeatedly
+against one immutable snapshot and commits one authorized operation batch. A
+later declined, invalid, or throwing preparation prevents all writes; it cannot
+partially clear a range. The selected `nooq.text.edit` override and plugin identity
+are retained. Formatting requires support throughout the span and preserves opaque
+marks. A regression test also corrects the Yjs adapter: explicit plain insertion
+must not inherit adjacent marks, matching core text semantics.
+
+Both endpoints map through admitted text updates before execution. A structural
+change to span membership cancels selection instead of expanding it to unintended
+content. Denied edits retain the directional range. Disposal, legacy barriers,
+and focus moving outside the surface prevent stale mutations. Selection stays
+local, with no new stored schema or migration.
+
+Storybook covers replacement, formatting, denial, real remote delivery, and clean
+copy in both themes. `bun run --cwd packages/design test:selection-browser` builds
+Storybook and independently drives real Chromium mouse drags and clipboard/key
+shortcuts; it asserts preserved block IDs, nested content, and no page errors.
+Unit tests cover atomicity, authorization, UTF-16/opaque marks, stale ranges,
+remote mapping, disposal, and peer convergence. Native cross-range IME, touch
+handles, vertical/word extension, rich clipboard, drag/drop editing, undo, and
+performance qualification remain open. No new model-generation run is claimed.
+
+The text-policy checkpoint is committed as `2376988`; this selection slice is the
+next reviewable increment. Its native tests do not supersede the historical
+performance failures recorded above.
+
+Integrated verification: 540 repository tests passed (eight opt-in lab tests
+skipped), 168 Storybook checks passed across both themes, and typechecking and
+the static build passed. The independent native gate passed in Chromium
+156.0.8078.4 with no page errors. CI now runs both the Storybook and native gates;
+the workflow itself has not been run remotely as part of this local verification.
 
 ## Subsequent slices and acceptance criteria
 

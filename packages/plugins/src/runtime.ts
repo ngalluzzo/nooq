@@ -82,6 +82,45 @@ export class PluginRuntime {
       return { status: "failed", error };
     } finally { this.#busy = false; }
   }
+  /** Prepare independent invocations of one selected command against one snapshot,
+   * then authorize/commit their combined operations once. No partial success. */
+  runBatch<Args>(reference: Command<Args> | string, inputs: readonly Args[]): CommandResult {
+    const id = typeof reference === "string" ? reference : reference.id, entry = this.registry.command(id);
+    if (this.#closed || this.#busy) return { status: "failed", error: new Error(this.#closed ? "Editor is closed" : "Nested dispatch is forbidden") };
+    this.#busy = true;
+    try {
+      if (!entry) throw new Error(`Unknown command ${id}`);
+      if (!Array.isArray(inputs)) throw new Error("Batch arguments must be an array");
+      if (!inputs.length) return { status: "not-applicable" };
+      const state = this.host.read(), tree = liveTree(state), actor = { ...this.host.actor, plugin: entry.plugin };
+      const context = Object.freeze({ snapshot: freezeSnapshot(state), actor: freezeSnapshot(actor),
+        isAlive: (id: string) => tree.alive.has(id), parentOf: (id: string) => tree.parentOf.get(id), createBlock: (type: string) => this.createBlock(type, actor) });
+      const combined: Extract<PreparedCommand, { status: "ready" }> = { status: "ready", intent: `batch:${id}`, ops: [] };
+      const ops: import("@nooq/core").Op[] = [];
+      for (const args of freezeSnapshot(inputs)) {
+        if (entry.definition.validateArgs(args) !== true) throw new Error(`Invalid arguments: ${id}`);
+        const prepared = entry.definition.prepare(context, args);
+        if (!prepared || (prepared as any).then || !["ready", "not-applicable"].includes(prepared.status)) throw new Error("Command must return a synchronous result");
+        if (prepared.status === "not-applicable") return { status: "not-applicable" };
+        if (typeof prepared.intent !== "string" || !prepared.intent || !Array.isArray(prepared.ops)) throw new Error("Invalid prepared command");
+        if (!prepared.ops.length) return { status: "not-applicable" };
+        for (const op of prepared.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text)) throw new Error("Insert attribution must belong to the active actor");
+        ops.push(...structuredClone(prepared.ops));
+        if (prepared.selection) combined.selection = structuredClone(prepared.selection);
+      }
+      combined.ops = ops;
+      // Validate the complete batch and its selection before the authorization boundary.
+      const next = applyTransaction(state, { id: "batch-preview", actor, lamport: 0, causality: {}, ops });
+      if (combined.selection) {
+        const { block, anchor, head } = combined.selection, length = next.blocks[block]?.text?.s.length ?? 0;
+        if (!liveTree(next).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+      }
+      return this.host.commit(combined, actor);
+    } catch (error) {
+      this.host.report({ plugin: entry?.plugin, phase: "command", cause: error });
+      return { status: "failed", error };
+    } finally { this.#busy = false; }
+  }
   diagnose(id: string): readonly Diagnostic[] {
     const block = this.host.read().blocks[id];
     if (!block) return [];

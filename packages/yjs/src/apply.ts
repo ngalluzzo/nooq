@@ -223,7 +223,8 @@ export function applyChanges(yt: Y.Text, changes: readonly TextChange[]): void {
       const set = [...new Set(change.marks ?? [])].sort();
       const attrs: Record<string, true> = {};
       for (const mark of set) attrs[mark] = true;
-      yt.insert(position, change.insert, set.length > 0 ? attrs : undefined);
+      // An empty attribute map is explicit plain text; undefined inherits adjacent marks.
+      yt.insert(position, change.insert, attrs);
       position += change.insert.length;
     } else if ("delete" in change) {
       yt.delete(position, change.delete);

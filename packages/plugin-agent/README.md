@@ -224,6 +224,12 @@ Complete-package fixtures exercise both policy-selected presentations through
 independent runtime, browser, and Storybook checks. Historical oMLX outputs are
 unchanged; this SDK checkpoint is not a new model-generation run.
 
+Plugins using host rich text participate in an application's opt-in document
+selection without custom global key or clipboard handlers. Agent guidance keeps
+controls outside the binding and child slots after text. The SDK fingerprint now
+includes the selection coordinator, portable range types, and selection CSS.
+This is host integration coverage, not a new oMLX generation run.
+
 ## Legacy pilot
 
 The original [callout source](examples/callout.ts) and

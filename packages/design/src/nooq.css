@@ -115,3 +115,7 @@
 .nq-logo-piece.is-moved { stroke: var(--nq-ink); }
 .nq-logo-caret { fill: var(--nq-caret); }
 .nq-logo-mono .nq-logo-letter, .nq-logo-mono .nq-logo-piece { stroke: currentColor; }
+
+/* Cross-block selection paints text only; plugin controls remain interactive. */
+.nq-document-selection [data-nq-block] { user-select: none; }
+.nq-document-selection .nq-rich-text { user-select: text; }

@@ -26,6 +26,23 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Install browser test dependencies
+        working-directory: packages/design
+        run: bunx playwright install --with-deps chromium
+      - name: Storybook interactions and accessibility
+        run: bun run test:stories
+      - name: Native document selection and clipboard
+        run: bun run --cwd packages/design test:selection-browser
+
   dco:
     runs-on: ubuntu-latest
     timeout-minutes: 5
