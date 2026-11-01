@@ -10,7 +10,7 @@ import {
   makeSuggestionBlock,
   type Op,
 } from "@nooq/core";
-import { readState } from "../src/index.ts";
+import { readState, textAuthors } from "../src/index.ts";
 import { AI, P1, P2, applyToPeer, makePeers, proposalAgainst, rt, sync, txOf } from "./helpers.ts";
 
 describe("cross-peer suggestion lifecycle (DM-6.3 over replication)", () => {
@@ -47,13 +47,19 @@ describe("cross-peer suggestion lifecycle (DM-6.3 over replication)", () => {
       expect(state.blocks[suggestion.id]!.fields.status).toBe("accepted");
       expect(state.blocks[ids.p]!.fields.tone).toBe("urgent");
       expect(state.blocks[ids.p]!.text!.s).toBe("hello from the other peer");
-      expect(state.blocks[ids.p]!.attribution.fields.tone).toEqual({ actor: AI, lamport: 11 });
-      expect(state.blocks[ids.p]!.attribution.text).toEqual({ actor: AI, lamport: 11 });
+      expect(state.blocks[ids.p]!.attribution.fields.tone).toEqual({ actor: AI, lamport: 11, adoptedBy: P2 });
+      // Two-level provenance stays in state: the settlement names its adopter (DM-6.3).
+      expect(state.blocks[suggestion.id]!.attribution.fields.status).toEqual({ actor: AI, lamport: 11, adoptedBy: P2 });
     }
-    // The adoption transaction, with two-level provenance, is in both logs.
-    const adoptTx = s1.log.find((t) => t.adoptedBy === P2);
-    expect(adoptTx).toBeDefined();
-    expect(adoptTx!.actor.actorId).toBe(AI);
+    // DM-14.2: every character's author is its item's registered client, on both peers.
+    const adopted = { actorId: AI, kind: "ai" as const, model: "test-model", adoptedBy: P2 };
+    for (const doc of [p1.doc, p2.doc]) {
+      const runs = textAuthors(doc, ids.p);
+      expect(runs.map((run) => run.length).reduce((a, b) => a + b, 0)).toBe("hello from the other peer".length);
+      expect(runs.at(-1)).toEqual({ length: "from the other peer".length, author: adopted });
+      expect(runs.every((run) => run.author !== undefined)).toBe(true);
+    }
+    expect(textAuthors(p1.doc, ids.p)).toEqual(textAuthors(p2.doc, ids.p));
   });
 
   test("both peers accept concurrently: converges with a single inserted block", async () => {

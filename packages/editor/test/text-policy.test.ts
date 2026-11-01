@@ -51,9 +51,9 @@ for (const mode of ["plain", "rich"] as const) {
   test(`${mode}: Callouts keeps Enter local when Writing Basics is installed`, async () => {
     const { e, note, child, bindings } = await fixture(mode), binding = bindings.get(note)!;
     e.editText(note, "hello"); e.setField(note, "future", { keep: true }); await settled(); binding.focus({ anchor: 2, head: 2 });
-    const before = e.view.log.length, roots = [...e.view.roots];
+    const before = e.history().length, roots = [...e.view.roots];
     expect(enter(binding).defaultPrevented).toBe(true); await settled();
-    expect(e.view.blocks[note]!.text!.s).toBe("he\nllo"); expect(e.view.roots).toEqual(roots); expect(e.view.log).toHaveLength(before + 1);
+    expect(e.view.blocks[note]!.text!.s).toBe("he\nllo"); expect(e.view.roots).toEqual(roots); expect(e.history()).toHaveLength(before + 1);
     expect(e.view.blocks[note]!.children).toEqual([child]); expect(e.view.blocks[note]!.fields.future).toEqual({ keep: true });
     expect(binding.selection()).toEqual({ anchor: 3, head: 3 }); e.close();
   });
@@ -62,12 +62,12 @@ for (const mode of ["plain", "rich"] as const) {
     const { e, text, bindings } = await fixture(mode), binding = bindings.get(text)!;
     e.editText(text, "A😀bc"); e.applyTextChanges(text, [{ retain: 4 }, { retain: 1, setMarks: ["future", "strong"] }]);
     e.setField(text, "future", true); const child = inserted(e, paragraph.type, text); await settled();
-    binding.focus({ anchor: 4, head: 1 }); const before = e.view.log.length;
+    binding.focus({ anchor: 4, head: 1 }); const before = e.history().length;
     expect(enter(binding).defaultPrevented).toBe(true); await settled();
     const next = e.view.roots[e.view.roots.indexOf(text) + 1]!;
     expect(e.view.blocks[text]!.text!.s).toBe("A"); expect(e.view.blocks[next]!.text).toEqual({ s: "c", marks: [["future", "strong"]] });
     expect(e.view.blocks[text]!.fields.future).toBe(true); expect(e.view.blocks[text]!.children).toEqual([child]);
-    expect(e.view.log).toHaveLength(before + 1); expect(document.activeElement).toBe(bindings.get(next)!.element); e.close();
+    expect(e.history()).toHaveLength(before + 1); expect(document.activeElement).toBe(bindings.get(next)!.element); e.close();
   });
 
   test(`${mode}: Shift+Enter and beforeinput line breaks use the same command boundary`, async () => {
@@ -121,8 +121,8 @@ for (const mode of ["plain", "rich"] as const) {
 
   test(`${mode}: composition Enter, remote updates, and deleted bindings cannot split stale targets`, async () => {
     const { e, text, bindings } = await fixture(mode), binding = bindings.get(text)!; e.editText(text, "abc"); await settled();
-    binding.focus({ anchor: 2, head: 2 }); const before = e.view.log.length;
-    expect(enter(binding, false, true).defaultPrevented).toBe(false); expect(e.view.log).toHaveLength(before);
+    binding.focus({ anchor: 2, head: 2 }); const before = e.history().length;
+    expect(enter(binding, false, true).defaultPrevented).toBe(false); expect(e.history()).toHaveLength(before);
     const peer = new Editor({ docId: "policies", actor: { actorId: "peer" } }); Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc));
     peer.applyTextChanges(text, [{ insert: "++" }]); Y.applyUpdate(e.ydoc, Y.encodeStateAsUpdate(peer.ydoc)); await settled();
     expect(binding.selection()).toEqual({ anchor: 4, head: 4 });

@@ -32,9 +32,9 @@ test("plugin rich text retains unknown marks, maps remote carets, and survives m
   a.applyTextChanges(id, [{ retain: 1 }, { retain: 2, setMarks: ["future"] }]);
   const surface = createSurface(a, { plugins: [dom] }); document.body.append(surface.element); await flush();
   const text = binding!.element; expect(text.getAttribute("contenteditable")).toBe("true");
-  binding!.focus({ anchor: 1, head: 3 }); const before = a.view.log.length;
+  binding!.focus({ anchor: 1, head: 3 }); const before = a.history().length;
   expect(binding!.toggleMark("strong")).toBe(true); await flush();
-  expect(a.view.log).toHaveLength(before + 1); expect(a.view.blocks[id]!.text!.marks).toEqual([[], ["future", "strong"], ["future", "strong"], []]);
+  expect(a.history()).toHaveLength(before + 1); expect(a.view.blocks[id]!.text!.marks).toEqual([[], ["future", "strong"], ["future", "strong"], []]);
   expect(text.querySelector("strong")!.textContent).toBe("😀");
   // Native selection can move before the asynchronous selectionchange observer.
   binding!.focus({ anchor: 0, head: 0 });

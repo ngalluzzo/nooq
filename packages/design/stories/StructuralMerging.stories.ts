@@ -47,10 +47,10 @@ export const ReadyToMerge: Story = {
 };
 export const MergeRange: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const { editor, surface, first, note } = fixture(canvasElement), before = editor.view.log.length;
+    const { editor, surface, first, note } = fixture(canvasElement), before = editor.history().length;
     await userEvent.click(canvas.getByRole("button", { name: "Select three paragraphs" })); await userEvent.keyboard("X");
     await waitFor(() => expect(canvas.getByRole("textbox", { name: "Text" })).toHaveTextContent("AlXega"));
-    await expect(editor.view.roots).toEqual([first, note]); await expect(editor.view.log.length).toBe(before + 1);
+    await expect(editor.view.roots).toEqual([first, note]); await expect(editor.history().length).toBe(before + 1);
     await expect(editor.view.blocks[first]!.text!.marks[3]).toEqual(["em", "future"]);
     await expect(surface.selection!.get()).toEqual(range(first, 3, first, 3));
     await userEvent.keyboard("!"); await waitFor(() => expect(editor.view.blocks[first]!.text!.s).toBe("AlX!ega"));

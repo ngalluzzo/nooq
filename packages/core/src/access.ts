@@ -12,6 +12,7 @@ import type { Envelope } from "./actor.ts";
 import { canonicalJson } from "./canonical.ts";
 import { fingerprint } from "./digest.ts";
 import type { Access, ActorKind, Grant, Role } from "./model.ts";
+import { registrationMatches } from "./registry.ts";
 
 export const SUGGESTION_TYPE = "nooq.suggestion/v1";
 
@@ -29,10 +30,10 @@ export interface Touched {
   deletedBlocks: string[];
   /** A struct or delete whose target the receiver cannot resolve yet (DM-12). */
   unresolved: boolean;
-  /** Log deletes/rewrites, or writes outside the document's own roots (DM-12). */
+  /** Writes outside the document's own roots, or registry writes other than the envelope client's own first one (DM-12). */
   bookkeepingWrites: boolean;
-  /** Intent-log entries the update appends; exactly one, equal to tx (DM-12). */
-  logEntries: unknown[];
+  /** The envelope client's registration, from the store or written by this update; undefined when unregistered (DM-12, DM-14.2). */
+  registration: unknown;
   /** New `access` values the update writes (DM-13 append-only check). */
   accessValues: unknown[];
 }
@@ -105,8 +106,8 @@ export function authorize(
   const { tx, signer, signerKey } = envelope;
   // DM-12: the signer is the transaction's author.
   if (signer !== (tx.adoptedBy ?? tx.actor.actorId)) return "deny";
-  // DM-12: exactly one log entry, and it is this transaction.
-  if (touched.logEntries.length !== 1 || !sameJson(touched.logEntries[0], tx)) return "deny";
+  // DM-12: the envelope's client is registered to this transaction's author.
+  if (!registrationMatches(touched.registration, tx)) return "deny";
 
   if (keyMismatch(access, signer, signerKey)) return "deny";
   const party = partyOf(access, signer);

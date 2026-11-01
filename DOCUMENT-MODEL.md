@@ -204,16 +204,21 @@ Attribution is part of document state (PHILOSOPHY §5), not merely the log.
   `{actorId, kind: "human"|"ai"|"importer"|"migration"|"system",
   model?, plugin?}`.
 - Each block keeps its creating actor, and each field register keeps its
-  last writing `(actorId, lamport)` (DM-3.2). Text is attributed per
-  character, by the client that created it (DM-14.2); there is no per-edit
-  text attribution register.
+  last writing `(actorId, lamport)` (DM-3.2), plus `adoptedBy` when an
+  adoption wrote it. Text is attributed per character, by the client that
+  created it (DM-14.2); there is no per-edit text attribution register.
 - The history store (DM-14.4) retains transactions under its retention
   policy; verification history is archived once a checkpoint covers it
   (DM-15). Rejected proposals persist in their suggestion tombstones
   (DM-6.4), so they remain in live state for the document's life.
 - **Adoption provenance:** when a suggestion is accepted, the applied
   transaction records BOTH the proposing actor and the adopting actor
-  (`adoptedBy`). AI text in a human's document is never unattributed.
+  (`adoptedBy`), and so does live state: the adoption writes through a
+  client registered to the proposer with `adoptedBy` (DM-14.2), and its
+  field registers carry `adoptedBy`. Who settled a suggestion is therefore
+  read from its `status` register, not from history. AI text in a human's
+  document is never unattributed. *(Draft 1.9: Draft 1.8 left `adoptedBy`
+  only in the transaction, which no longer lives in replicated state.)*
 
 ## DM-6. Suggestions and revalidation
 
@@ -376,8 +381,10 @@ changes first, in public, under governance.
 
 A nooq transaction produces exactly one incremental update. For a coalesced
 text burst (DM-14.3) that update is the merge of the burst's local Yjs
-transactions; otherwise it is one Yjs transaction. A **signed envelope**
-binds the transaction to its actor and its exact effects:
+transactions; otherwise it is one Yjs transaction. A transaction that changes
+nothing (a mark toggle on text that already has it) produces no update: it
+is recorded in the history store, and there is nothing to seal. A **signed
+envelope** binds the transaction to its actor and its exact effects:
 
 ```json
 {
@@ -409,11 +416,23 @@ binds the transaction to its actor and its exact effects:
   itself carries `tx` into the history store (DM-14.4); the update carries
   no copy of it. *(Draft 1.8: Draft 1.7 required exactly one replicated
   log entry equal to `tx`; the log left replicated state, proposals/0005.)*
-- **Registered client.** An envelope's client MUST be registered to its
-  signer in the client registry (DM-14.2), with the signer's granted kind.
-  The update may write the registry only to register its own client, once.
-  Any other registry write is bookkeeping, and denied. Attribution is
-  therefore verified, not claimed.
+- **Registered client.** An envelope's client MUST be registered in the
+  client registry (DM-14.2) to exactly its transaction's attribution:
+  `tx.actor`'s `actorId`, `kind` and `model`, plus `adoptedBy` for an
+  adoption. With the signer binding and granted kinds, that means a client
+  registered to its signer, or for an adoption a client registered to the
+  proposer and adopted by the signer. The update may write the registry
+  only to register its own client, once. Any other registry write, rewrite
+  or delete is bookkeeping, and denied. An unregistered client whose
+  registering update has not arrived (structs after a gap, or deletes from
+  a client the receiver has seen nothing of) is held. Attribution is
+  therefore verified, not claimed. *(Draft 1.9: adoption clients and the
+  hold rule.)*
+- **`tx` is the signer's description.** Nothing derives `tx.ops` from the
+  update bytes. What a peer authorizes is the update's effects (`touched`)
+  and their attribution (the registered client); `tx` is the signed record
+  of the action that the history store keeps. *(Draft 1.9: with the
+  replicated log gone, Draft 1.8 implied a binding no peer checked.)*
 - **Nothing unsigned.** A peer's copy of a secured document holds exactly
   the updates it sealed or admitted. A CRDT backend's own housekeeping
   writes MUST be disabled: Yjs's formatting cleanup after remote text
@@ -511,11 +530,15 @@ measurements behind every rule here.)*
   per-transaction log or per-edit attribution rewrites. Live state grows
   with edits (CRDT structure, GC off per DM-9), never with copies of them.
 - **DM-14.2 Attribution by client.** The client registry maps each Yjs
-  client ID, once, to an actor descriptor. A character's author is the
-  client of the item that holds it; a block's creator and each field's last
-  writer stay as DM-5 describes. In secured documents a registry entry binds
-  only the signer's own client with its granted kind (DM-12, DM-13).
-  Deletion authorship is answered by the history store, not live state.
+  client ID, once, to a registration: `{actorId, kind, model?}`, plus
+  `adoptedBy` for an adoption client. A peer writes each attribution through
+  its own client, so a human, an AI and each adopter-proposer pair never
+  share one; `plugin` is per-command metadata kept in history, not
+  authorship. A character's author is the client of the item that holds it;
+  a block's creator and each field's last writer stay as DM-5 describes. In
+  secured documents a registry entry binds only the envelope's own client,
+  to its transaction's attribution (DM-12, DM-13). Deletion authorship is
+  answered by the history store, not live state.
 - **DM-14.3 Transactions are actions.** Text input within one block
   coalesces into one transaction per burst. The local document applies
   every keystroke immediately (EB-6); the burst's transaction, update and

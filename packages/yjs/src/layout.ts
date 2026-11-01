@@ -9,7 +9,6 @@
  *     children: Y.Array<BlockId>       (physical sibling order)
  *     text?: Y.Text                    (per-character marks as attributes)
  *     createdBy: ActorId
- *     textBy?: {actor, lamport}
  * - roots: Y.Array<BlockId>
  * - placement: Y.Map<BlockId, Placement> — the AUTHORITY for where a block
  *   lives or whether it is tombstoned. LWW by Yjs (deterministic across
@@ -17,7 +16,12 @@
  *   Yjs's deterministic (clock, clientID) resolution; the invariant that
  *   matters — a pure function of the merged op set, identical on every
  *   peer — holds.
- * - log: Y.Array<Transaction JSON> — durable intent (DM-4).
+ * - clients: Y.Map<clientID, ClientRegistration> — the client registry
+ *   (DM-14.2): each Yjs client, once, to the actor whose items it writes.
+ *   Text authorship is the client of the item holding each character.
+ *
+ * No log: transactions live in a history store outside replicated state
+ * (DM-14.4; in secured documents, the envelope log).
  *
  * Concurrency strategy: children/roots arrays may transiently contain
  * strays after merges; projection (read.ts) trusts only the placement
@@ -26,7 +30,7 @@
  */
 
 import type * as Y from "yjs";
-import type { ActorId, BlockId, JsonValue } from "@nooq/core";
+import type { ActorId, BlockId, ClientRegistration, JsonValue } from "@nooq/core";
 
 /** Discriminator for field register wrappers; the key `nooq` with this value is reserved (apply.ts). */
 export const REGISTER = "register/1";
@@ -36,6 +40,8 @@ export interface Register {
   value: JsonValue;
   actor: ActorId;
   lamport: number;
+  /** Written by an adoption (DM-6.3): the accepting writer. */
+  adoptedBy?: ActorId;
 }
 
 export interface Placement {
@@ -51,7 +57,8 @@ export interface YjsLayout {
   placement: Y.Map<Placement>;
   /** DM-13: replicated access header (owner + append-only grants). */
   access: Y.Map<unknown>;
-  log: Y.Array<unknown>;
+  /** DM-14.2: client ID (decimal string) → registration. */
+  clients: Y.Map<ClientRegistration>;
 }
 
 /**
@@ -83,6 +90,6 @@ export function layout(doc: Y.Doc): YjsLayout {
     roots: doc.getArray<BlockId>("roots"),
     placement: doc.getMap<Placement>("placement"),
     access: doc.getMap("access"),
-    log: doc.getArray("log"),
+    clients: doc.getMap<ClientRegistration>("clients"),
   };
 }

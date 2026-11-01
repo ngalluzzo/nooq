@@ -37,12 +37,12 @@ test("forward and backward multi-block replacement merge once, preserving suffix
     e.applyTextChanges(c, [{ retain: 3 }, { retain: 2, setMarks: ["em", "future"] }]);
     const peer = editor(); Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc));
     const original = structuredClone(e.view.blocks[c]!), surface = await mount(e), selected = backwards ? range(c, 3, a, 3) : range(a, 3, c, 3);
-    surface.selection!.set(selected); const revision = e.view.log.length;
+    surface.selection!.set(selected); const revision = e.history().length;
     expect(surface.selection!.replace("X").status).toBe("applied"); await settled();
     expect(e.view.roots).toEqual([a]); expect(e.view.blocks[a]!.text).toEqual({ s: "A😀X🦉!", marks: [["strong"], [], [], [], ["em", "future"], ["em", "future"], []] });
     expect(e.view.blocks[a]!.fields).toEqual({ future: { keep: true } }); expect(e.view.blocks[c]).toEqual(original);
-    expect(e.view.log.length).toBe(revision + 1); expect(e.view.log.at(-1)!.intent).toBe("merge-text");
-    expect(e.view.log.at(-1)!.actor.plugin).toBe(essentials.id); expect(surface.selection!.get()).toEqual(range(a, 4, a, 4));
+    expect(e.history().length).toBe(revision + 1); expect(e.history().at(-1)!.intent).toBe("merge-text");
+    expect(e.history().at(-1)!.actor.plugin).toBe(essentials.id); expect(surface.selection!.get()).toEqual(range(a, 4, a, 4));
     expect(surface.element.querySelectorAll('[role="textbox"]')).toHaveLength(1);
     Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc)); expect(canonicalJson(e.view)).toBe(canonicalJson(peer.view));
     peer.close(); e.close();
@@ -159,9 +159,9 @@ test("command composition uses one frozen snapshot, resolves identities, forbids
     definePlugin({ id: "parents", version: "1.0.0", apiVersion: 1, contributes: { commands: [parent, recursive] } }),
     definePlugin({ id: "children", version: "1.0.0", apiVersion: 1, contributes: { commands: [child] } }),
   ] });
-  const id = add(e, "body"), count = e.view.log.length;
-  expect(e.commands.run(parent, null).status).toBe("applied"); expect(e.view.blocks[id]!.text!.s).toBe("Xbody"); expect(e.view.log.length).toBe(count + 1);
-  expect(e.view.log.at(-1)!.actor.plugin).toBe("parents"); expect(() => saved.prepare(child, null)).toThrow("expired");
+  const id = add(e, "body"), count = e.history().length;
+  expect(e.commands.run(parent, null).status).toBe("applied"); expect(e.view.blocks[id]!.text!.s).toBe("Xbody"); expect(e.history().length).toBe(count + 1);
+  expect(e.history().at(-1)!.actor.plugin).toBe("parents"); expect(() => saved.prepare(child, null)).toThrow("expired");
   const before = canonicalJson(e.view); expect(e.commands.run(recursive, null).status).toBe("failed"); expect(canonicalJson(e.view)).toBe(before); e.close();
 });
 

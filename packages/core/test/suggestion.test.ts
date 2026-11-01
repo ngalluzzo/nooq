@@ -66,14 +66,15 @@ describe("suggestion lifecycle (DM-6.3/6.4)", () => {
     expect(accepted.blocks[setup.suggestion]!.fields.status).toBe("accepted");
     expect((accepted.blocks[setup.suggestion]!.fields.proposal as { ops: Op[] }).ops).toHaveLength(2);
     // Two-level provenance: tx authored by the AI, adoptedBy the human (DM-5)
-    const logged = accepted.log.at(-1)!;
+    const logged = accept;
     expect(logged.actor.actorId).toBe(AI);
     expect(logged.actor.kind).toBe("ai");
     expect(logged.actor.model).toBe("test-model");
     expect(logged.adoptedBy).toBe(HUMAN);
     expect(logged.ops).toHaveLength(4); // 2 proposal ops + status + delete
-    // Block-level attribution points at the AI (DM-5)
-    expect(accepted.blocks[p]!.attribution.fields.tone).toEqual({ actor: AI, lamport: 10 });
+    // Block-level attribution points at the AI (DM-5), and names who adopted it
+    expect(accepted.blocks[p]!.attribution.fields.tone).toEqual({ actor: AI, lamport: 10, adoptedBy: HUMAN });
+    expect(accepted.blocks[setup.suggestion]!.attribution.fields.status).toEqual({ actor: AI, lamport: 10, adoptedBy: HUMAN });
   });
 
   test("acceptChecked refuses stale suggestions with the evaluation attached", async () => {
@@ -147,7 +148,7 @@ describe("suggestion lifecycle (DM-6.3/6.4)", () => {
     expect(liveTree(rejected).alive.has(setup.suggestion)).toBe(false);
     expect(rejected.blocks[setup.suggestion]!.fields.status).toBe("rejected");
     expect(rejected.blocks[setup.suggestion]!.fields.proposal).toBeDefined();
-    expect(rejected.log.at(-1)!.actor.actorId).toBe(HUMAN);
+    expect(rejected.blocks[setup.suggestion]!.attribution.fields.status).toEqual({ actor: HUMAN, lamport: 7 }); // who settled it
     expect(rejected.blocks[p]!.fields.tone).toBeUndefined(); // untouched
   });
 

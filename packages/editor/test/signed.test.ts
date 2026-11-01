@@ -154,7 +154,7 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     // Route through alice's signed path: applyCaptured applies locally,
     // the ship seals with the AI key, the relay must deny it.
     const { applyCaptured, sealEnvelope } = await import("@nooq/yjs");
-    const captured = applyCaptured(alice.ydoc, aiTx, keys.ai, "ai:reference");
+    const captured = applyCaptured(alice.ydoc, aiTx, keys.ai, "ai:reference")!;
     const sealed = await sealEnvelope(alice.ydoc, aiTx, captured.update, keys.ai, "ai:reference");
     // Send through a raw transport as if a hostile client emitted it.
     const attacker = relay.connect(keys.docId);
@@ -170,6 +170,43 @@ describe("signed editors through a hosted peer (B4, DM-12/13 over the wire)", ()
     owner.close();
     alice.close();
     bob.close();
+  }, 30_000);
+
+  test("an adoption over the wire keeps AI text attributed on every peer (DM-14.2, proposals/0005)", async () => {
+    const relay = new NooqRelay();
+    const keys = await keySet();
+    await openForBusiness(relay, keys);
+    const alice = signedEditor(relay, keys, "alice");
+    const bob = signedEditor(relay, keys, "bob");
+    await settled();
+    const paragraph = alice.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "make this shine" });
+    await settled(10);
+    const suggestion = await alice.propose({
+      ops: [{ op: "textEdit", block: paragraph, changes: [{ delete: 1 }, { insert: "M" }] }],
+      evidence: [paragraph],
+      actor: { actorId: "ai:reference", name: "Reference assistant", model: "simulated/1" },
+      intent: "rewrite-block",
+    });
+    await settled(10);
+    await bob.accept(suggestion);
+    await settled(10);
+
+    const owner = signedEditor(relay, keys, "owner"); // joins after the fact, verifies the log
+    await settled(10);
+    expect(owner.synced).toBe(true);
+    const adopted = { actorId: "ai:reference", kind: "ai" as const, model: "simulated/1", adoptedBy: "human:bob", characters: 1 };
+    for (const peer of [alice, bob, owner]) {
+      expect(peer.view.blocks[paragraph]!.text!.s).toBe("Make this shine");
+      expect(peer.authorsOf(paragraph)).toEqual([adopted, { actorId: "human:alice", kind: "human" as const, characters: 14 }]);
+      expect(peer.settledBy(suggestion)).toBe("human:bob");
+    }
+    expect(relay.envelopesOf(keys.docId).some(({ envelope }) => envelope.tx.adoptedBy === "human:bob")).toBe(true);
+    // History lives outside state: alice heard the adoption, the joiner replayed it (DM-14.4).
+    for (const peer of [alice, owner]) expect(peer.history().filter((tx) => tx.adoptedBy === "human:bob")).toHaveLength(1);
+    expect(owner.view.blocks[suggestion]!.fields.proposal).toMatchObject({ intent: "rewrite-block" });
+    alice.close();
+    bob.close();
+    owner.close();
   }, 30_000);
 
   test("a fresh signed peer bootstraps through the verified envelope log", async () => {

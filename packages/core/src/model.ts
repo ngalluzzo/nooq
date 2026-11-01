@@ -36,11 +36,15 @@ export interface RenderedText {
   marks: string[][];
 }
 
-/** Attribution stored in document state (DM-5). Deliberately excluded from digests. */
+/**
+ * Attribution stored in document state (DM-5). Deliberately excluded from
+ * digests. Text authorship is per character, by client (DM-14.2), and is
+ * read from the adapter's client registry, never rewritten per edit.
+ */
 export interface Attribution {
   created: { actor: ActorId };
-  fields: Record<string, { actor: ActorId; lamport: number }>;
-  text?: { actor: ActorId; lamport: number };
+  /** Each field's last writer; `adoptedBy` when an adoption wrote it (DM-6.3). */
+  fields: Record<string, { actor: ActorId; lamport: number; adoptedBy?: ActorId }>;
 }
 
 export interface Block {
@@ -82,8 +86,6 @@ export interface DocState {
   /** Live root block IDs in order. */
   roots: BlockId[];
   blocks: Record<BlockId, Block>;
-  /** Append-only durable intent log (DM-4). */
-  log: Transaction[];
 }
 
 export type Op =
@@ -126,6 +128,8 @@ export interface Proposal {
   ops: Op[];
   evidence: ProposalEvidenceEntry[];
   context: JsonValue;
+  /** What the proposal is for (DM-4 intent), shown when it is reviewed. */
+  intent?: string;
   actor: ActorId;
   /** The proposer's full descriptor (DM-5) — accept authors as the proposer (DM-6.3). */
   actorDescriptor?: ActorDescriptor;

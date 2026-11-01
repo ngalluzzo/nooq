@@ -111,4 +111,20 @@ Recorded as the slices land, each with the spec section it changed.
 - **Genesis is authorized (DM-13, Draft 1.9).** The genesis path checked
   only the owner's signature, so a genesis could carry writes outside the
   document's roots.
+- **Adoption attribution (DM-5, DM-12, DM-14.2, Draft 1.9).** `adoptedBy`
+  and a proposal's intent existed only in transactions. An adoption now
+  writes through a client registered to the proposer with `adoptedBy`, its
+  field registers carry `adoptedBy`, and a proposal carries its `intent`.
+  Each peer writes each attribution through its own client; the editor had
+  shared one client among the human, the AI and every job.
+- **`tx` is the signer's description (DM-12, Draft 1.9).** With the log gone,
+  nothing binds `tx.ops` to the update; peers authorize effects and their
+  registered attribution, and the history store keeps `tx`.
+- **No-effect transactions (DM-12, Draft 1.9).** A transaction that changes
+  nothing produced an update only because of its log entry. Now it is
+  recorded in history and nothing is sealed.
+- **Measured after the log left live state:** 10.4 B per edit on the
+  reference random workload (raw Yjs 10.3); typing 1.2 B per keystroke
+  (was 269); a secured keystroke's update 20 B (was 284). Envelopes stay
+  ~500 B each until bursts land.
 

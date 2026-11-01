@@ -51,6 +51,12 @@ export interface SyncSessionOptions {
   onAdmission?: (verdict: "allow" | "hold" | "deny", reason?: string) => void;
   /** SW-4: envelopes a previous session sent but no handshake confirmed (a host restores them). */
   outbox?: ReadonlyArray<OutboxEntry>;
+  /**
+   * DM-14.4: each peer envelope this session admits, and each one a verified
+   * bootstrap log carries, for the host's history store. It may repeat an
+   * envelope the host already has: dedupe by `updateDigest`.
+   */
+  onEnvelope?: (envelope: Envelope, update: Uint8Array) => void;
 }
 
 /** An envelope this session sent, kept until a handshake confirms the peer has it (SW-4). */
@@ -241,6 +247,7 @@ export class SyncSession {
         this.pending.push({ envelope, update });
         return;
       }
+      this.options.onEnvelope?.(envelope, update);
       await this.retryPending();
       return;
     }
@@ -258,6 +265,7 @@ export class SyncSession {
     for (const item of this.pending) {
       const admission = await admitEnvelope(this.options.doc, item.envelope, item.update);
       if (admission.verdict === "hold") remaining.push(item);
+      else if (admission.verdict === "allow") this.options.onEnvelope?.(item.envelope, item.update);
     }
     this.pending.length = 0;
     this.pending.push(...remaining);
@@ -279,6 +287,7 @@ export class SyncSession {
       : await this.verifyAgainstDigest(delta, message.rootDigest);
     if (!verified) return; // discard: never applied to the real document
     Y.applyUpdate(this.options.doc, delta, REMOTE_ORIGIN);
+    for (const item of message.envelopes ?? []) this.options.onEnvelope?.(item.envelope, fromBase64(item.update));
     await this.retryPending();
     this.markSynced();
   }

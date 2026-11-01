@@ -31,6 +31,15 @@ export interface RichTextBinding {
 export interface RichTextOptions { label?: string; marks?: readonly TextMark[] }
 /** Presentation-neutral text binding; plain mode reports unsupported mark toggles as false. */
 export interface TextEditorBinding extends RichTextBinding { readonly mode: TextMode }
+/** DM-14.2: one author of a block's text, by registered client, with how many of its characters remain. */
+export interface TextAuthor {
+  actorId: string;
+  kind: import("@nooq/core").ActorKind;
+  model?: string;
+  /** Text an adoption wrote: the proposer authored it, this writer accepted it. */
+  adoptedBy?: string;
+  characters: number;
+}
 export interface BlockViewContext {
   block: string;
   signal: AbortSignal;
@@ -45,6 +54,8 @@ export interface BlockViewContext {
   run<Args>(command: Command<Args> | string, args: Args): CommandResult;
   selection(): SelectionRequest | undefined;
   snapshot(): Immutable<DocState>;
+  /** Who wrote this block's text (DM-14.2), in first-appearance order. Computed on demand. */
+  authors(): readonly TextAuthor[];
   onChange(listener: () => void): () => void;
   review(): Promise<{ revision: number; proposal: string; evaluation: Evaluation }>;
   accept(options: { force?: boolean; reviewed: { revision: number; proposal: string } }): Promise<void>;

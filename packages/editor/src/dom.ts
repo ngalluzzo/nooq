@@ -320,7 +320,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         }, options?.label);
         row.cleanups.push(() => toolbar.destroy()); return toolbar;
       },
-      run: (command, args) => { try { canAct(); return editor.commands.run(command, args, { selection: selection(id) }); } catch (error) { return { status: "failed", error }; } }, selection: () => selection(id), snapshot,
+      run: (command, args) => { try { canAct(); return editor.commands.run(command, args, { selection: selection(id) }); } catch (error) { return { status: "failed", error }; } }, selection: () => selection(id), snapshot, authors: () => editor.authorsOf(id),
       onChange: listener => { if (signal.aborted) return () => {}; const off = editor.onChange(() => { if (!signal.aborted) try { listener(); } catch (cause) { fail(provider?.plugin, cause); } }); row.cleanups.push(off); return off; },
       review: () => editor.reviewSuggestion(id), accept: async options => { canAct(); await editor.accept(id, { ...options, signal }); }, reject: () => { canAct(); editor.reject(id); }, report: cause => fail(provider?.plugin, cause),
     };

@@ -64,7 +64,8 @@ describe("signed envelopes (DM-12)", () => {
 
   test("tampered update bytes are dropped (digest mismatch)", async () => {
     const { chain, source, peer } = await securedDoc();
-    const committed = await commitSigned(source, tx([], "human:owner", 2), chain.owner, "human:owner");
+    const block = makeBlock({ type: "nooq.paragraph/v1" }, "human:owner");
+    const committed = await commitSigned(source, tx([{ op: "insert", block, parent: null }], "human:owner", 2), chain.owner, "human:owner");
     const tampered = new Uint8Array(committed.update);
     tampered[tampered.length - 1] ^= 0xff;
     const admission = await admitEnvelope(peer, committed.envelope, tampered);

@@ -60,7 +60,7 @@ describe("reference editor: writing (§1 — every keystroke is a transaction)",
     await settle();
 
     expect(editor.view.blocks[paragraph]!.text!.s).toBe("hello world");
-    const last = editor.view.log.at(-1)!;
+    const last = editor.history().at(-1)!;
     expect(last.ops[0]!.op).toBe("textEdit");
     expect(last.actor.actorId).toBe("human:writer");
     surface.destroy();
@@ -139,8 +139,9 @@ describe("reference editor: suggestions (§5 — AI edits are proposals)", () =>
     await settle();
 
     expect(editor.view.blocks[paragraph]!.text!.s).toBe("Make this shine");
-    expect(editor.view.blocks[paragraph]!.attribution.text!.actor).toBe("ai:reference"); // DM-5: AI text never unattributed
-    const adopt = editor.view.log.find((tx) => tx.adoptedBy === "human:writer");
+    // DM-5/DM-14.2: AI text is never unattributed — its characters keep the AI as author, and the adopter.
+    expect(editor.authorsOf(paragraph)).toContainEqual({ actorId: "ai:reference", kind: "ai", model: "simulated/1", adoptedBy: "human:writer", characters: 1 });
+    const adopt = editor.history().find((tx) => tx.adoptedBy === "human:writer");
     expect(adopt).toBeDefined();
     const settledCard = Array.from(surface.element.querySelectorAll<HTMLElement>("article.nq-sugg")).find((c) => c.dataset.state === "accepted");
     expect(settledCard?.textContent).toContain("accepted by");
@@ -212,7 +213,7 @@ describe("writing core: character-level edits and incremental rendering (DM-4.3,
     await settle();
 
     // Cost proportional to the edit: a single retain+insert splice
-    const last = editor.view.log.at(-1)!;
+    const last = editor.history().at(-1)!;
     const op = last.ops[0]!;
     if (op.op === "textEdit") {
       expect(op.changes).toEqual([{ retain: 5 }, { insert: "!" }]);

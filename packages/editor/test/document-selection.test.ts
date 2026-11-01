@@ -48,13 +48,13 @@ test("directional UTF-16 ranges include nested and unknown text, excluding all c
 test("range replacement is one selected-command transaction and preserves every block and child", async () => {
   const { e, selection, a, b, child, c } = await fixture();
   const peer = new Editor({ docId: "document-selection", actor: { actorId: "peer" } }); Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc));
-  const roots = [...e.view.roots], fields = structuredClone(e.view.blocks[b]!.fields), before = e.view.log.length;
+  const roots = [...e.view.roots], fields = structuredClone(e.view.blocks[b]!.fields), before = e.history().length;
   selection.set(range(c, 2, a, 3)); expect(selection.replace("X").status).toBe("applied"); await settled();
   expect(e.view.blocks[a]!.text).toEqual({ s: "A😀X", marks: [[], ["future", "strong"], ["future", "strong"], []] });
   expect(e.view.blocks[b]!.text!.s).toBe(""); expect(e.view.blocks[child]!.text!.s).toBe(""); expect(e.view.blocks[c]!.text!.s).toBe("aque");
   expect(e.view.roots).toEqual(roots); expect(e.view.blocks[b]!.children).toEqual([child]); expect(e.view.blocks[b]!.fields).toEqual(fields);
-  expect(e.view.blocks[c]!.fields.keep).toEqual({ secret: "retained" }); expect(e.view.log).toHaveLength(before + 1);
-  expect(e.view.log.at(-1)!.actor.plugin).toBe(essentials.id); expect(selection.get()).toEqual(range(a, 4, a, 4));
+  expect(e.view.blocks[c]!.fields.keep).toEqual({ secret: "retained" }); expect(e.history()).toHaveLength(before + 1);
+  expect(e.history().at(-1)!.actor.plugin).toBe(essentials.id); expect(selection.get()).toEqual(range(a, 4, a, 4));
   Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc)); expect(canonicalJson(peer.view)).toBe(canonicalJson(e.view)); e.close(); peer.close();
 });
 
@@ -110,7 +110,7 @@ test("keyboard extends across block boundaries, selects all text, and replaces a
   expect(key(first, "ArrowRight", { shiftKey: true }).defaultPrevented).toBe(true); expect(selection.get()).toEqual(range(a, 4, b, 0));
   key(s.element, "ArrowRight", { shiftKey: true }); expect(selection.get()).toEqual(range(a, 4, b, 1));
   key(s.element, "a", { ctrlKey: true }); expect(selection.get()).toEqual(range(a, 0, c, 6));
-  const before = e.view.log.length; key(s.element, "Q"); await settled(); expect(e.view.log).toHaveLength(before + 1); expect(e.view.blocks[a]!.text!.s).toBe("Q"); e.close();
+  const before = e.history().length; key(s.element, "Q"); await settled(); expect(e.history()).toHaveLength(before + 1); expect(e.view.blocks[a]!.text!.s).toBe("Q"); e.close();
 });
 
 test("clipboard copies document text only, and paste/cut share the selected command boundary", async () => {

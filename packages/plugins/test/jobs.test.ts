@@ -3,7 +3,8 @@ import { applyTransaction, emptyDocument, evaluate, makeBlock, type DocState, ty
 import { ProposalCapture, UnsupportedEvidenceError } from "../src/jobs.ts";
 
 const actor = { actorId: "model", kind: "ai" as const, model: "local", plugin: "test.jobs" };
-const apply = (state: DocState, ops: Op[]) => applyTransaction(state, { id: crypto.randomUUID(), actor, lamport: state.log.length + 1, causality: {}, ops });
+let lamport = 0;
+const apply = (state: DocState, ops: Op[]) => applyTransaction(state, { id: crypto.randomUUID(), actor, lamport: ++lamport, causality: {}, ops });
 function fixture() {
   let state = emptyDocument("capture");
   for (const [id, parent] of [["parent", null], ["source", "parent"], ["target", "parent"], ["child", "target"]] as const) {

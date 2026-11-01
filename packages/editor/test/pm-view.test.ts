@@ -36,14 +36,14 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
   test("Enter splits the block in ONE nooq transaction, caret lands in the new block (§1)", async () => {
     const { editor, surface, ids } = mounted("nooq editors");
     surface.surface.setCursor(4, ids[0]!); // between "nooq" and " editors"
-    const logBefore = editor.view.log.length;
+    const logBefore = editor.history().length;
 
     key(surface, "Enter");
     await flush();
 
     // One transaction, two ops (tail splice + insert) — atomic structure (§1).
-    expect(editor.view.log.length).toBe(logBefore + 1);
-    const tx = editor.view.log.at(-1)!;
+    expect(editor.history().length).toBe(logBefore + 1);
+    const tx = editor.history().at(-1)!;
     expect(tx.ops).toHaveLength(2);
     expect(tx.ops[0]).toMatchObject({ op: "textEdit", block: ids[0] });
     expect(tx.ops[1]).toMatchObject({ op: "insert" });
@@ -60,13 +60,13 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
   test("Backspace at offset 0 merges into the previous sibling; caret at the seam", async () => {
     const { editor, surface, ids } = mounted("ab", "cd");
     surface.surface.setCursor(0, ids[1]!);
-    const logBefore = editor.view.log.length;
+    const logBefore = editor.history().length;
 
     key(surface, "Backspace");
     await flush();
 
-    expect(editor.view.log.length).toBe(logBefore + 1);
-    const tx = editor.view.log.at(-1)!;
+    expect(editor.history().length).toBe(logBefore + 1);
+    const tx = editor.history().at(-1)!;
     expect(tx.ops[0]).toMatchObject({ op: "textEdit", block: ids[0] });
     expect(tx.ops[1]).toMatchObject({ op: "delete", block: ids[1] });
 
@@ -79,10 +79,10 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
   test("Backspace at the very start of the document does nothing (§2)", async () => {
     const { editor, surface, ids } = mounted("only block");
     surface.surface.setCursor(0, ids[0]!);
-    const logBefore = editor.view.log.length;
+    const logBefore = editor.history().length;
     key(surface, "Backspace");
     await flush();
-    expect(editor.view.log.length).toBe(logBefore);
+    expect(editor.history().length).toBe(logBefore);
     surface.destroy();
   });
 
@@ -106,7 +106,7 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     await flush();
 
     expect(surface.dom.querySelector("strong")?.textContent).toBe("this");
-    const tx = editor.view.log.at(-1)!;
+    const tx = editor.history().at(-1)!;
     expect(tx.ops).toEqual([{ op: "textEdit", block: ids[0], changes: [{ retain: 5 }, { retain: 4, setMarks: ["strong"] }] }]);
     expect(editor.view.blocks[ids[0]!]!.text!.s).toBe("make this shine"); // text untouched
     expect(editor.view.blocks[ids[0]!]!.text!.marks[6]).toEqual(["strong"]);
@@ -132,7 +132,7 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     surface.surface.setCursor(6, ids[0]!);
     key(surface, "Enter");
     await flush();
-    const split = editor.view.log.at(-1)!;
+    const split = editor.history().at(-1)!;
     const newId = (split.ops[1] as { block: { id: string } }).block.id;
     expect(editor.view.blocks[newId]!.text!.s).toBe("bold");
     expect(editor.view.blocks[newId]!.text!.marks[0]).toEqual(["strong"]); // tail kept its bold
@@ -171,7 +171,7 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     const from = surface.surface.anchorToPos({ block: ids[0]!, offset: 5 })!;
     const to = surface.surface.anchorToPos({ block: ids[2]!, offset: 6 })!;
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-    const logBefore = editor.view.log.length;
+    const logBefore = editor.history().length;
 
     // The browser's input pipeline calls handleTextInput before mutating; a
     // synthetic keydown cannot reproduce that, so drive the prop directly
@@ -181,8 +181,8 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     expect(handled).toBe(true);
     await flush();
 
-    expect(editor.view.log.length).toBe(logBefore + 1);
-    const tx = editor.view.log.at(-1)!;
+    expect(editor.history().length).toBe(logBefore + 1);
+    const tx = editor.history().at(-1)!;
     // textEdit head + delete tail + delete middle
     expect(tx.ops.filter((op) => op.op === "delete")).toHaveLength(2);
     const editText = tx.ops.find((op) => op.op === "textEdit");
@@ -207,12 +207,12 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     const from = surface.surface.anchorToPos({ block: ids[0]!, offset: 2 })!;
     const to = surface.surface.anchorToPos({ block: ids[1]!, offset: 1 })!;
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-    const logBefore = editor.view.log.length;
+    const logBefore = editor.history().length;
 
     key(surface, "Backspace");
     await flush();
 
-    expect(editor.view.log.length).toBe(logBefore + 1);
+    expect(editor.history().length).toBe(logBefore + 1);
     expect(editor.view.blocks[ids[0]!]!.text!.s).toBe("aleta"); // "al" + remainder "eta"
     expect(liveTree(editor.view).alive.has(ids[1]!)).toBe(false); // tombstoned, not erased (DM-3.4)
     expect(surface.surface.selectionAnchor()).toEqual({ block: ids[0], offset: 2 });
@@ -226,7 +226,7 @@ describe("the EditorView wrapper (proposal 0003, step two)", () => {
     const at = view.state.selection.to;
     view.dispatch(view.state.tr.insertText("d", at));
     await flush();
-    const tx = editor.view.log.at(-1)!;
+    const tx = editor.history().at(-1)!;
     const blockId = (tx.ops[0] as { block: string }).block;
     expect(tx.ops).toEqual([{ op: "textEdit", block: blockId, changes: [{ retain: 4 }, { insert: "d" }] }]);
     expect(surface.dom.textContent).toContain("typed");

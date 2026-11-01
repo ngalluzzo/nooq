@@ -7,5 +7,6 @@
 export { applyChanges, applyTransaction, keepFormatting, newDocument, setText } from "./apply.ts";
 export { REGISTER, documentHeader, layout, registerHeader, type DocumentHeader, type Placement, type Register, type YjsLayout } from "./layout.ts";
 export { normalize } from "./normalize.ts";
-export { admitEnvelope, applyCaptured, commitSigned, inspectUpdate, sealEnvelope, type Admission, type Committed } from "./enforcement.ts";
+export { admitEnvelope, applyCaptured, commitSigned, inspectUpdate, sealEnvelope, type Admission, type Captured, type Committed } from "./enforcement.ts";
 export { readState } from "./read.ts";
+export { clientRegistry, textAuthors, type AuthorRun } from "./registry.ts";

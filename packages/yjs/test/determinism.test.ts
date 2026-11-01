@@ -24,7 +24,7 @@ import {
   type TextChange,
   type Transaction,
 } from "@nooq/core";
-import { admitEnvelope, commitSigned, newDocument, readState } from "../src/index.ts";
+import { admitEnvelope, applyCaptured, newDocument, readState, sealEnvelope } from "../src/index.ts";
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -94,7 +94,9 @@ async function storm(seed: number) {
   const log: Array<{ envelope: Envelope; update: Uint8Array }> = [];
 
   const commit = async (peer: Peer, ops: Op[]) => {
-    const sealed = await commitSigned(peer.doc, txOf(peer, ops), peer.key, peer.actorId);
+    const captured = applyCaptured(peer.doc, txOf(peer, ops), peer.key, peer.actorId);
+    if (!captured) return; // a no-op edit (marks already set): nothing to replicate
+    const sealed = { update: captured.update, envelope: await sealEnvelope(peer.doc, captured.tx, captured.update, peer.key, peer.actorId, captured.client) };
     log.push(sealed);
     for (const other of peers) if (other !== peer) other.inbox.push(sealed);
   };
@@ -166,7 +168,7 @@ describe("secured peers converge byte for byte (DM-12, SW-5)", () => {
 
 describe("the genesis is authorized like every envelope (DM-13)", () => {
   test("a genesis that also writes outside the document's roots is denied", async () => {
-    const { applyTransaction, sealEnvelope } = await import("../src/index.ts");
+    const { applyTransaction } = await import("../src/index.ts");
     const key = await createActorKey();
     const owner = { actorId: "human:owner", key: toBase64(key.publicBytes), kind: "human" as const };
     const { docId, nonce } = await createSecuredDocument(owner);

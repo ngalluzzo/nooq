@@ -173,7 +173,7 @@ export function createCommandPreparerOwned(state: DocState, actor: ActorDescript
       if (result.status === "not-applicable") return { status: "not-applicable" };
       if (typeof result.intent !== "string" || !result.intent || !Array.isArray(result.ops)) throw new Error("Invalid prepared command");
       if (!result.ops.length) return { status: "not-applicable" };
-      for (const op of result.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text)) throw new Error("Insert attribution must belong to the active actor");
+      for (const op of result.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length)) throw new Error("Insert attribution must belong to the active actor");
       return structuredClone(result);
     } finally { active = false; stack.delete(id); }
   }

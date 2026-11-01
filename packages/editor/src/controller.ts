@@ -39,7 +39,8 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
-import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope } from "@nooq/yjs";
+import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, textAuthors, type Captured } from "@nooq/yjs";
+import type { TextAuthor } from "@nooq/plugins/dom";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
 import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
@@ -108,6 +109,9 @@ export class Editor {
   readonly errors: PluginError[] = [];
   private readonly identities = new Map<string, { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }>();
   private readonly selectionListeners = new Set<(selection: SelectionRequest) => void>();
+  /** DM-14.4: the local history store — transactions committed here or admitted from peers, in arrival order. */
+  private readonly historyEntries: Transaction[] = [];
+  private readonly recorded = new Set<string>();
 
   readonly commands = {
     batch: <Args>(command: Command<Args> | string, inputs: readonly Args[]): CommandResult => this.runtime.runBatch(command, inputs),
@@ -146,6 +150,7 @@ export class Editor {
           actor: options.actor.actorId,
           ...(options.actor.name !== undefined ? { name: options.actor.name } : {}),
           onSynced: () => this.scheduleNotify(),
+          onEnvelope: (envelope) => this.record(envelope.tx),
           onAwareness: (entry) => {
             this.awareness.set(entry.actor, entry);
             this.scheduleNotify();
@@ -273,11 +278,36 @@ export class Editor {
       // proposing AI but signed by the accepting writer (DM-6.3, DM-13).
       const signer = tx.adoptedBy ?? tx.actor.actorId;
       const captured = applyCaptured(this.ydoc, tx, identity.key, signer);
-      void this.ship(captured);
+      this.record(tx); // DM-4: durable intent precedes shipping
+      if (captured) void this.ship(captured); // a transaction with no effects has nothing to replicate
       return;
     }
     applyToDoc(this.ydoc, tx);
+    this.record(tx);
     } finally { this.currentTx = undefined; this.applying = false; }
+  }
+
+  /** DM-14.4: what happened here and what peers did, as transactions. Not replicated state. */
+  history(): readonly Transaction[] {
+    return this.historyEntries;
+  }
+
+  private record(tx: Transaction): void {
+    if (this.recorded.has(tx.id)) return;
+    this.recorded.add(tx.id);
+    this.historyEntries.push(freezeInPlace(structuredClone(tx)) as unknown as Transaction);
+  }
+
+  /** DM-14.2: who wrote a block's text, by registered client, in first-appearance order. */
+  authorsOf(block: BlockId): TextAuthor[] {
+    const authors = new Map<string, TextAuthor>();
+    for (const run of textAuthors(this.ydoc, block)) {
+      if (!run.author) continue;
+      const key = canonicalJson(run.author), known = authors.get(key);
+      if (known) known.characters += run.length;
+      else authors.set(key, { ...run.author, characters: run.length });
+    }
+    return [...authors.values()];
   }
 
   private commitCommand(prepared: Extract<PreparedCommand, { status: "ready" }>, actor: ActorDescriptor): CommandResult {
@@ -293,15 +323,15 @@ export class Editor {
   }
   private publishJob(id: string, proposal: Proposal, intent?: string): PublicationResult {
     const identity = this.identities.get(`job:${id}`)!;
-    const block = makeSuggestionBlock(proposal, identity.actor.actorId);
+    const block = makeSuggestionBlock(intent !== undefined ? { ...proposal, intent } : proposal, identity.actor.actorId);
     const tx = { ...this.tx([{ op: "insert", block, parent: null }], intent), actor: identity.actor };
     try { this.applyBound(tx, identity); return { status: "published", suggestion: block.id }; }
     catch (error) { if (error instanceof AuthorizationError) return { status: "denied", reason: error.reason, retryable: error.retryable }; throw error; }
   }
 
-  private async ship(commit: { tx: Transaction; update: Uint8Array; key: import("@nooq/core").ActorKey; signer: string }): Promise<void> {
+  private async ship(commit: Captured): Promise<void> {
     try {
-      const sealed = await sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer);
+      const sealed = await sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer, commit.client);
       this.session?.sendUpdate(commit.update, sealed);
     } catch (cause) {
       this.reportError({ phase: "signing", cause });
@@ -412,6 +442,7 @@ export class Editor {
       ops: structuredClone(options.ops),
       evidence,
       context: { model: options.actor.model, name: options.actor.name, before: beforeTexts },
+      ...(options.intent !== undefined ? { intent: options.intent } : {}),
       actor: options.actor.actorId,
     };
     const suggestion = makeSuggestionBlock(proposal, options.actor.actorId);
@@ -468,14 +499,10 @@ export class Editor {
     );
   }
 
-  /** Who settled a suggestion (adoption provenance, DM-5), from the log. */
+  /** Who settled a suggestion (adoption provenance, DM-5): the status field's writer, or its adopter. */
   settledBy(suggestion: BlockId): string | undefined {
-    for (let i = this.view.log.length - 1; i >= 0; i--) {
-      const tx = this.view.log[i]!;
-      const touches = tx.ops.some((op) => "block" in op && op.block === suggestion && op.op === "setField");
-      if (touches) return tx.adoptedBy ?? tx.actor.actorId;
-    }
-    return undefined;
+    const status = this.view.blocks[suggestion]?.attribution.fields.status;
+    return status ? (status.adoptedBy ?? status.actor) : undefined;
   }
 
   // ---- awareness (SW-7) ----

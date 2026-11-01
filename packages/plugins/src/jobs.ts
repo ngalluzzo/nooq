@@ -69,7 +69,7 @@ export class ProposalCapture {
       if (op.op === "insert") {
         if (op.block.children.length) throw new UnsupportedEvidenceError("Insert children through separate operations");
         if (this.#base.blocks[op.block.id]) throw new Error("Inserted IDs must be fresh");
-        if (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text) throw new Error("Inserted block must belong to the bound actor with fresh attribution");
+        if (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length) throw new Error("Inserted block must belong to the bound actor with fresh attribution");
         cover(op.parent);
       } else {
         cover(op.block);

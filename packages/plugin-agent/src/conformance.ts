@@ -23,10 +23,15 @@ export function runConformance(candidate: Plugin, brief: Brief): Conformance {
   const tx = (ops: readonly Op[]): Transaction => ({ id: `tx-${++clock}`, actor, lamport: clock, causality: {}, intent: "conformance", ops: [...ops] });
   const target = crypto.randomUUID();
   const commandArgs = (args: object) => ({ ...args, block: target });
+  /** The transaction each fixture was built from: the history a Yjs replica replays (DM-14.4). */
+  const setups = new WeakMap<DocState, Transaction>();
   const fixture = (fields = brief.defaults.fields, type = brief.blockType): DocState => {
     const block = makeBlock({ id: target, type, fields: { ...fields, futureField: { preserved: true } }, text: { s: "A😀B", marks: [[], ["future-mark"], ["future-mark"], []] } }, actor.actorId);
     const child = makeBlock({ id: "fixture-child", type: "unknown.child/v7", fields: { keep: true } }, actor.actorId);
-    return applyTransaction(emptyDocument("plugin-test-open-document"), tx([{ op: "insert", block, parent: null }, { op: "insert", block: child, parent: target }]));
+    const setup = tx([{ op: "insert", block, parent: null }, { op: "insert", block: child, parent: target }]);
+    const state = applyTransaction(emptyDocument("plugin-test-open-document"), setup);
+    setups.set(state, setup);
+    return state;
   };
   const plugin = definePlugin(candidate);
   const definition = plugin.contributes.blocks[0]!;
@@ -88,7 +93,7 @@ export function runConformance(candidate: Plugin, brief: Brief): Conformance {
       assert.deepEqual(next.blocks["fixture-child"], state.blocks["fixture-child"]);
       const a = newDocument(state.docId), b = newDocument(state.docId);
       try {
-        for (const setup of state.log) applyY(a, setup);
+        applyY(a, setups.get(state)!);
         Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
         // Concurrent ordinary text edit from a peer with no plugin installed.
         applyY(b, tx([{ op: "textEdit", block: target, changes: [{ retain: 4 }, { insert: "!" }] }]));

@@ -42,7 +42,7 @@ describe("the ProseMirror surface (proposal 0003 spike)", () => {
 
     // one keystroke: 'q' at the end of "noo"
     surface.dispatch(surface.state.tr.insertText("q", info.end));
-    const tx = editor.view.log.at(-1)!;
+    const tx = editor.history().at(-1)!;
     expect(tx.ops).toEqual([{ op: "textEdit", block: blockId, changes: [{ retain: 3 }, { insert: "q" }] }]);
     expect(editor.view.blocks[blockId]!.text!.s).toBe("nooq");
 

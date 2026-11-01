@@ -70,12 +70,12 @@ export async function runBrowserChecks(sources: Sources, brief: Brief, artifactD
       assert(await row.locator(".nq-fallback").count() === 1, "Candidate view failed to mount or children missing");
     });
     await check("browser: native keyboard activation dispatches exactly one field command", async () => {
-      const before = await frame.evaluate(() => (window as any).__nooqFixture.a.view.log.length);
+      const before = await frame.evaluate(() => (window as any).__nooqFixture.a.history().length);
       await row.getByRole("button", { name: brief.view!.controls[0]!.label, exact: true }).focus(); await page.keyboard.press("Enter");
       const scenario = brief.commands.find(c => c.id === brief.view!.controls[0]!.command)!.cases[0]!;
       await frame.waitForFunction(({target,field,value}) => JSON.stringify((window as any).__nooqFixture.a.view.blocks[target].fields[field]) === value, { target, field: brief.view!.field, value: JSON.stringify(scenario.expectedFields![brief.view!.field]) });
       assert((await row.textContent())!.includes(String(scenario.expectedFields![brief.view!.field])), "View does not display the updated field");
-      assert(await frame.evaluate(() => (window as any).__nooqFixture.a.view.log.length) === before + 1, "Button dispatched more than once");
+      assert(await frame.evaluate(() => (window as any).__nooqFixture.a.history().length) === before + 1, "Button dispatched more than once");
     });
     await check("browser: typing and remote splice preserve text controller and caret", async () => {
       await text.fill("abc"); await text.focus();
@@ -127,10 +127,10 @@ export async function runBrowserChecks(sources: Sources, brief: Brief, artifactD
     await check("browser: slash menu inserts atomically and focuses its new text", async () => {
       const source = await frame.evaluate(() => (window as any).__nooqFixture.source as string);
       const sourceArea = frame.locator(`#author [data-nq-block="${source}"] textarea`); await sourceArea.fill("/");
-      const before = await frame.evaluate(() => (window as any).__nooqFixture.a.view.log.length);
+      const before = await frame.evaluate(() => (window as any).__nooqFixture.a.history().length);
       const menu = frame.locator('#author [role="option"]').filter({ hasText: brief.insertCommand!.label });
       await menu.click();
-      const result = await frame.evaluate(({source,before}) => { const f=(window as any).__nooqFixture, state=f.a.view, id=state.roots[state.roots.indexOf(source)+1]; return {delta:state.log.length-before,old:state.blocks[source].text.s,type:state.blocks[id]?.type,focused:document.activeElement?.closest('[data-nq-block]')?.getAttribute('data-nq-block')===id}; }, {source,before});
+      const result = await frame.evaluate(({source,before}) => { const f=(window as any).__nooqFixture, state=f.a.view, id=state.roots[state.roots.indexOf(source)+1]; return {delta:f.a.history().length-before,old:state.blocks[source].text.s,type:state.blocks[id]?.type,focused:document.activeElement?.closest('[data-nq-block]')?.getAttribute('data-nq-block')===id}; }, {source,before});
       assert(result.delta === 1 && result.old === "" && result.type === brief.blockType && result.focused, JSON.stringify(result));
     });
     await check("browser: nested slash insertion keeps the actual parent and sibling order", async () => {

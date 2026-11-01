@@ -626,6 +626,17 @@ cannot represent a block, report a loss with its block ID and emit a
 visible fallback. The initial registry does not promise a complete PDF,
 DOCX, or HTML codec API before the first exporter establishes its needs.
 
+### P-9.1 History layers (proposals/0005)
+
+Snapshots no longer carry `log`, and block attribution no longer carries
+`text`: transactions live in a history store outside replicated state
+(DM-14.4), and text is attributed per character by client (DM-14.2).
+Hosts read history from the editor (`editor.history()`), and views read
+text authorship from `BlockViewContext.authors()`. Who settled a suggestion
+is its `status` field's attribution (`adoptedBy` for an adoption), and a
+proposal carries its own `intent`. Where this proposal says a commit
+"appends a log entry", read "records one transaction in the history store".
+
 ## P-10. Implementation sequence and proof
 
 The current editor exposes `ydoc`, accepts externally assembled

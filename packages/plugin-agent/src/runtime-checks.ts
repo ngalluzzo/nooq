@@ -36,9 +36,9 @@ export async function runRuntimeChecks(plugin: Plugin, brief: Brief): Promise<Co
       const before = canonicalJson(e.view), args = { parent: null, index: 1, clearBlock: source };
       assert.equal(e.commands.preview(brief.insertCommand!.id, args).status, "ready");
       assert.equal(canonicalJson(e.view), before);
-      const logs = e.view.log.length, result = e.commands.run(brief.insertCommand!.id, args);
+      const logs = e.history().length, result = e.commands.run(brief.insertCommand!.id, args);
       assert.equal(result.status, "applied"); if (result.status !== "applied") return;
-      assert.equal(e.view.log.length, logs + 1);
+      assert.equal(e.history().length, logs + 1);
       assert.equal(result.transaction.actor.plugin, brief.id);
       assert.equal(e.view.blocks[source]!.text!.s, "");
       const id = result.selection!.block; assert.notEqual(id, source);
@@ -52,14 +52,14 @@ export async function runRuntimeChecks(plugin: Plugin, brief: Brief): Promise<Co
     await test(`runtime: ${command.id} case ${index + 1}, provenance and missing-plugin peer`, () => {
       const e = make(), peer = new Editor({ docId: e.docId, actor: { actorId: "human:peer" } });
       try {
-        const id = setup(e, scenario.fields), before = e.view, logs = before.log.length;
+        const id = setup(e, scenario.fields), before = e.view, logs = e.history().length;
         Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(e.ydoc));
         peer.applyTextChanges(id, [{ insert: "remote " }]);
         const result = e.commands.run(command.id, { ...scenario.args, block: id });
         if (scenario.expectedFields === null) { assert.equal(result.status, "not-applicable"); assert.equal(canonicalJson(e.view), canonicalJson(before)); }
         else {
           assert.equal(result.status, "applied"); if (result.status !== "applied") return;
-          assert.equal(e.view.log.length, logs + 1); assert.equal(result.transaction.actor.plugin, brief.id);
+          assert.equal(e.history().length, logs + 1); assert.equal(result.transaction.actor.plugin, brief.id);
           assert.equal(result.transaction.actor.actorId, "human:tester");
           assert.deepEqual(e.view.blocks[id]!.fields, { ...scenario.expectedFields, future: "preserved" });
           assert.deepEqual(e.view.blocks[id]!.children, before.blocks[id]!.children);

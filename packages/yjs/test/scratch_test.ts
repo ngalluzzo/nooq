@@ -29,7 +29,7 @@ test("grant probe", async () => {
   console.log("pending re-admit:", release.verdict, release.reason);
   if (release.verdict !== "allow") {
     const touched = inspectUpdate(receiver, pending.update).touched;
-    console.log("pending touched:", JSON.stringify({ ...touched, logEntries: touched.logEntries.length }));
+    console.log("pending touched:", JSON.stringify(touched));
     console.log("access now:", JSON.stringify((await readState(receiver)).access?.grants?.map((g) => g.actorId)));
   }
 });

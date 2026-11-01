@@ -40,20 +40,34 @@ export interface Committed {
   update: Uint8Array;
 }
 
-/** Run a nooq transaction and seal its exact effects (DM-12). */
+/** What applyCaptured hands to sealEnvelope: the update, and the client that wrote it (DM-14.2). */
+export interface Captured {
+  tx: import("@nooq/core").Transaction;
+  update: Uint8Array;
+  key: ActorKey;
+  signer: string;
+  client: number;
+}
+
+/** Run a nooq transaction and seal its exact effects (DM-12). A transaction with no effects has nothing to seal: it throws. */
 export async function commitSigned(doc: Y.Doc, tx: import("@nooq/core").Transaction, key: ActorKey, signer: string): Promise<Committed> {
   const captured = applyCaptured(doc, tx, key, signer);
-  const envelope = await sealEnvelope(doc, tx, captured.update, key, signer);
+  if (!captured) throw new Error(`transaction ${tx.id} has no effects; there is nothing to seal`);
+  const envelope = await sealEnvelope(doc, tx, captured.update, key, signer, captured.client);
   return { envelope, update: captured.update };
 }
 
-/** The synchronous half: validate, apply atomically, capture the update. */
+/**
+ * The synchronous half: validate, apply atomically, capture the update.
+ * Undefined when the transaction changed nothing (a no-op mark toggle, say):
+ * it belongs in the history store, but there is nothing to replicate.
+ */
 export function applyCaptured(
   doc: Y.Doc,
   tx: import("@nooq/core").Transaction,
   key: ActorKey,
   signer?: string,
-): { tx: import("@nooq/core").Transaction; update: Uint8Array; key: ActorKey; signer: string } {
+): Captured | undefined {
   void key;
   const captured: Uint8Array[] = [];
   const handler = (update: Uint8Array, origin: unknown) => {
@@ -65,23 +79,25 @@ export function applyCaptured(
   } finally {
     doc.off("update", handler);
   }
+  if (captured.length === 0) return undefined;
   if (captured.length !== 1) {
     throw new Error(`expected exactly one update for one transaction, got ${captured.length}`);
   }
-  return { tx, update: captured[0]!, key, signer: signer ?? tx.actor.actorId };
+  return { tx, update: captured[0]!, key, signer: signer ?? tx.actor.actorId, client: doc.clientID };
 }
 
-/** The asynchronous half: seal the envelope over the captured update. */
+/** The asynchronous half: seal the envelope over the captured update, for the client that wrote it. */
 export async function sealEnvelope(
   doc: Y.Doc,
   tx: import("@nooq/core").Transaction,
   update: Uint8Array,
   key: ActorKey,
   signer: string,
+  client = doc.clientID,
 ): Promise<Envelope> {
-  const clocks = clocksOf(update, doc.clientID);
+  const clocks = clocksOf(update, client);
   return (await import("@nooq/core")).signEnvelope(
-    { docId: documentHeader(doc).docId, tx, client: doc.clientID, clocks, updateDigest: await updateDigestOf(update) },
+    { docId: documentHeader(doc).docId, tx, client, clocks, updateDigest: await updateDigestOf(update) },
     key,
     signer,
   );
@@ -138,7 +154,7 @@ interface Resolution {
   sub: string | null;
 }
 
-const KNOWN_ROOTS = new Set(["blocks", "roots", "placement", "access", "log"]);
+const KNOWN_ROOTS = new Set(["blocks", "roots", "placement", "access", "clients"]);
 const UNSEEN: Resolution = { root: "?", blockId: null, direct: false, sub: null };
 /** The layout nests a few levels (blocks → block → fields/text/children); deeper is crafted. */
 const NESTING = 32;
@@ -153,7 +169,14 @@ const isFiller = (struct: StructItem) => struct.constructor.name === "GC" || str
 export function inspectUpdate(
   doc: Y.Doc,
   update: Uint8Array,
-): { touched: Touched; blockTouches: Map<string, BlockTouch>; foreignClients: Set<number>; clockRange: { from: number; to: number } } {
+): {
+  touched: Touched;
+  blockTouches: Map<string, BlockTouch>;
+  foreignClients: Set<number>;
+  clockRange: { from: number; to: number };
+  /** Registry writes (DM-14.2): which client key, and the value written. */
+  registrations: Array<{ client: string; value: unknown }>;
+} {
   const decoded = Y.decodeUpdate(update) as unknown as { structs: StructItem[]; ds: { clients?: Map<number, unknown[]> } };
   const structs = decoded.structs ?? [];
   const local = byClient(structs);
@@ -161,7 +184,7 @@ export function inspectUpdate(
 
   const blockTouches = new Map<string, BlockTouch>();
   const accessValues: unknown[] = [];
-  const logEntries: unknown[] = [];
+  const registrations: Array<{ client: string; value: unknown }> = [];
   const flags = { access: false, bookkeeping: false, unresolved: false, strayStructure: false, strayContent: false };
   const foreignClients = new Set<number>();
   let from = Number.POSITIVE_INFINITY;
@@ -204,9 +227,9 @@ export function inspectUpdate(
     }
     const values = Array.isArray(struct.content?.arr) ? struct.content!.arr! : undefined;
     switch (at.root) {
-      case "log":
-        // DM-12: every appended value counts — exactly one, equal to tx.
-        if (at.direct && values) logEntries.push(...values);
+      case "clients":
+        // DM-12: registry entries are checked against the envelope's client (settleRegistration).
+        if (at.direct && at.sub !== null && values && values.length === 1) registrations.push({ client: at.sub, value: values[0] });
         else flags.bookkeeping = true;
         return;
       case "access":
@@ -261,8 +284,8 @@ export function inspectUpdate(
           flags.unresolved = true;
           break;
         }
-        if (at.root === "log" || !KNOWN_ROOTS.has(at.root)) {
-          flags.bookkeeping = true; // DM-12: log deletes and unknown-root deletes
+        if (at.root === "clients" || !KNOWN_ROOTS.has(at.root)) {
+          flags.bookkeeping = true; // DM-12: a registration is written once, never deleted or rewritten
           continue;
         }
         if (at.root === "access") {
@@ -297,10 +320,40 @@ export function inspectUpdate(
     deletedBlocks: [...blockTouches.entries()].filter(([, t]) => t.deleted).map(([id]) => id),
     unresolved: flags.unresolved,
     bookkeepingWrites: flags.bookkeeping,
-    logEntries,
+    registration: undefined, // settled against the envelope's client (settleRegistration)
     accessValues,
   };
-  return { touched, blockTouches, foreignClients, clockRange: { from: from === Number.POSITIVE_INFINITY ? 0 : from, to: to === Number.NEGATIVE_INFINITY ? -1 : to } };
+  return {
+    touched,
+    blockTouches,
+    foreignClients,
+    clockRange: { from: from === Number.POSITIVE_INFINITY ? 0 : from, to: to === Number.NEGATIVE_INFINITY ? -1 : to },
+    registrations,
+  };
+}
+
+/**
+ * DM-12 "Registered client": the envelope client's registration is its own
+ * first registry write, or the store's. Any other registry write is
+ * bookkeeping. An unregistered client whose earlier structs have not arrived
+ * is unresolved (its registering update may be on the way), never denied on
+ * a partial view.
+ */
+function settleRegistration(doc: Y.Doc, inspected: ReturnType<typeof inspectUpdate>, envelope: Envelope): void {
+  const { touched, registrations } = inspected;
+  const own = String(envelope.client);
+  const registry = layout(doc).clients;
+  if (registrations.length > 1 || registrations.some((write) => write.client !== own) || (registrations.length === 1 && registry.has(own))) {
+    touched.bookkeepingWrites = true;
+  }
+  touched.registration = registrations.find((write) => write.client === own)?.value ?? registry.get(own);
+  if (touched.registration === undefined) {
+    // Structs after a gap, or deletes from a client we have seen nothing of:
+    // the registering update has not arrived yet.
+    const seen = Y.getState(doc.store, envelope.client);
+    const carriesStructs = envelope.clocks.to >= envelope.clocks.from;
+    if (carriesStructs ? envelope.clocks.from > seen : seen === 0) touched.unresolved = true;
+  }
 }
 
 function isSuggestion(touch: BlockTouch, blockId: string, doc: Y.Doc): boolean {
@@ -465,6 +518,7 @@ export async function admitEnvelope(
     return { verdict: "deny", reason: "update digest mismatch" };
   }
   const inspected = inspectUpdate(doc, update);
+  settleRegistration(doc, inspected, envelope);
   // Single-client, contiguous declared range (DM-12).
   for (const struct of (Y.decodeUpdate(update) as unknown as { structs: Array<{ id: { client: number; clock: number } }> }).structs) {
     if (struct.id.client !== envelope.client) {

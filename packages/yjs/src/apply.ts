@@ -11,6 +11,7 @@
 import * as Y from "yjs";
 import {
   liveTree,
+  registrationOf,
   subtreeOf,
   validateRenderedText,
   type ActorId,
@@ -23,6 +24,7 @@ import { validateTransaction } from "@nooq/core";
 import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
+import { useClientFor } from "./registry.ts";
 
 export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
   // No GC (DM-3.4 keeps tombstones anyway): deleted items keep their parents,
@@ -54,13 +56,21 @@ export function keepFormatting(doc: Y.Doc): void {
   });
 }
 
-/** Apply a nooq transaction to a Y.Doc. Durable intent is logged with the ops (DM-4). */
+/**
+ * Apply a nooq transaction to a Y.Doc. The transaction's record belongs in a
+ * history store (DM-14.4); the document gets only its effects, written
+ * through the client registered to its author (DM-14.2).
+ */
 export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown): void {
   // Atomicity (DM-12): validate the WHOLE transaction against the
   // sequential engine over the current projection before any Yjs
   // mutation — a failing op never leaves its siblings applied.
   validateTransaction(readState(doc), tx); // throwaway projection: no defensive clone (EB-6)
+  const registration = registrationOf(tx);
+  useClientFor(doc, registration);
   doc.transact(() => {
+    const { clients } = layout(doc);
+    if (!clients.has(String(doc.clientID))) clients.set(String(doc.clientID), registration); // once per client
     tx.ops.forEach((op, index) => {
       try {
         applyOp(doc, op, tx);
@@ -69,7 +79,6 @@ export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown):
         throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
       }
     });
-    layout(doc).log.push([tx as unknown as Record<string, unknown>]);
   }, origin);
 }
 
@@ -90,7 +99,6 @@ function applyOp(doc: Y.Doc, op: import("@nooq/core").Op, tx: Transaction): void
         yb.set("text", yt); // integrate before writing: Y.Text.format is unavailable on prelim types
       }
       applyChanges(yt, op.changes);
-      yb.set("textBy", { actor: tx.actor.actorId, lamport: tx.lamport });
       return;
     }
     case "move":
@@ -129,7 +137,7 @@ function applyOp(doc: Y.Doc, op: import("@nooq/core").Op, tx: Transaction): void
 }
 
 function register(value: JsonValue, tx: Transaction): import("./layout.ts").Register {
-  return { nooq: REGISTER, value: structuredClone(value), actor: tx.actor.actorId, lamport: tx.lamport };
+  return { nooq: REGISTER, value: structuredClone(value), actor: tx.actor.actorId, lamport: tx.lamport, ...(tx.adoptedBy !== undefined ? { adoptedBy: tx.adoptedBy } : {}) };
 }
 
 function requireYBlock(doc: Y.Doc, id: BlockId): Y.Map<unknown> {

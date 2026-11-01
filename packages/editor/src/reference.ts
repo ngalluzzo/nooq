@@ -15,10 +15,14 @@ export const essentialsDOM = defineDOMPlugin({
     const element = blockRow({ content: [text.element, ctx.children.element], kind: (["paragraph", "heading", "quote"] as const)[i]!, actor: "human" });
     const bar = element.querySelector<HTMLElement>(".nq-bar")!;
     return { element, update(block) {
-      const writer = block.attribution.text?.actor ?? block.attribution.created.actor, actor = actorKindOf(writer);
+      // DM-14.2: every character keeps its author; AI text stays visibly AI after adoption.
+      const authors = ctx.authors(), names = authors.length ? authors.map(author => author.actorId) : [block.attribution.created.actor];
+      const kinds = authors.length ? authors.map(author => author.kind) : [actorKindOf(names[0]!)];
+      const actor = kinds.includes("ai") ? "ai" : kinds.every(kind => kind === "human") ? "human" : "system";
       element.dataset.actor = actor;
       bar.className = `nq-bar nq-bar-${actor === "human" ? "human" : actor === "ai" ? "ai" : "machine"}`;
-      bar.setAttribute("role", "img"); bar.setAttribute("aria-label", `Last edited by ${writer}`); bar.title = `Last edited by ${writer}`;
+      const label = `Written by ${names.join(", ")}`;
+      bar.setAttribute("role", "img"); bar.setAttribute("aria-label", label); bar.title = label;
     }, destroy: () => text.destroy() };
   } })),
   menus: essentials.contributes.blocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝"][i], command: insertBlock.id,
@@ -64,13 +68,12 @@ export const reviewDOM = defineDOMPlugin({ id: "nooq.review", forPlugin: review,
         } else if (op.op === "setField") diff.push({ ins: `${op.key} = ${JSON.stringify(op.value)}` });
         else if (op.op === "insert") diff.push({ ins: `new ${op.block.type}` });
       }
-      const created = [...state.log].reverse().find(tx => tx.ops.some(op => op.op === "insert" && op.block.id === ctx.block));
-      const settlement = [...state.log].reverse().find(tx => tx.ops.some(op => op.op === "setField" && op.block === ctx.block && op.key === "status"));
+      const settlement = block.attribution.fields.status; // who settled it, adopter included (DM-6.3)
       content.replaceChildren(suggestionCard({ state: status, actor: context?.name ?? proposal.actor, model: context?.model ?? proposal.actorDescriptor?.model,
-        intent: created?.intent, diff: diff.length ? diff : [{ text: "no visible changes" }],
+        intent: proposal.intent, diff: diff.length ? diff : [{ text: "no visible changes" }],
         ...(["stale", "conflicted"].includes(status) ? { reason: "The document changed while this suggestion waited." } : {}),
         evidence: proposal.evidence.map(e => ({ kind: "evidence", value: e.contentDigest.slice(7, 19) })),
-        ...(settlement ? { settledBy: settlement.adoptedBy ?? settlement.actor.actorId } : {}),
+        ...(settlement ? { settledBy: settlement.adoptedBy ?? settlement.actor } : {}),
         onAccept: () => { if (reviewed) void ctx.accept({ force: status !== "fresh", reviewed }).catch(ctx.report).finally(() => { void refresh().catch(ctx.report); }); },
         onReject: () => { try { ctx.reject(); } catch (cause) { ctx.report(cause); } },
       }));

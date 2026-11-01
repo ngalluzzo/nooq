@@ -3,6 +3,7 @@ import { authorize, isSecuredDocId, type Touched, type Verdict } from "./access.
 import { canonicalJson } from "./canonical.ts";
 import { applyTransaction } from "./engine.ts";
 import type { ActorDescriptor, DocState, Proposal, Transaction } from "./model.ts";
+import { registrationOf } from "./registry.ts";
 import { liveTree } from "./tree.ts";
 
 export interface LocalPrincipal {
@@ -51,7 +52,7 @@ export function authorizeLocal(state: DocState, tx: Transaction, principal: Loca
   if (!state.access) return { verdict: "hold", reason: "awaiting-genesis" };
   if (!principal.signingReady || !principal.key) return { verdict: "hold", reason: "signer-not-ready" };
   const touched: Touched = { inserts: [], structuralOps: false, otherContentOps: false, accessWrites: false,
-    deletedBlocks: [], unresolved: false, bookkeepingWrites: false, logEntries: [tx], accessValues: [] };
+    deletedBlocks: [], unresolved: false, bookkeepingWrites: false, registration: registrationOf(tx), accessValues: [] };
   const types = new Map(Object.values(state.blocks).map(b => [b.id, b.type]));
   for (const op of tx.ops) {
     if (op.op === "insert") {

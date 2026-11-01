@@ -41,12 +41,12 @@ test("commands prepare immutable state, preview without effects, and commit one 
   const preview = e.commands.preview(insertBlock, { type: callout.type, parent: null });
   expect(preview.status).toBe("ready"); expect(canonicalJson(e.view)).toBe(before);
   const id = insert(e); e.editText(id, "hello world");
-  const logs = e.view.log.length;
+  const logs = e.history().length;
   const split = e.commands.run(splitBlock, { block: id, anchor: 5, head: 6 });
-  expect(split.status).toBe("applied"); expect(e.view.log).toHaveLength(logs + 1);
+  expect(split.status).toBe("applied"); expect(e.history()).toHaveLength(logs + 1);
   expect(e.view.blocks[id]!.text!.s).toBe("hello");
   expect(e.view.blocks[e.view.roots[1]!]!.text!.s).toBe("world");
-  expect(e.view.log.at(-1)!.actor.plugin).toBe("nooq.essentials");
+  expect(e.history().at(-1)!.actor.plugin).toBe("nooq.essentials");
   expect(e.commands.run(cycleTone, {} as any).status).toBe("failed");
   const state = canonicalJson(e.view);
   expect(e.commands.run("missing", {}).status).toBe("failed"); expect(canonicalJson(e.view)).toBe(state);
@@ -121,12 +121,12 @@ test("callout menu inserts beside its nested source in one transaction and respe
   const e = editor(), parent = insert(e), source = insert(e, "nooq.paragraph/v1", parent);
   const surface = createSurface(e, { plugins: [calloutsDOM, essentialsDOM] }); document.body.append(surface.element);
   await settled(); const text = area(surface, source); text.focus(); text.value = "/"; text.dispatchEvent(new Event("input"));
-  const before = e.view.log.length;
+  const before = e.history().length;
   const menu = Array.from(surface.element.querySelectorAll<HTMLElement>("[role=option]")).find(option => option.textContent?.includes("insert-callout"))!;
   menu.click(); await settled();
   const children = e.view.blocks[parent]!.children;
   expect(children).toHaveLength(2); expect(e.view.blocks[children[1]!]!.type).toBe(callout.type);
-  expect(e.view.blocks[source]!.text!.s).toBe(""); expect(e.view.log).toHaveLength(before + 1);
+  expect(e.view.blocks[source]!.text!.s).toBe(""); expect(e.history()).toHaveLength(before + 1);
   expect(document.activeElement).toBe(area(surface, children[1]!));
   e.editText(source, "/changed remotely");
   expect(e.commands.run(insertCallout, { parent, clearBlock: source }).status).toBe("not-applicable");
@@ -170,7 +170,7 @@ test("writing views update author attribution without replacing the text control
   e.apply({ id: "remote-author", actor: { actorId: "ai:writer", kind: "ai" }, lamport: 20, causality: {}, ops: [{ op: "textEdit", block: id, changes: [{ insert: "Authored by a model" }] }] });
   await settled();
   expect(s.element.querySelector(`[data-nq-block="${id}"] [data-actor="ai"]`)).not.toBeNull();
-  expect(s.element.querySelector(`[aria-label="Last edited by ai:writer"]`)).not.toBeNull();
+  expect(s.element.querySelector(`[aria-label="Written by ai:writer"]`)).not.toBeNull();
   expect(area(s, id)).toBe(text); e.close();
 });
 
@@ -216,11 +216,11 @@ test("secured commands deny readers locally, hold missing genesis, and agree wit
   expect(result.status).toBe("denied"); expect(canonicalJson(b.view)).toBe(before);
   const empty = editor({ docId, key }); await empty.ready;
   expect(empty.commands.run(insertBlock, { type: callout.type, parent: null })).toMatchObject({ status: "denied", reason: "awaiting-genesis", retryable: true });
-  const id = insert(a), tx = a.view.log.at(-1)!;
+  const id = insert(a), tx = a.history().at(-1)!;
   const source = newDocument(docId); Y.applyUpdate(source, Y.encodeStateAsUpdate(b.ydoc));
   // An authorized writer's logical decision and independently inspected update agree.
   const ownerKey = await createActorKey(); // wrong key must fail physical verification
-  const captured = applyCaptured(source, tx, ownerKey, "owner");
+  const captured = applyCaptured(source, tx, ownerKey, "owner")!;
   const envelope = await sealEnvelope(source, tx, captured.update, ownerKey, "owner");
   expect((await admitEnvelope(b.ydoc, envelope, captured.update)).verdict).toBe("deny");
   expect(b.view.blocks[id]).toBeUndefined();
@@ -279,7 +279,7 @@ test("unsupported evidence and completed job contexts cannot publish", async () 
     return ctx.publish(base, { ops: [{ op: "insert", block: ctx.createBlock(callout.type), parent: null }] });
   } });
   const e = editor({ plugins: [callouts, plugin("jobs", { contributes: { jobs: [job] } })], jobBindings: [{ job, actor: { actorId: "model", kind: "ai" } }] });
-  expect(await e.jobs.start(job, null).result).toMatchObject({ status: "unsupported-evidence" }); expect(e.view.log).toHaveLength(0);
+  expect(await e.jobs.start(job, null).result).toMatchObject({ status: "unsupported-evidence" }); expect(e.history()).toHaveLength(0);
   await expect(context.publish({} as any, { ops: [] })).resolves.toEqual({ status: "cancelled" }); e.close();
 });
 
@@ -307,7 +307,7 @@ test("continuous changes exhaust acceptance's bounded retry without adopting", a
   crypto.subtle.digest = ((...args: Parameters<typeof digest>) => { e.setField(id, "concurrent", ++changes); return digest(...args); }) as typeof crypto.subtle.digest;
   try { await expect(e.accept(suggestion)).rejects.toThrow("changed-during-validation"); }
   finally { crypto.subtle.digest = digest; }
-  expect(e.view.log.some(tx => !!tx.adoptedBy)).toBe(false); expect(e.view.blocks[id]!.fields.tone).toBe("info"); e.close();
+  expect(e.history().some(tx => !!tx.adoptedBy)).toBe(false); expect(e.view.blocks[id]!.fields.tone).toBe("info"); e.close();
 });
 
 test("an observed remote settlement invalidates pending acceptance", async () => {
@@ -316,5 +316,6 @@ test("an observed remote settlement invalidates pending acceptance", async () =>
   Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc)); await a.accept(suggestion);
   const pending = b.accept(suggestion); Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
   await expect(pending).rejects.toThrow("settled");
-  expect(b.view.log.filter(tx => !!tx.adoptedBy)).toHaveLength(1); a.close(); b.close();
+  expect(b.history().some(tx => !!tx.adoptedBy)).toBe(false); // b never adopted it a second time
+  expect(b.settledBy(suggestion)).toBe(a.actorId); a.close(); b.close();
 });

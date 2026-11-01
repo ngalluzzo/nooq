@@ -34,13 +34,13 @@ export const ToolbarAndShortcut: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     const text = await canvas.findByRole("textbox", { name: "Callout text" });
     const button = canvas.getByRole("button", { name: "Cycle callout tone" });
-    const { editor, id } = fixture(canvasElement), before = editor.view.log.length;
+    const { editor, id } = fixture(canvasElement), before = editor.history().length;
     await userEvent.click(button);
     await expect(canvas.getByText("Tone: warning")).toBeVisible();
     await userEvent.click(text);
     await userEvent.keyboard("{Control>}{Shift>}Y{/Shift}{/Control}");
     await expect(canvas.getByText("Tone: success")).toBeVisible();
-    await expect(editor.view.log.length).toBe(before + 2);
+    await expect(editor.history().length).toBe(before + 2);
     await expect(editor.view.blocks[id]!.fields.future).toEqual({ preserved: true });
     await expect(canvas.getByRole("button", { name: "Cycle callout tone" })).toBe(button);
   },

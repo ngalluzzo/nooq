@@ -7,7 +7,7 @@ describe("applyTransaction (DM-4, sequential v0)", () => {
     const { state, section, q, p, h } = await buildFixture();
     expect(state.roots).toEqual([section]);
     expect(state.blocks[section]!.children).toEqual([q, p, h]);
-    expect(state.log).toHaveLength(4);
+    expect("log" in state).toBe(false); // history lives outside state (DM-14.4)
   });
 
   test("move repositions within and across parents", async () => {
@@ -91,19 +91,20 @@ describe("applyTransaction (DM-4, sequential v0)", () => {
       edited,
       tx([{ op: "textEdit", block: p, changes: [{ retain: 11 }, { insert: "!" }] }], 8, "ai:1"),
     );
-    expect(retyped.blocks[p]!.attribution.text).toEqual({ actor: "ai:1", lamport: 8 });
+    // Text authorship is per character, by client (DM-14.2): never a block-level rewrite.
+    expect(Object.keys(retyped.blocks[p]!.attribution).sort()).toEqual(["created", "fields"]);
     expect(retyped.blocks[p]!.attribution.created).toEqual({ actor: "human:1" });
   });
 
-  test("a failing transaction logs nothing", async () => {
+  test("a failing transaction changes nothing", async () => {
     const { state, p } = await buildFixture();
-    const logLength = state.log.length;
+    const before = structuredClone(state);
     expect(() =>
       applyTransaction(state, tx([
         { op: "setField", block: p, key: "tone", value: "urgent" },
         { op: "setField", block: "nope", key: "x", value: 1 },
       ], 5)),
     ).toThrow(/no such block/);
-    expect(state.log).toHaveLength(logLength);
+    expect(state).toEqual(before);
   });
 });

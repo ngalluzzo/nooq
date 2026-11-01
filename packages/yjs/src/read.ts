@@ -21,7 +21,6 @@ import type {
   DocState,
   JsonValue,
   RenderedText,
-  Transaction,
 } from "@nooq/core";
 import { REGISTER, documentHeader, layout, type Register } from "./layout.ts";
 
@@ -31,7 +30,7 @@ function isRegister(raw: unknown): raw is Register {
 
 export function readState(doc: Y.Doc): DocState {
   const header = documentHeader(doc);
-  const { blocks: yblocks, roots: yroots, placement, access: yaccess, log } = layout(doc);
+  const { blocks: yblocks, roots: yroots, placement, access: yaccess } = layout(doc);
 
   const containerOf = new Map<BlockId, BlockId | null>();
   for (const id of yblocks.keys()) {
@@ -74,7 +73,6 @@ export function readState(doc: Y.Doc): DocState {
     ...(accessJson ? { access: accessJson as DocState["access"] } : {}),
     roots: childrenOf(null),
     blocks,
-    log: log.toArray() as unknown as Transaction[],
   };
 }
 
@@ -89,21 +87,20 @@ function readBlock(id: BlockId, yb: Y.Map<unknown>, childrenOf: (container: Bloc
     for (const [key, raw] of yfields.entries()) {
       if (isRegister(raw)) {
         fields[key] = structuredClone(raw.value);
-        attribution.fields[key] = { actor: raw.actor, lamport: raw.lamport };
+        attribution.fields[key] = { actor: raw.actor, lamport: raw.lamport, ...(raw.adoptedBy !== undefined ? { adoptedBy: raw.adoptedBy } : {}) };
       } else {
         fields[key] = structuredClone(raw) as JsonValue;
       }
     }
   }
   const yt = yb.get("text") as Y.Text | undefined;
-  const textBy = yb.get("textBy") as { actor: ActorId; lamport: number } | undefined;
   return {
     id,
     type: (yb.get("type") as string | undefined) ?? "unknown",
     fields,
     ...(yt ? { text: readText(yt) } : {}),
     children: childrenOf(id),
-    attribution: { ...attribution, ...(textBy ? { text: textBy } : {}) },
+    attribution,
   };
 }
 

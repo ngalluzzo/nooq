@@ -43,6 +43,7 @@ export {
   type TextChange,
 } from "./text.ts";
 export { authorizeLocal, adoptionMatchesState, type LocalPrincipal, type LocalVerdict } from "./local-access.ts";
+export { registrationMatches, registrationOf, type ClientRegistration } from "./registry.ts";
 export {
   computeDigests,
   rootDigest,

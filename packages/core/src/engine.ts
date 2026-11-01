@@ -20,7 +20,7 @@ import { applyTextChanges, type TextChange } from "./text.ts";
 import { wellFormedAccess } from "./access.ts";
 
 export function emptyDocument(docId: string): DocState {
-  return { docId, schemaVersion: 1, roots: [], blocks: {}, log: [] };
+  return { docId, schemaVersion: 1, roots: [], blocks: {} };
 }
 
 export function newBlockId(): BlockId {
@@ -62,7 +62,7 @@ export function validateRenderedText(text: RenderedText): RenderedText {
   return text;
 }
 
-/** Apply a transaction to a state, immutably. Durable intent precedes state change: the transaction is logged (DM-4). */
+/** Apply a transaction to a state, immutably. Its record lives in a history store, never in state (DM-14.4). */
 export function applyTransaction(state: DocState, tx: Transaction): DocState {
   const next: DocState = structuredClone(state);
   tx.ops.forEach((op, index) => {
@@ -73,7 +73,6 @@ export function applyTransaction(state: DocState, tx: Transaction): DocState {
       throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
     }
   });
-  next.log.push(structuredClone(tx));
   return next;
 }
 
@@ -92,7 +91,6 @@ export function validateTransaction(state: DocState, tx: Transaction): void {
       throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
     }
   });
-  state.log.push(structuredClone(tx));
 }
 
 function requireBlock(state: DocState, id: BlockId): Block {
@@ -139,7 +137,7 @@ function detachFromAllLists(state: DocState, id: BlockId): void {
 }
 
 function applyOp(state: DocState, op: Op, tx: Transaction): void {
-  const writer = { actor: tx.actor.actorId, lamport: tx.lamport };
+  const writer = { actor: tx.actor.actorId, lamport: tx.lamport, ...(tx.adoptedBy !== undefined ? { adoptedBy: tx.adoptedBy } : {}) };
   switch (op.op) {
     case "insert": {
       if (state.blocks[op.block.id]) throw new Error(`block ${op.block.id} already exists`);
@@ -167,7 +165,6 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       const block = requireBlock(state, op.block);
       const base: RenderedText = block.text ?? { s: "", marks: [] };
       block.text = validateRenderedText(applyTextChanges(base, op.changes));
-      block.attribution.text = writer;
       return;
     }
     case "move": {

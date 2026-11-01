@@ -55,13 +55,13 @@ export const MixedRange: Story = {
 export const ReplaceAcrossBlocks: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const { editor, relay, surface, first, note, child, unknown } = fixture(canvasElement), roots = [...editor.view.roots];
-    surface.selection!.set(range(first, 2, unknown, 7)); const before = editor.view.log.length;
+    surface.selection!.set(range(first, 2, unknown, 7)); const before = editor.history().length;
     await userEvent.keyboard("X");
     await waitFor(() => expect(editor.view.blocks[first]!.text!.s).toBe("AlX"));
     await expect(editor.view.blocks[note]!.text!.s).toBe(""); await expect(editor.view.blocks[child]!.text!.s).toBe("");
     await expect(editor.view.blocks[unknown]!.text!.s).toBe(" text");
     await expect(editor.view.roots).toEqual(roots); await expect(editor.view.blocks[note]!.children).toEqual([child]);
-    await expect(editor.view.blocks[note]!.fields.future).toEqual({ preserve: true }); await expect(editor.view.log.length).toBe(before + 1);
+    await expect(editor.view.blocks[note]!.fields.future).toEqual({ preserve: true }); await expect(editor.history().length).toBe(before + 1);
   },
 };
 export const Formatting: Story = {

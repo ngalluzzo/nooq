@@ -24,14 +24,14 @@ test("Callouts shares toolbar and shortcut execution and exposes discoverable st
   const e = make(), id = insert(e), s = createSurface(e, { plugins: [calloutsPlainDOM] });
   document.body.append(s.element); await settled();
   const button = s.element.querySelector<HTMLButtonElement>("button")!, text = s.element.querySelector("textarea")!;
-  const before = e.view.log.length;
+  const before = e.history().length;
   expect(s.actions.list(id, "toolbar")).toMatchObject([{ id: cycleToneAction.id, availability: { status: "enabled" } }]);
-  expect(e.view.log).toHaveLength(before);
+  expect(e.history()).toHaveLength(before);
   button.click(); await settled(); expect(e.view.blocks[id]!.fields.tone).toBe("warning");
   expect(s.element.querySelector("button")).toBe(button);
   expect(press(text, "Y", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
   expect(e.view.blocks[id]!.fields.tone).toBe("success");
-  expect(e.view.log).toHaveLength(before + 2); expect(e.view.log.at(-1)!.actor.plugin).toBe(callouts.id);
+  expect(e.history()).toHaveLength(before + 2); expect(e.history().at(-1)!.actor.plugin).toBe(callouts.id);
   e.close();
 });
 
