@@ -178,10 +178,21 @@ The journey map's "every keystroke paints in one frame."
   - **Stage 2 landed (2026-11-01, Draft 2.1 note):** the maintained
     projection (the stage's named trigger) is in; ref-large idle re-enters
     the gate at p95 ≤ 33.4 ms — measured 24.5-26.3, enforced. Its MAX is
-    reported, not gated: 90-104 ms GC pauses under allocation pressure,
-    worst keys scattered (not warmup); the per-transaction shallow-shell
-    publish is the named suspect and the next investigation. ref-small
-    keeps the full p95+max gate (20.3 / within 50).
+    reported, not gated. The Draft 2.1 suspect (GC pauses under shell
+    publishing) was WRONG and the record says so: long-animation-frame
+    attribution showed the 90-104 ms worst keys were 60-85 ms of
+    synchronous script in the ENTER keydown handler — structural
+    keystrokes, invisible to the phase marks (a split consumes keydown;
+    input never fires). The cost was the validation cascade: one
+    single-use transaction fully validated up to three times per
+    synchronous chain (runtime.run, authorizeLocal, applyToDoc), each
+    building a fresh ~5 ms projection, plus applyMove's own per-op
+    readState. Single-use transactions now validate once (a WeakMap
+    stamp; replay is already impossible); Enter frames measured
+    65-87 -> 48-64 ms. Remaining, named: the ~4.6 ms bare Yjs write per
+    insert — the structural floor, next investigation if the ungated
+    max needs to reach 50. ref-small keeps the full p95+max gate
+    (20.3 / within 50).
   - **Goal line (retained):** p95 ≤ floor + 16.7 ms under every EB-4
     condition. Never redefined away; reached or explicitly not.
 - **Regression gate:** p95 MUST NOT regress by more than 10% against the
