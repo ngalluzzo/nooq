@@ -205,20 +205,21 @@ function applyMove(
   index: number | undefined,
   tx: Transaction,
 ): void {
-  // EB-6/8: a validated tx already proved liveness — the per-op readState
-  // here was ~5ms at 2,000 blocks, paid by every merge.
+  // EB-6/8: a validated tx already proved liveness, parent liveness and the
+  // DM-3.1 subtree rule — the per-op readState here was ~5ms at 2,000 blocks,
+  // paid by every merge.
   if (!isValidated(tx)) {
     const view = readState(doc);
     const alive = liveTree(view).alive;
     if (!view.blocks[id]) throw new Error(`no such block ${id}`);
     if (!alive.has(id)) throw new Error(`block ${id} is tombstoned`);
-  }
-  if (newParent === id) throw new Error("cannot move a block under itself");
-  if (newParent !== null) {
-    if (!view.blocks[newParent]) throw new Error(`no such block ${newParent}`);
-    if (!alive.has(newParent)) throw new Error(`block ${newParent} is tombstoned`);
-    if (subtreeOf(view, id).has(newParent)) {
-      throw new Error("cannot move a block into its own subtree (DM-3.1)");
+    if (newParent === id) throw new Error("cannot move a block under itself");
+    if (newParent !== null) {
+      if (!view.blocks[newParent]) throw new Error(`no such block ${newParent}`);
+      if (!alive.has(newParent)) throw new Error(`block ${newParent} is tombstoned`);
+      if (subtreeOf(view, id).has(newParent)) {
+        throw new Error("cannot move a block into its own subtree (DM-3.1)");
+      }
     }
   }
   detachEverywhere(doc, id);
