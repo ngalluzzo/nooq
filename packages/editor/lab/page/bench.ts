@@ -136,7 +136,7 @@ const lab = {
   },
   blockIds: () => Array.from(surface.element.querySelectorAll("[data-nq-block]")).map((row) => row.getAttribute("data-nq-block")!),
   /** EB-7 observability: the surface's remote-render and pin counters. */
-  stats: () => ({ remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift }),
+  stats: () => ({ statsVersion: 3, remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift, lastAnchorRect: (surface as any).lastAnchorRect, lastViewportTop: (surface as any).lastViewportTop }),
   /** Where focus and selection are, and where a given block sits on screen. */
   probe: (anchor: BlockId) => {
     const active = document.activeElement as HTMLTextAreaElement | null;

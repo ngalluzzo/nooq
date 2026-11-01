@@ -1,21 +1,26 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
 import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
-import { defineTextPolicy, type Action, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
+import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
+import { createDocumentSelection } from "./document-selection.ts";
 
 export interface EditorSurface {
   element: HTMLElement;
   actions: SurfaceActions;
+  /** Present only when selectionMode is document. */
+  selection?: DocumentSelectionService;
   destroy(): void;
   /** EB-7 observability: remote renders seen, viewport pins applied. */
   readonly remoteRenders: number;
   readonly pins: number;
   readonly lastAnchor: string | null;
   readonly lastDrift: number;
+  readonly lastAnchorRect: { top: number; bottom: number } | null;
+  readonly lastViewportTop: number;
 }
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
@@ -23,8 +28,10 @@ export interface SurfaceOptions {
   keyOrder?: Readonly<Record<string, readonly string[]>>;
   /** Overrides presentation for mountTextEditor views; explicit legacy bindings stay explicit. */
   textMode?: TextMode;
+  /** Opt in to cross-block rich-text selection; requires textMode: rich and nooq.text.edit. */
+  selectionMode?: "block" | "document";
 }
-interface Binding { element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
+interface Binding { marks?: readonly TextMark[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
 type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy };
 const defaultTextPolicy = defineTextPolicy();
 interface Row {
@@ -35,6 +42,8 @@ interface Row {
 
 export function createSurface(editor: Editor, options: SurfaceOptions = {}): EditorSurface {
   if (options.textMode !== undefined && options.textMode !== "plain" && options.textMode !== "rich") throw new Error("Invalid surface text mode");
+  if (options.selectionMode !== undefined && !["block", "document"].includes(options.selectionMode)) throw new Error("Invalid selection mode");
+  if (options.selectionMode === "document" && (options.textMode !== "rich" || !editor.registry.command("nooq.text.edit"))) throw new Error("Document selection requires textMode: rich and a registered nooq.text.edit command");
   const textMode = options.textMode;
   const plugins = options.plugins ?? [], views = new Map<string, ViewProvider>();
   const providers = new Map<string, ViewProvider[]>();
@@ -170,7 +179,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       beforeInput: event => input?.beforeInput(event) ?? false,
       input: text => { if (text === "/") openMenu(id); else closeMenu(); },
     }, options);
-    row.bindings.push({ ...rich, update: block => rich.update(block.text ?? { s: "", marks: [] }) });
+    row.bindings.push({ ...rich, marks: options?.marks ?? ["strong", "em", "code"], update: block => rich.update(block.text ?? { s: "", marks: [] }) });
     return rich;
   }
   function mountText(id: string, row: Row, label = "Text block", input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }): Binding & TextBinding {
@@ -326,7 +335,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
   let mountedFocused = false;
   /** Lab/test observability: remote renders seen, pins applied (EB-7). */
-  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0 };
+  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0 };
 
   /** The anchor row keeping the viewport still across remote renders (EB-7):
    *  the FIRST row overlapping the viewport top — the same block the lab's
@@ -335,13 +344,16 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function pickAnchor(): { row: HTMLElement; top: number } | null {
     const scroller = document.scrollingElement;
     if (!scroller) return null;
-    const viewportTop = scroller.getBoundingClientRect().top;
-    let best: { row: HTMLElement; top: number } | null = null;
-    for (const row of rows.values()) {
-      const rect = row.shell.getBoundingClientRect();
-      if (rect.bottom > viewportTop && (!best || rect.top < best.top)) best = { row: row.shell, top: rect.top };
+    // Rects are viewport-relative: the visible top is 0. (The scroller's own
+    // rect top is NOT a proxy — a scrolling <html> reports -scrollY, which
+    // once admitted rows 800px above the viewport; measured, not assumed.)
+    // EXACTLY the checker's definition, in its iteration order: the first
+    // block row in DOM order whose bottom crosses the visible top.
+    for (const shell of Array.from(root.querySelectorAll<HTMLElement>("[data-nq-block]"))) {
+      const rect = shell.getBoundingClientRect();
+      if (rect.bottom > 0) return { row: shell, top: rect.top };
     }
-    return best;
+    return null;
   }
   function pinViewport(anchor: { row: HTMLElement; top: number } | null): void {
     if (!anchor || !anchor.row.isConnected) return;
@@ -353,6 +365,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
 
   function render() {
+    documentSelection?.beforeRender();
     scheduled = false; if (destroyed) return;
     rendering = true;
     const batch = pendingBatch; const remote = batchIsRemote;
@@ -371,6 +384,10 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (remote) stats.remoteRenders++;
     const anchor = remote ? pickAnchor() : null;
     stats.lastAnchor = anchor?.row.getAttribute("data-nq-block") ?? null;
+    if (anchor) {
+      stats.lastAnchorRect = { top: Math.round(anchor.row.getBoundingClientRect().top), bottom: Math.round(anchor.row.getBoundingClientRect().bottom) };
+      stats.lastViewportTop = Math.round((document.scrollingElement as HTMLElement | null)?.getBoundingClientRect().top ?? 0);
+    }
     try {
     const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
     renderState = state;
@@ -426,7 +443,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (alive.has(menuBlock) && state.blocks[menuBlock]?.text?.s === "/") openMenu(menuBlock);
       else closeMenu();
     }
-    } finally { rendering = false; renderState = undefined; }
+    } finally { rendering = false; renderState = undefined; documentSelection?.afterRender(); }
   }
   // EB-6: render only what the transactions touched; a null set means all.
   let pendingBatch: import("@nooq/plugins").ChangeEvent[] | null = null;
@@ -435,9 +452,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     pendingBatch = pendingBatch === null ? [...events] : [...pendingBatch, ...events];
     if (events.some((event) => event.origin === "remote")) batchIsRemote = true;
   });
+  const documentSelection = options.selectionMode === "document" ? createDocumentSelection(editor, root, () => new Map(
+    [...rows].flatMap(([id, row]) => row.bindings[0] ? [[id, { ...row.bindings[0], marks: row.bindings[0].marks ?? null }] as const] : []),
+  ), () => destroyed || rendering) : undefined;
+  if (documentSelection) { root.classList.add("nq-document-selection"); root.tabIndex = -1; root.dataset.nqDocumentSelection = "true"; }
   const offChange = editor.onChange(schedule), offSelection = editor.onSelection(request => { pendingSelection = request; schedule(); });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; } };
+  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; } };
 }
