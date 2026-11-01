@@ -1,5 +1,6 @@
 /* nooq — generated from tokens.json by scripts/build-tokens.ts. Do not edit. */
-
+/* Ships inside the nq cascade layer: a host's unlayered styles win over everything here. */
+@layer nq {
 :root {
   --nq-paper: #f7f8fa;
   --nq-paper-raised: #ffffff;
@@ -158,6 +159,12 @@
   --nq-caret-width: 2px;
   --nq-block-gap: 8px;
   --nq-highlight-peer: 22%;
+  --nq-fade: 80ms;
+  --nq-blink: 530ms;
+  --nq-layer-presence: 10;
+  --nq-layer-toolbar: 20;
+  --nq-layer-overlay: 30;
+  --nq-layer-dialog: 40;
   --nq-font-serif: "Literata Variable", "Literata Fallback", Georgia, serif;
   --nq-font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next Fallback", system-ui, sans-serif;
   --nq-font-mono: "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono Fallback", ui-monospace, Menlo, monospace;
@@ -175,3 +182,4 @@
 .nq-code { font-family: var(--nq-font-mono); font-size: 14px; line-height: 22px; font-weight: 400; }
 .nq-digest { font-family: var(--nq-font-mono); font-size: 12px; line-height: 16px; font-weight: 500; }
 .nq-display { font-family: var(--nq-font-serif); font-size: 64px; line-height: 60px; font-weight: 800; letter-spacing: -0.03em; font-variation-settings: "opsz" 72; }
+}

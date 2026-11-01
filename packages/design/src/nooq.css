@@ -1,7 +1,12 @@
 /*
  * nooq reference theme. Every value is a token from tokens.css; class names
  * are the contract. Nothing here styles elements outside .nq-* classes.
+ *
+ * Ships inside the nq cascade layer (joined with tokens.css), so a host's
+ * own unlayered styles win without specificity fights or !important.
  */
+
+@layer nq {
 
 .nq-surface { background: var(--nq-paper); color: var(--nq-graphite); font-family: var(--nq-font-sans); }
 .nq-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -82,17 +87,51 @@
 .nq-block-deleted .nq-block-body > del { color: var(--nq-graphite-muted); text-decoration-thickness: 1.5px; }
 .nq-tomb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); margin-top: var(--nq-space-1); color: var(--nq-graphite-muted); font-family: var(--nq-font-sans); font-style: normal; }
 
+/* Block container: the frame plugin blocks sit in, built-in or third-party (§7).
+ * Blocks are rectangles (radius-sm, never a colored left border); a tone shows
+ * as a word in the header plus a ground, so nothing depends on color alone (§9). */
+.nq-block-container { display: flex; flex-direction: column; gap: var(--nq-space-3); box-sizing: border-box; width: 100%; padding: var(--nq-space-3) var(--nq-space-4); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); }
+.nq-block-container-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+.nq-block-container-label { color: var(--nq-graphite-muted); }
+.nq-block-container-tone { color: var(--nq-graphite-muted); }
+.nq-tone-ink .nq-block-container-tone { color: var(--nq-ink); }
+.nq-tone-pencil .nq-block-container-tone { color: var(--nq-pencil-text); }
+.nq-tone-stamp .nq-block-container-tone { color: var(--nq-stamp); }
+.nq-block-container-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); margin-inline-start: auto; color: var(--nq-graphite-muted); }
+.nq-block-container-body { min-width: 0; }
+.nq-block-container-children { display: flex; flex-direction: column; gap: var(--nq-block-gap); min-width: 0; }
+.nq-block-container-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); }
+/* Tone grounds: neutral keeps the rule outline on paper-raised; ink settles (a
+ * human accepted this); pencil is AI-made content; stamp means structure broke. */
+.nq-tone-ink { background: var(--nq-ink-soft); }
+.nq-tone-pencil { border: 1px dashed var(--nq-pencil-text); background: var(--nq-pencil-soft); }
+.nq-tone-stamp { border-color: var(--nq-stamp); background: var(--nq-stamp-soft); }
+
+/* Block content. Children indent to the gutter; each nesting level carries a
+   rule the width of a change bar. An empty children container draws nothing. */
+.nq-children { display: flex; flex-direction: column; gap: var(--nq-block-gap); margin: var(--nq-block-gap) 0 0; padding-inline-start: calc(var(--nq-gutter) - var(--nq-change-bar)); border-inline-start: var(--nq-change-bar) solid var(--nq-rule); }
+.nq-children:empty { display: none; }
+/* Windowed runs (EB-8): quiet skeletons that hold estimated height. A flat
+   sunken ground; no shimmer, no animation (§3). */
+.nq-editor [data-nq-ph] { border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
+/* Block types on their way. Lists keep their markers, set into the gutter
+   indent; code blocks are sunken wells; a divider is one rule. */
+.nq-block-list { margin: 0; padding-inline-start: var(--nq-gutter); }
+.nq-block-list > li + li { margin-top: var(--nq-block-gap); }
+.nq-block-list li::marker { color: var(--nq-graphite-muted); }
+.nq-block-code { margin: 0; padding: var(--nq-space-3); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); white-space: pre-wrap; overflow-wrap: anywhere; }
+.nq-block-divider { margin: var(--nq-space-2) 0; border: 0; border-top: 1px solid var(--nq-rule); }
+
 /* Carets. Nothing on the input path animates except the blink (§3). */
-.nq-caret { display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-caret); animation: nq-blink 1.06s steps(1) infinite; }
+.nq-caret { display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-caret); animation: nq-blink calc(var(--nq-blink) * 2) steps(1) infinite; }
 @keyframes nq-blink { 50% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .nq-caret { animation: none; } }
 .nq-surface ::selection, .nq-selection { background: var(--nq-selection); }
 .nq-peer { position: relative; }
 .nq-peer-sel { background: color-mix(in srgb, var(--nq-peer) var(--nq-highlight-peer), transparent); }
 .nq-peer-caret { position: relative; display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-peer); }
 /* Presence overlay (SW-7): remote carets ride above the text, never in it; remote selections are CSS custom highlights (§3). */
 .nq-editor { position: relative; }
-.nq-presence { position: absolute; inset: 0; pointer-events: none; }
+.nq-presence { position: absolute; inset: 0; z-index: var(--nq-layer-presence); pointer-events: none; }
 .nq-presence-peer { position: absolute; width: 0; }
 .nq-presence-peer .nq-peer, .nq-presence-peer .nq-peer-caret { display: block; height: 100%; margin: 0; }
 .nq-presence-peer .nq-peer-caret { margin-left: -1px; }
@@ -104,8 +143,26 @@
 .nq-editor ::highlight(nq-peer-slate) { background-color: color-mix(in srgb, var(--nq-peer-slate) var(--nq-highlight-peer), transparent); }
 .nq-peer-flag { position: absolute; bottom: 100%; left: 0; padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-xs) var(--nq-radius-xs) var(--nq-radius-xs) 0; background: var(--nq-peer); color: var(--nq-on-peer); font-family: var(--nq-font-sans); font-size: 12px; font-weight: 600; font-style: normal; line-height: 16px; white-space: nowrap; }
 
-/* SlashMenu */
-.nq-menu { width: 320px; max-width: 100%; box-sizing: border-box; padding: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); }
+/* Text hosts. The plain textarea and the rich contenteditable share these host
+   styles; the Document type class (nq-doc-body), applied where the element is
+   created, carries the typography. Focus is the caret in ink: no outline on
+   the host, nothing that shifts text while typing (§3). */
+.nq-input { display: block; width: 100%; box-sizing: border-box; margin: 0; padding: 0; border: 0; background: transparent; color: var(--nq-graphite); caret-color: var(--nq-caret); resize: none; }
+.nq-input:focus { outline: none; }
+.nq-input::selection { background: var(--nq-selection); }
+/* Marks. Code sets in the mono face (the nq-code class, applied where the mark
+   is created) on a sunken ground; links render in ink; formatting this build
+   does not know is preserved and stays visible: dotted, muted, titled (§8). */
+.nq-input code { padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
+.nq-input a { color: var(--nq-ink); }
+.nq-input [data-nq-marks] { text-decoration: underline dotted var(--nq-graphite-muted); text-underline-offset: var(--nq-space-1); }
+/* The empty-block hint. Plain hosts use the native placeholder attribute;
+   rich hosts carry data-nq-empty and the theme draws the hint as ::before. */
+.nq-input[data-nq-empty]::before { content: "Type / for blocks"; color: var(--nq-graphite-muted); pointer-events: none; }
+
+/* SlashMenu: the one entrance animation in the editor (§3). */
+.nq-menu { z-index: var(--nq-layer-overlay); width: 320px; max-width: 100%; box-sizing: border-box; padding: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); animation: nq-fade var(--nq-fade) ease-out; }
+@keyframes nq-fade { from { opacity: 0; } }
 .nq-menu-query { margin: 0 0 var(--nq-space-1); padding: var(--nq-space-1) var(--nq-space-2); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
 .nq-menu-list { border-radius: var(--nq-radius-sm); }
 .nq-menu-list:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
@@ -121,6 +178,25 @@
 /* SyncStatus */
 .nq-sync { display: inline-flex; align-items: center; gap: 6px; color: var(--nq-graphite-muted); }
 
+/* Notice: a word, a glyph, an action — inline, never on the input path (§2, §3).
+   A hold waits in graphite-muted; a denial states its reason in a rule-strong
+   outline; error and model sit in a paper-sunken well. Never stamp: stamp is
+   for structure that broke. */
+.nq-notice { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); max-width: 100%; box-sizing: border-box; padding: var(--nq-space-2) var(--nq-space-3); border: 1px solid transparent; border-radius: var(--nq-radius-sm); background: transparent; color: var(--nq-graphite); }
+.nq-notice-word { min-width: 0; overflow-wrap: anywhere; }
+.nq-notice .nq-btn { height: var(--nq-control-sm); }
+.nq-notice-hold { color: var(--nq-graphite-muted); }
+.nq-notice-error, .nq-notice-model { border-color: var(--nq-rule); background: var(--nq-paper-sunken); }
+.nq-notice-denial { border-color: var(--nq-rule-strong); }
+
+/* Popover: one anchored surface for the slash menu, overflow menus, hints and
+   block history. Position arrives as --nq-x/--nq-y from collision math against
+   the viewport; everything painted is a token. */
+.nq-popover { position: fixed; left: var(--nq-x, 0px); top: var(--nq-y, 0px); z-index: var(--nq-layer-overlay); box-sizing: border-box; max-width: calc(100vw - var(--nq-space-8)); padding: var(--nq-space-3); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); animation: nq-fade var(--nq-fade) ease-out; }
+.nq-popover:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring), var(--nq-shadow-pop); }
+/* Tooltip: a popover carrying one hint line. Never interactive, never focused. */
+.nq-tooltip { padding: var(--nq-space-1) var(--nq-space-2); pointer-events: none; }
+
 /* Logo. Geometry lives in the SVG; color comes from tokens. The moved piece keeps the writer's ink. */
 .nq-logo { display: block; width: 100%; height: auto; overflow: visible; }
 .nq-logo-letter, .nq-logo-piece { stroke: var(--nq-graphite); }
@@ -131,3 +207,69 @@
 /* Cross-block selection paints text only; plugin controls remain interactive. */
 .nq-document-selection [data-nq-block] { user-select: none; }
 .nq-document-selection .nq-rich-text { user-select: text; }
+
+/* Action toolbar. Behavior (roving focus, disabled reasons, the status region)
+   lives in the editor; these classes are its visual contract. No inline styles. */
+.nq-action-toolbar { position: relative; z-index: var(--nq-layer-toolbar); display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--nq-space-2); }
+.nq-action-toolbar[hidden] { display: none; }
+.nq-action { display: flex; flex-direction: column; align-items: flex-start; gap: var(--nq-space-1); }
+.nq-action[hidden] { display: none; }
+/* A disabled action states its reason as a word, in graphite-muted (§9). */
+.nq-action-reason { display: block; color: var(--nq-graphite-muted); }
+.nq-action-reason[hidden] { display: none; }
+/* The status region: invisible while idle, a caption beside the actions when set. */
+.nq-action-feedback { color: var(--nq-graphite-muted); }
+.nq-action-feedback:empty { display: none; }
+/* A view may append its own controls to the toolbar; this rule sets them apart
+   from the actions. Hidden while it trails nothing (it is always the last child). */
+.nq-action-separator { flex: none; align-self: stretch; width: 1px; background: var(--nq-rule-strong); }
+.nq-action-separator:last-child { display: none; }
+
+/* Form controls. Errors are words: the border stays rule-strong and nothing
+   turns red — stamp is reserved for structure that broke (§9). */
+.nq-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--nq-space-2); }
+.nq-field-label { color: var(--nq-graphite); }
+.nq-field-help { margin: 0; color: var(--nq-graphite-muted); }
+.nq-field-error { margin: 0; color: var(--nq-graphite); }
+.nq-field-input, .nq-field-select { box-sizing: border-box; width: min(100%, var(--nq-measure)); height: var(--nq-control-md); padding: 0 var(--nq-space-3); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); }
+.nq-field-input::placeholder { color: var(--nq-graphite-muted); }
+.nq-field-input:focus-visible, .nq-field-select:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-field-input:disabled, .nq-field-select:disabled { opacity: .5; cursor: default; }
+.nq-field-selectwrap { position: relative; display: inline-flex; }
+.nq-field-select { appearance: none; padding-right: var(--nq-space-8); cursor: pointer; }
+.nq-field-selectglyph { position: absolute; top: 0; right: var(--nq-space-2); display: grid; place-items: center; height: var(--nq-control-md); color: var(--nq-graphite-muted); pointer-events: none; }
+/* Segmented control: one tab stop, arrow keys move (§9). The chosen segment is
+   ink-soft with ink text; the rest are rule-strong controls like every other. */
+.nq-seg { display: inline-flex; align-items: center; gap: var(--nq-space-1); }
+.nq-seg-option { display: inline-flex; align-items: center; box-sizing: border-box; height: var(--nq-control-sm); padding: 0 var(--nq-space-2); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; }
+.nq-seg-option:hover { background: var(--nq-paper-sunken); }
+.nq-seg-option:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-seg-option[aria-checked="true"] { background: var(--nq-ink-soft); color: var(--nq-ink); }
+.nq-seg-option:disabled { opacity: .5; cursor: default; }
+/* Toggle: state as glyph + fill (a solid square travels when on, an empty one
+   when off) plus the word on/off — never color alone (§9). Nothing animates. */
+.nq-toggle { display: inline-flex; align-items: center; gap: var(--nq-space-2); box-sizing: border-box; height: var(--nq-control-md); padding: 0 var(--nq-space-2); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; }
+.nq-toggle:hover { background: var(--nq-paper-sunken); }
+.nq-toggle:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-toggle:disabled { opacity: .5; cursor: default; }
+.nq-toggle-track { position: relative; flex: none; width: var(--nq-space-8); height: var(--nq-space-4); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
+.nq-toggle-thumb { position: absolute; top: 50%; left: calc(var(--nq-space-1) / 2); width: calc(var(--nq-space-4) - var(--nq-space-1)); height: calc(var(--nq-space-4) - var(--nq-space-1)); transform: translateY(-50%); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-xs); background: transparent; }
+.nq-toggle[aria-checked="true"] .nq-toggle-thumb { left: calc(100% - var(--nq-space-4) + var(--nq-space-1) / 2); border-color: var(--nq-ink-fill); background: var(--nq-ink-fill); }
+.nq-toggle-word { color: var(--nq-graphite-muted); }
+/* Checkbox: same state channels — a filled square when checked, an empty one
+   when not, the choice's own text as the word, aria-checked as the programmatic channel. */
+.nq-check { display: inline-flex; align-items: center; gap: var(--nq-space-2); box-sizing: border-box; min-height: var(--nq-control-md); padding: var(--nq-space-1) var(--nq-space-3); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; text-align: left; }
+.nq-check:hover { background: var(--nq-paper-sunken); }
+.nq-check:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+.nq-check:disabled { opacity: .5; cursor: default; }
+.nq-check-box { flex: none; width: var(--nq-space-4); height: var(--nq-space-4); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-xs); background: transparent; }
+.nq-check[aria-checked="true"] .nq-check-box { border-color: var(--nq-ink-fill); background: var(--nq-ink-fill); }
+.nq-check-word { color: var(--nq-graphite-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nq-caret { animation: none; }
+  .nq-menu { animation: none; }
+  .nq-popover { animation: none; }
+}
+
+}

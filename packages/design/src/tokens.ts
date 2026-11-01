@@ -61,6 +61,8 @@ export interface Tokens {
   size: { note?: string; tokens: LengthToken[] };
   shadow: { note?: string; tokens: ShadowToken[] };
   highlight: { note?: string; tokens: LengthToken[] };
+  motion: { note?: string; tokens: LengthToken[] };
+  layer: { note?: string; tokens: LengthToken[] };
   editor: { note?: string; tokens: LengthToken[] };
 }
 
@@ -112,11 +114,13 @@ function themeDeclarations(tokens: Tokens, theme: ThemeId, indent: string): stri
  * never switches on its own inside a host page that has no dark mode.
  * Every theme block re-declares aliases, because a custom property that
  * references var() resolves where it is declared.
+ *
+ * Everything ships inside one cascade layer (`@layer nq`), so a host's own
+ * unlayered styles win without specificity fights or !important; nooq.css
+ * declares the same layer and joins it.
  */
 export function tokensToCss(tokens: Tokens): string {
-  const lines: string[] = [
-    `/* ${tokens.name} — generated from tokens.json by scripts/build-tokens.ts. Do not edit. */`,
-    "",
+  const body: string[] = [
     ":root {",
     ...themeDeclarations(tokens, "light", "  "),
     "}",
@@ -125,9 +129,9 @@ export function tokensToCss(tokens: Tokens): string {
   for (const theme of THEMES) {
     // "system" starts light and flips in the media block below.
     const selector = theme === "light" ? `[data-${PREFIX}-theme="light"], [data-${PREFIX}-theme="system"]` : `[data-${PREFIX}-theme="${theme}"]`;
-    lines.push(`${selector} {`, `  color-scheme: ${theme};`, ...themeDeclarations(tokens, theme, "  "), "}", "");
+    body.push(`${selector} {`, `  color-scheme: ${theme};`, ...themeDeclarations(tokens, theme, "  "), "}", "");
   }
-  lines.push(
+  body.push(
     "@media (prefers-color-scheme: dark) {",
     `  [data-${PREFIX}-theme="system"] {`,
     "    color-scheme: dark;",
@@ -137,11 +141,11 @@ export function tokensToCss(tokens: Tokens): string {
     "",
     ":root {",
   );
-  for (const family of ["spacing", "radius", "size", "editor", "highlight"] as const) {
-    for (const t of tokens[family].tokens) lines.push(`  ${cssVar(t.name)}: ${t.value};`);
+  for (const family of ["spacing", "radius", "size", "editor", "highlight", "motion", "layer"] as const) {
+    for (const t of tokens[family].tokens) body.push(`  ${cssVar(t.name)}: ${t.value};`);
   }
-  for (const [key, stack] of Object.entries(tokens.type.families)) lines.push(`  ${cssVar(`font-${key}`)}: ${stack};`);
-  lines.push("}", "");
+  for (const [key, stack] of Object.entries(tokens.type.families)) body.push(`  ${cssVar(`font-${key}`)}: ${stack};`);
+  body.push("}", "");
   for (const group of tokens.type.groups) {
     for (const s of group.styles) {
       const decl = [
@@ -153,8 +157,15 @@ export function tokensToCss(tokens: Tokens): string {
       if (s.letterSpacing) decl.push(`letter-spacing: ${s.letterSpacing}`);
       if (s.fontStyle) decl.push(`font-style: ${s.fontStyle}`);
       if (s.opticalSize !== undefined) decl.push(`font-variation-settings: "opsz" ${s.opticalSize}`);
-      lines.push(`.${PREFIX}-${s.name} { ${decl.join("; ")}; }`);
+      body.push(`.${PREFIX}-${s.name} { ${decl.join("; ")}; }`);
     }
   }
-  return lines.join("\n") + "\n";
+  return [
+    `/* ${tokens.name} — generated from tokens.json by scripts/build-tokens.ts. Do not edit. */`,
+    `/* Ships inside the nq cascade layer: a host's unlayered styles win over everything here. */`,
+    `@layer ${PREFIX} {`,
+    ...body,
+    "}",
+    "",
+  ].join("\n");
 }

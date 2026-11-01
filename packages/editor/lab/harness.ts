@@ -61,8 +61,9 @@ function keyInfo(key: string): { code: string; keyCode: number; text?: string; c
   return { code: /[a-z]/i.test(key) ? `Key${upper}` : "", keyCode: upper.charCodeAt(0), text: key };
 }
 
-/** EventLatency lives in "benchmark"; anything more only makes the trace bigger. */
-const TRACE_CATEGORIES = ["benchmark"];
+/** EventLatency lives in "benchmark"; GC attribution lives in v8.gc (EB-6
+ * Draft 2.1). Both stay small; asking for more makes traces huge. */
+const TRACE_CATEGORIES = ["benchmark", "disabled-by-default-v8.gc"];
 
 export async function openLab(options: LabOptions = {}): Promise<Lab> {
   const view = new Bun.WebView({

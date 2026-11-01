@@ -10,9 +10,10 @@ import { charDiff } from "./pm-surface.ts";
 const schema = new Schema({ nodes: { doc: { content: "text*", marks: "_", whitespace: "pre" }, text: {} }, marks: {
   strong: { toDOM: () => ["strong", 0], parseDOM: [{ tag: "strong" }, { tag: "b" }] },
   em: { toDOM: () => ["em", 0], parseDOM: [{ tag: "em" }, { tag: "i" }] },
-  code: { toDOM: () => ["code", 0], parseDOM: [{ tag: "code" }] },
-  // An unfamiliar mark remains part of the projection even though we cannot style it.
-  opaque: { attrs: { names: {} }, toDOM: mark => ["span", { "data-nq-marks": JSON.stringify(mark.attrs.names) }, 0],
+  // The code type class carries the mono face; the host theme adds the sunken ground.
+  code: { toDOM: () => ["code", { class: "nq-code" }, 0], parseDOM: [{ tag: "code" }] },
+  // An unfamiliar mark stays visible: the theme underlines it and the title names it (§8).
+  opaque: { attrs: { names: {} }, toDOM: mark => ["span", { "data-nq-marks": JSON.stringify(mark.attrs.names), title: `Unrecognized formatting: ${(mark.attrs.names as readonly string[]).join(", ")}` }, 0],
     parseDOM: [{ tag: "span[data-nq-marks]", getAttrs(dom) {
       try { const names: unknown = JSON.parse(dom.getAttribute("data-nq-marks")!); return Array.isArray(names) && names.every(n => typeof n === "string") ? { names } : false; } catch { return false; }
     } }],
@@ -93,10 +94,13 @@ export function mountRichText(host: {
       if (anchor !== state.selection.anchor || head !== state.selection.head) updateState(state.apply(state.tr.setSelection(TextSelection.create(state.doc, anchor, head))));
     } catch { /* During native composition the DOM may be ahead of its projection. */ }
   }
+  /** The empty-block placeholder rides a data attribute the theme turns into ::before text. */
+  const syncEmpty = () => { element.toggleAttribute("data-nq-empty", state.doc.textContent === ""); };
   function update(text: RenderedText, force = false) {
-    if (disposed || (!force && (composing || view.composing))) return;
+    if (disposed) return;
+    if (!force && (composing || view.composing)) { syncEmpty(); return; }
     const changes = richTextChanges(textOf(state.doc), text);
-    if (!changes.length) return;
+    if (!changes.length) { syncEmpty(); return; }
     syncSelection();
     let tr = state.tr, position = 0;
     for (const change of changes) {
@@ -111,6 +115,7 @@ export function mountRichText(host: {
       }
     }
     updateState(state.apply(tr));
+    syncEmpty();
   }
   function dispatch(tr: Transaction): boolean {
     if (disposed) return false;
@@ -149,7 +154,9 @@ export function mountRichText(host: {
   }
   view = new EditorView({ mount: element }, {
     state, dispatchTransaction: tr => { dispatch(tr); },
-    attributes: { class: "nq-input nq-rich-text", role: "textbox", "aria-label": options.label ?? "Text block", "aria-multiline": "true", style: "white-space:pre-wrap;overflow-wrap:anywhere;min-height:2em" },
+    // nq-doc-body types the host like the plain textarea; the inline styles are
+    // behavior (whitespace and minimum height), not theme.
+    attributes: { class: "nq-input nq-rich-text nq-doc-body", role: "textbox", "aria-label": options.label ?? "Text block", "aria-multiline": "true", style: "white-space:pre-wrap;overflow-wrap:anywhere;min-height:2em" },
     handleKeyDown(_view, event) {
       if (composing || event.isComposing || view.composing) return false;
       if (host.keyDown(event)) return true;
@@ -186,6 +193,7 @@ export function mountRichText(host: {
       },
     },
   });
+  element.toggleAttribute("data-nq-empty", state.doc.textContent === "");
   return { element, update, insertText,
     selection: () => { if (!disposed && !composing) syncSelection(); return { anchor: state.selection.anchor, head: state.selection.head }; },
     focus(selection) {

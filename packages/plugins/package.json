@@ -4,6 +4,6 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": { ".": "./src/index.ts", "./dom": "./src/dom.ts", "./essentials": "./src/essentials.ts" },
-  "dependencies": { "@nooq/core": "workspace:*", "semver": "7.8.0" },
+  "dependencies": { "@nooq/core": "workspace:*", "@nooq/design": "workspace:*", "semver": "7.8.0" },
   "devDependencies": { "@types/semver": "7.7.1" }
 }

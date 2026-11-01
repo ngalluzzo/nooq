@@ -1,8 +1,8 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
-import { freezeInPlace, freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
+import { freezeInPlace, freezeSnapshot, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
-import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
+import { notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
@@ -97,9 +97,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
   for (const key of Object.keys(options.keyOrder ?? {})) if (!keys.has(key)) throw new Error(`Unknown keyOrder ${key}`);
 
-  const root = document.createElement("div"), status = document.createElement("div"), body = document.createElement("div"), history = document.createElement("div");
+  const root = document.createElement("div"), status = document.createElement("div"), notices = document.createElement("div"), body = document.createElement("div"), history = document.createElement("div");
   const surfaceAbort = new AbortController();
-  root.className = "nq-editor"; root.append(status, body, history);
+  root.className = "nq-editor"; root.append(status, notices, body, history);
   const rows = new Map<string, Row>();
   // A freshly derived ink re-renders rows too: their chips wait for the ink
   // rather than show a peer in a borrowed color, same as the overlay.
@@ -642,8 +642,17 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   ), () => destroyed || rendering) : undefined;
   if (documentSelection) { root.classList.add("nq-document-selection"); root.tabIndex = -1; root.dataset.nqDocumentSelection = "true"; }
   const offChange = editor.onChange(schedule), offSelection = editor.onSelection(request => { pendingSelection = request; schedule(); });
+  // The error channel made visible (foundation: Notice) — one non-blocking
+  // notice above the document naming the actor and the phase; a newer error
+  // replaces it, Dismiss clears it, and it never sits on the input path.
+  const offErrors = editor.onError(error => {
+    if (surfaceAbort.signal.aborted) return;
+    const who = error.plugin ?? "The editor";
+    const what = error.cause instanceof Error ? error.cause.message : String(error.cause);
+    notices.replaceChildren(notice({ kind: "error", word: `${who} failed in ${error.phase}: ${what}`, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
+  });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };

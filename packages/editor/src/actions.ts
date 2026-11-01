@@ -69,11 +69,16 @@ export function mountActionToolbar(host: {
   run(id: string): ActionResult;
   subscribe(refresh: () => void): () => void;
 }, label = "Block actions"): ActionToolbar {
-  const element = document.createElement("div"), abort = new AbortController(), entries = new Map<string, { wrapper: HTMLElement; button: HTMLButtonElement; reason: HTMLElement }>();
-  const prefix = `nq-actions-${++toolbarCount}`, feedback = document.createElement("span");
-  feedback.setAttribute("role", "status"); element.append(feedback);
+  // Presentation is the nooq.css contract (.nq-action-toolbar and friends);
+  // this function owns structure and behavior only — no inline styles.
+  const element = document.createElement("div"), abort = new AbortController(), entries = new Map<string, { wrapper: HTMLElement; button: HTMLButtonElement; label: HTMLElement; reason: HTMLElement; hint?: HTMLElement }>();
+  const prefix = `nq-actions-${++toolbarCount}`, feedback = document.createElement("span"), separator = document.createElement("span");
+  feedback.setAttribute("role", "status"); feedback.className = "nq-action-feedback nq-ui-caption";
+  // The separator stays the last child: a view appending its own controls to
+  // the toolbar lands after the rule, visually set apart from the actions.
+  separator.className = "nq-action-separator"; separator.setAttribute("aria-hidden", "true");
+  element.append(feedback, separator);
   element.setAttribute("role", "toolbar"); element.setAttribute("aria-label", label); element.className = "nq-action-toolbar";
-  element.style.cssText = "display:flex;gap:.5rem;align-items:start;flex-wrap:wrap";
   function tabStop(preferred?: HTMLElement) {
     const enabled = [...entries.values()].map(e => e.button).filter(b => !b.disabled && !b.parentElement!.hidden);
     const active = enabled.find(b => b === preferred) ?? enabled.find(b => b === document.activeElement) ?? enabled[0];
@@ -87,9 +92,10 @@ export function mountActionToolbar(host: {
     for (const state of states) {
       let entry = entries.get(state.id);
       if (!entry) {
-        const wrapper = document.createElement("div"), button = document.createElement("button"), reason = document.createElement("small");
-        button.type = "button"; button.dataset.nqAction = state.id; reason.id = `${prefix}-${entries.size}`;
-        reason.style.display = "block"; wrapper.append(button, reason); element.append(wrapper);
+        const wrapper = document.createElement("div"), button = document.createElement("button"), reason = document.createElement("small"), text = document.createElement("span");
+        button.type = "button"; button.dataset.nqAction = state.id; button.className = "nq-btn nq-ui-label";
+        reason.id = `${prefix}-${entries.size}`; reason.className = "nq-action-reason nq-ui-caption";
+        wrapper.className = "nq-action"; button.append(text); wrapper.append(button, reason); element.insertBefore(wrapper, separator);
         button.addEventListener("mousedown", event => { if (event.button === 0) event.preventDefault(); }, { signal: abort.signal });
         button.addEventListener("click", () => {
           const result = host.run(state.id);
@@ -98,21 +104,25 @@ export function mountActionToolbar(host: {
           feedback.textContent = result.status === "failed" ? `${state.label} failed. Try again.` : result.status === "denied" || result.status === "unavailable" ? result.reason : "";
           refresh();
         }, { signal: abort.signal });
-        entry = { wrapper, button, reason }; entries.set(state.id, entry);
+        entry = { wrapper, button, label: text, reason }; entries.set(state.id, entry);
       }
       entry.wrapper.hidden = state.availability.status === "hidden";
-      if (entry.button.textContent !== state.label) entry.button.textContent = state.label;
+      if (entry.label.textContent !== state.label) entry.label.textContent = state.label;
+      // A repeated action shows its shortcut as a kbd chip inside the button,
+      // the same contract as @nooq/design's button (§9); the title stays.
+      if (state.hint) {
+        if (!entry.hint) { entry.hint = document.createElement("kbd"); entry.hint.className = "nq-kbd nq-ui-caption"; entry.button.append(entry.hint); }
+        if (entry.hint.textContent !== state.hint) entry.hint.textContent = state.hint;
+      } else if (entry.hint) { entry.hint.remove(); entry.hint = undefined; }
       entry.button.disabled = state.availability.status !== "enabled";
       const reason = state.availability.status === "disabled" ? state.availability.reason : "";
       if (entry.reason.textContent !== reason) entry.reason.textContent = reason;
       entry.reason.hidden = !entry.reason.textContent;
-      entry.reason.style.display = entry.reason.hidden ? "none" : "block";
       if (entry.reason.textContent) entry.button.setAttribute("aria-describedby", entry.reason.id);
       else entry.button.removeAttribute("aria-describedby");
       entry.button.title = state.hint ?? "";
     }
     element.hidden = states.every(state => state.availability.status === "hidden");
-    element.style.display = element.hidden ? "none" : "flex";
     tabStop();
   }
   element.addEventListener("keydown", event => {

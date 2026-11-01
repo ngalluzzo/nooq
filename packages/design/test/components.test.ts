@@ -7,6 +7,7 @@ import {
   caret,
   deletedLabel,
   digest,
+  glyph,
   presenceCaret,
   slashMenu,
   stateTag,
@@ -121,6 +122,25 @@ describe("digest", () => {
       throw new Error("no clipboard");
     };
     expect(() => digest({ value: DIGEST, copy: throwing }).click()).not.toThrow();
+  });
+});
+
+describe("glyphs", () => {
+  const chrome = ["close", "more", "chevron", "undo", "redo", "history", "access", "verified", "model", "warning", "stop"] as const;
+
+  test("the chrome set the P0 components need: geometric, decorative, one shape each", () => {
+    for (const name of chrome) {
+      const g = glyph(name);
+      expect(g.getAttribute("aria-hidden")).toBe("true");
+      expect(g.getAttribute("data-glyph")).toBe(name);
+      expect(g.innerHTML).not.toBe("");
+    }
+    expect(new Set(chrome.map((name) => glyph(name).innerHTML)).size).toBe(chrome.length);
+  });
+
+  test("a chrome glyph never reuses a state glyph's shape, so a shape keeps its meaning", () => {
+    const states = SUGGESTION_STATES.map((state) => stateTag({ state }).querySelector("svg")!.innerHTML);
+    for (const name of chrome) expect(states).not.toContain(glyph(name).innerHTML);
   });
 });
 

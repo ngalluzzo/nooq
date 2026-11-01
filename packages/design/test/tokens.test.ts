@@ -9,6 +9,12 @@ const themeCss = await Bun.file(new URL("src/nooq.css", root)).text();
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/;
 const LENGTH = /^(?:0|-?\d+(?:\.\d+)?(?:px|rem|em|%))$/;
+const DURATION = /^\d+ms$/;
+const INTEGER = /^\d+$/;
+
+/** The single nq cascade layer, unwrapped (comments and all) for structural checks. */
+const unwrap = (css: string) => css.replace(/@layer[^{]*\{/, "").replace(/\}\s*$/, "");
+const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "").trimStart();
 
 const lists = {
   color: tokens.color.tokens,
@@ -17,6 +23,8 @@ const lists = {
   size: tokens.size.tokens,
   shadow: tokens.shadow.tokens,
   highlight: tokens.highlight.tokens,
+  motion: tokens.motion.tokens,
+  layer: tokens.layer.tokens,
   editor: tokens.editor.tokens,
 };
 
@@ -49,6 +57,18 @@ describe("tokens.json", () => {
 
   test("lengths are plain CSS lengths", () => {
     for (const t of [...lists.spacing, ...lists.radius, ...lists.size, ...lists.highlight, ...lists.editor]) expect(t.value).toMatch(LENGTH);
+  });
+
+  test("motion tokens are durations; layer tokens are plain integers", () => {
+    for (const t of lists.motion) expect(t.value).toMatch(DURATION);
+    for (const t of lists.layer) expect(t.value).toMatch(INTEGER);
+  });
+
+  test("the layer scale only grows: presence < toolbar < overlay < dialog", () => {
+    const z = (name: string) => parseInt(lists.layer.find((t) => t.name === name)!.value, 10);
+    expect(z("layer-presence")).toBeLessThan(z("layer-toolbar"));
+    expect(z("layer-toolbar")).toBeLessThan(z("layer-overlay"));
+    expect(z("layer-overlay")).toBeLessThan(z("layer-dialog"));
   });
 
   test("the spacing scale only grows", () => {
@@ -89,10 +109,19 @@ describe("tokens.css", () => {
     expect(tokensCss).toBe(tokensToCss(tokens));
   });
 
+  test("ships inside one nq cascade layer, so host styles win without specificity fights", () => {
+    expect(stripComments(tokensCss)).toMatch(/^@layer nq \{/);
+    expect(stripComments(themeCss)).toMatch(/^@layer nq \{/);
+    expect(unwrap(tokensCss).trimEnd().endsWith("}")).toBe(true);
+  });
+
   test("every --nq-* custom property the theme uses is defined", () => {
     const defined = new Set([...tokensCss.matchAll(/(--nq-[\w-]+):/g)].map((m) => m[1]));
-    // --nq-peer is set inline per writer by the components.
+    // --nq-peer is set inline per writer; --nq-x/--nq-y carry the popover's
+    // computed position, the same component-set channel.
     defined.add("--nq-peer");
+    defined.add("--nq-x");
+    defined.add("--nq-y");
     const used = new Set([...themeCss.matchAll(/var\((--nq-[\w-]+)/g)].map((m) => m[1]!));
     const missing = [...used].filter((u) => !defined.has(u));
     expect(missing).toEqual([]);
@@ -108,8 +137,17 @@ describe("tokens.css", () => {
     expect(themeCss.match(/var\(--nq-highlight-peer\)/g)?.length).toBeGreaterThanOrEqual(7);
   });
 
+  test("durations and z-indexes come from tokens, not literals", () => {
+    expect(themeCss).not.toMatch(/animation:[^;]*\d+m?s/);
+    expect(themeCss).not.toMatch(/z-index: ?\d/);
+    expect(themeCss).toContain("animation: nq-blink calc(var(--nq-blink) * 2) steps(1) infinite");
+    expect(themeCss).toContain("animation: nq-fade var(--nq-fade) ease-out");
+    expect(themeCss).toContain("z-index: var(--nq-layer-presence)");
+    expect(themeCss).toContain("z-index: var(--nq-layer-overlay)");
+  });
+
   test("never sets color-scheme on :root, so a host page keeps its own", () => {
-    for (const block of tokensCss.matchAll(/^:root \{([^}]*)\}/gm)) expect(block[1]).not.toContain("color-scheme");
+    for (const block of unwrap(tokensCss).matchAll(/^:root \{([^}]*)\}/gm)) expect(block[1]).not.toContain("color-scheme");
   });
 
   test("redeclares aliases in every theme block, so a dark subtree recolors its caret", () => {
@@ -120,7 +158,7 @@ describe("tokens.css", () => {
   });
 
   test("the theme stylesheet styles nothing outside .nq-* classes", () => {
-    const selectors = themeCss
+    const selectors = unwrap(themeCss)
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/@keyframes[^{]+\{[^}]*\{[^}]*\}\s*\}/g, "")
       .replace(/@media[^{]+\{/g, "")

@@ -22,6 +22,22 @@ export interface Validation {
 }
 export const sourceHash = (source: string) => new Bun.CryptoHasher("sha256").update(source).digest("hex");
 
+/** True when a member chain reaches through a `style` property: el.style, el.style.color, el["style"].cssText. */
+function touchesStyle(node: ts.Expression): boolean {
+  let current: ts.Expression = node;
+  while (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    const member = ts.isPropertyAccessExpression(current)
+      ? current.name.text
+      : ts.isStringLiteral(current.argumentExpression) ? current.argumentExpression.text : undefined;
+    if (member === "style") return true;
+    current = current.expression;
+  }
+  return false;
+}
+
+/** Hex color literals in any string or template chunk: #abc, #abcd, #aabbcc, #aabbccdd. */
+const HEX_COLOR = /#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})(?![0-9a-z])/i;
+
 export function checkSourcePolicy(source: string, path: CandidatePath = "src/index.ts"): string[] {
   const errors: string[] = [];
   if (source.length > 60_000) return ["Source exceeds 60 KB limit"];
@@ -36,7 +52,7 @@ export function checkSourcePolicy(source: string, path: CandidatePath = "src/ind
         const typeOnly = ts.isImportDeclaration(node) && node.importClause?.isTypeOnly;
         const allowed = ts.isStringLiteral(spec) && (spec.text === "@nooq/plugins"
           || (spec.text === "@nooq/core" && typeOnly)
-          || (path !== "src/index.ts" && ["@nooq/plugins/dom", "./index.ts"].includes(spec.text))
+          || (path !== "src/index.ts" && ["@nooq/plugins/dom", "@nooq/design", "./index.ts"].includes(spec.text))
           || (path === "src/plugin.stories.ts" && (["./dom.ts", "storybook/test", "@nooq/editor/testing"].includes(spec.text) || (spec.text === "@storybook/html-vite" && typeOnly))));
         if (!allowed) errors.push(`Import is outside the ${path} capability allowlist`);
       }
@@ -45,6 +61,14 @@ export function checkSourcePolicy(source: string, path: CandidatePath = "src/ind
     if (ts.isImportTypeNode(node)) errors.push("Import type expressions are unsupported; use an explicit type-only import");
     if (ts.isPropertyAccessExpression(node) && ["innerHTML", "outerHTML", "defaultView", "ownerDocument"].includes(node.name.text)) errors.push(`Unsupported DOM escape: ${node.name.text}`);
     if (ts.isIdentifier(node) && forbidden.has(node.text)) errors.push(`Unsupported global: ${node.text}`);
+    // The block's look comes from the host theme: a view that sets styles or
+    // colors directly breaks token theming and the conformance contract.
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && touchesStyle(node.left))
+      errors.push("Inline style assignment: style the view with blockContainer and theme classes, never Element.style");
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "setProperty" && touchesStyle(node.expression))
+      errors.push("Inline style assignment: style the view with blockContainer and theme classes, never Element.style.setProperty");
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) && HEX_COLOR.test(node.text))
+      errors.push(`Hex color literal ${JSON.stringify(node.text.match(HEX_COLOR)![0])}: colors come from the host theme, not the candidate`);
     ts.forEachChild(node, visit);
   };
   visit(file);
@@ -171,7 +195,7 @@ export async function validatePackage(sources: Sources, brief: Brief, options: {
     await mkdir(join(scratch, "src"));
     for (const path of candidatePaths) await writeFile(join(scratch, path), sources[path]);
     const paths: Record<string, string[]> = {};
-    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@nooq/editor/testing", "@storybook/html-vite", "storybook/test"]) {
+    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@nooq/design", "@nooq/editor/testing", "@storybook/html-vite", "storybook/test"]) {
       paths[name] = [import.meta.resolve(name).replace(/^file:\/\//, "").replace(/\.js$/, ".d.ts")];
       // Workspace exports are TypeScript sources already.
     }

@@ -82,6 +82,13 @@ export const Loader: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     const logo = canvasElement.querySelector<SVGSVGElement>(".nq-logo")!;
     await userEvent.click(canvas.getByRole("button", { name: "Play" }));
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      // The story suite runs with reduced motion; the brand contract then is
+      // the wordmark at rest and nothing moving (§Motion). The choreography
+      // itself is covered by logo.test.ts and the Frame story.
+      await expect(logo.dataset.phase).toBe("rest");
+      return;
+    }
     await expect(logo.dataset.phase).not.toBe("rest");
     await waitFor(() => expect(logo.dataset.phase).toBe("travel"), { timeout: 2000 });
     await waitFor(() => expect(logo.dataset.phase).toBe("rest"), { timeout: 2000 });

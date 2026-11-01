@@ -27,7 +27,12 @@ export default defineConfig({
         browser: {
           enabled: true,
           headless: true,
-          provider: playwright({}),
+          provider: playwright({
+            // Stories assert the resting state directly after mount: run with
+            // reduced motion so entrance animations (the 80ms fade) never race
+            // a play function. Real hosts see the fade (§3).
+            contextOptions: { reducedMotion: "reduce" },
+          }),
           instances: [{ browser: "chromium" as const }],
         },
       },

@@ -5,6 +5,9 @@ import { defineAction, type Action, type ActionToolbar, type BlockActions, type 
 import { defineTextPolicy, type TextMode, type TextMark, type TextPolicy } from "./text-policy.ts";
 export * from "./actions.ts";
 export * from "./text-policy.ts";
+// The DOM block frame, re-exported for plugin authors: a view styles itself
+// through these components and the host theme, never inline (§7).
+export { blockContainer, setBlockContainerTone, type BlockContainerProps, type ContainerTone } from "@nooq/design";
 import type { DocumentTextSelection } from "./selection.ts";
 export type { DocumentTextSelection, TextPoint, TextRangeSegment } from "./selection.ts";
 /** A local selection. Structural joins require compatible blocks; edits commit atomically. */

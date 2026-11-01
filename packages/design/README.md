@@ -3,7 +3,8 @@
 The nooq design system: tokens, the reference theme, and framework-agnostic DOM
 components for the writing surface and the protocol-visible UI (provenance,
 AI proposals, sync). The brand book is [`docs/brand-book.md`](docs/brand-book.md);
-the spec-to-UI map is [`docs/protocol-surfaces.md`](docs/protocol-surfaces.md).
+the spec-to-UI map is [`docs/protocol-surfaces.md`](docs/protocol-surfaces.md);
+what's left for a complete foundation is [`docs/foundation.md`](docs/foundation.md).
 
 ## Use it
 
