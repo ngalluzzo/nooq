@@ -43,7 +43,7 @@ import { replaceChanges } from "@nooq/core";
 import { MaintainedProjection } from "@nooq/yjs";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, textAuthors, type Captured } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
-import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
+import { SyncSession, type AwarenessEntry, type Cursor, type SyncTransport } from "@nooq/sync";
 import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
@@ -158,6 +158,9 @@ export class Editor {
   private burst: Burst | undefined;
   /** SW-4: envelopes leave in commit order, though their signatures finish in any order. */
   private shipping: Promise<void> = Promise.resolve();
+  /** SW-7: the writer's latest cursor; pending while it sits in a burst peers have not received. */
+  private cursor: Cursor = null;
+  private cursorPending = false;
 
   readonly commands = {
     batch: <Args>(command: Command<Args> | string, inputs: readonly Args[]): CommandResult => this.runtime.runBatch(command, inputs),
@@ -395,9 +398,11 @@ export class Editor {
     clearTimeout(burst.idle); clearTimeout(burst.max);
     const tx: Transaction = { ...burst.first, lamport: burst.lamport, ops: [{ op: "textEdit", block: burst.block, changes: burst.changes }] };
     this.record(tx);
-    if (burst.updates.length === 0 || burst.client === undefined) return; // the burst changed nothing
-    const update = burst.updates.length === 1 ? burst.updates[0]! : Y.mergeUpdates(burst.updates);
-    void this.ship({ tx, update, key: burst.signingKey, signer: burst.signer, client: burst.client });
+    if (burst.updates.length > 0 && burst.client !== undefined) { // a burst that changed nothing has nothing to replicate
+      const update = burst.updates.length === 1 ? burst.updates[0]! : Y.mergeUpdates(burst.updates);
+      void this.ship({ tx, update, key: burst.signingKey, signer: burst.signer, client: burst.client });
+    }
+    if (this.cursorPending) this.announce();
   }
 
   /** DM-14.4: what happened here and what peers did, as transactions. Not replicated state. */
@@ -623,9 +628,20 @@ export class Editor {
 
   // ---- awareness (SW-7) ----
 
-  setCursor(cursor: { block: BlockId; offset: number } | null): void {
-    if (this.burst && (cursor === null || cursor.block !== this.burst.block || cursor.offset !== this.burst.caret)) this.flush(); // a selection change seals
-    this.session?.setCursor(cursor);
+  setCursor(cursor: Cursor): void {
+    if (this.burst && (cursor === null || cursor.anchor || cursor.block !== this.burst.block || cursor.offset !== this.burst.caret)) this.flush(); // a selection change seals
+    this.cursor = cursor;
+    // Mid-burst the caret sits in text peers have not received: it goes out when the burst seals.
+    if (this.burst) this.cursorPending = true; else this.announce();
+  }
+
+  /**
+   * Leaves behind every update already shipping. Peers that verify updates
+   * asynchronously can still see it first; presence clamps until the text lands.
+   */
+  private announce(): void {
+    this.cursorPending = false;
+    this.shipping = this.shipping.then(() => { if (!this.closed) this.session?.setCursor(this.cursor); });
   }
 
   /** SW-3: re-run the handshake over a new transport; unconfirmed envelopes resend (SW-4). */

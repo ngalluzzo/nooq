@@ -50,5 +50,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # A pull request checks out GitHub's synthetic merge commit by
+          # default, which no contributor writes or signs: walk its head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Every commit carries a Signed-off-by trailer (GOVERNANCE)
         run: sh scripts/check-dco.sh

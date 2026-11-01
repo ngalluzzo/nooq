@@ -22,6 +22,8 @@ export const BACKEND = "yjs/1";
 export interface CursorAnchor {
   block: string;
   offset: number;
+  /** The selection's fixed end when it is not collapsed; `block`/`offset` is the caret, so receivers that ignore this still place it. */
+  anchor?: { block: string; offset: number };
 }
 
 export type Cursor = CursorAnchor | null;
