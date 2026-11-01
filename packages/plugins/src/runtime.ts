@@ -6,7 +6,10 @@ import { PluginRegistry } from "./registry.ts";
 import { Scope } from "./scope.ts";
 
 export interface RuntimeHost {
+  /** The shared, frozen, read-only projection (cached by revision). */
   read(): DocState;
+  /** A FRESH projection the caller may mutate or freeze (EB-6: ~30ms at 2,000 blocks — rationed). */
+  readFresh(): DocState;
   actor: ActorDescriptor;
   commit(prepared: Extract<PreparedCommand, { status: "ready" }>, actor: ActorDescriptor): CommandResult;
   jobActor(id: string): ActorDescriptor | undefined;
@@ -55,17 +58,19 @@ export class PluginRuntime {
     this.#busy = true;
     try {
       if (!entry) throw new Error(`Unknown command ${id}`);
-      const state = this.host.read(), actor = { ...this.host.actor, plugin: entry.plugin };
-      const result = createCommandPreparerOwned(state, this.host.actor, this.registry)(id, input, options.selection); // runtime state is a throwaway: owned, no clone (EB-6)
+      const actor = { ...this.host.actor, plugin: entry.plugin };
+      // EB-6/ref-large: the preparer's snapshot may be the host's SHARED
+      // read-only projection (already frozen) — a fresh readState at 2,000
+      // blocks costs ~30ms and bought nothing here.
+      const result = createCommandPreparerOwned(this.host.read(), this.host.actor, this.registry)(id, input, options.selection); // shared frozen view: read-only by contract
       if (result.status === "not-applicable") return result;
       // Core-check previews too. Selection is a local request, validated before commit.
-      // EB-6: `state` is host.read()'s THROWAWAY projection, so validation
-      // applies IN PLACE — the pure applyTransaction's whole-document clone
-      // cost ~1.4ms per keystroke here, 10x the edit itself.
+      // Validation mutates, so it gets a fresh throwaway read (EB-6: still no
+      // clone; at 2,000 blocks a readState is ~30ms, so reads are rationed).
       if (options.preview || result.selection) {
         // NOTE: `state` is FROZEN now (the preparer's snapshot) — validation
         // mutates, so it gets its own throwaway read (EB-6: still no clone).
-        const scratch = this.host.read();
+        const scratch = this.host.readFresh();
         validateTransaction(scratch, { id: "preview", actor, lamport: 0, causality: {}, ops: [...result.ops] });
         if (result.selection) {
           const { block, anchor, head } = result.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
@@ -88,8 +93,8 @@ export class PluginRuntime {
       if (!entry) throw new Error(`Unknown command ${id}`);
       if (!Array.isArray(inputs)) throw new Error("Batch arguments must be an array");
       if (!inputs.length) return { status: "not-applicable" };
-      const state = this.host.read(), actor = { ...this.host.actor, plugin: entry.plugin };
-      const prepare = createCommandPreparerOwned(state, this.host.actor, this.registry);
+      const actor = { ...this.host.actor, plugin: entry.plugin };
+      const prepare = createCommandPreparerOwned(this.host.read(), this.host.actor, this.registry);
       const combined: Extract<PreparedCommand, { status: "ready" }> = { status: "ready", intent: `batch:${id}`, ops: [] };
       const ops: import("@nooq/core").Op[] = [];
       for (const args of freezeSnapshot(inputs)) {

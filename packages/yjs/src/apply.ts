@@ -33,11 +33,14 @@ export function newDocument(docId: string, schemaVersion = 1): Y.Doc {
 }
 
 /** Apply a nooq transaction to a Y.Doc. Durable intent is logged with the ops (DM-4). */
-export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown): void {
+export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown, base?: import("@nooq/core").DocState): void {
   // Atomicity (DM-12): validate the WHOLE transaction against the
   // sequential engine over the current projection before any Yjs
   // mutation — a failing op never leaves its siblings applied.
-  validateTransaction(readState(doc), tx); // throwaway projection: no defensive clone (EB-6)
+  // `base` (EB-6/ref-large): a caller-supplied FRESH projection at the
+  // doc's current revision — validation mutates it, which is exactly the
+  // throwaway contract; saves a ~30ms readState at 2,000 blocks.
+  validateTransaction(base ?? readState(doc), tx);
   doc.transact(() => {
     tx.ops.forEach((op, index) => {
       try {

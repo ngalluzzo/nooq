@@ -132,7 +132,8 @@ export class Editor {
     for (const { definition } of this.registry.jobs) if (definition.publishes && !this.identities.has(`job:${definition.id}`)) throw new Error(`Publishing job ${definition.id} needs a host binding`);
     this.ydoc = newDocument(options.docId);
     this.runtime = new PluginRuntime(this.registry, {
-      read: () => readState(this.ydoc), // FRESH: the preparer freezes it, validation mutates it (EB-6)
+      read: () => this.view, // shared frozen projection: preparer consumes it read-only (EB-6/ref-large)
+      readFresh: () => readState(this.ydoc), // mutable: validation scratch (EB-6)
       actor: this.localActor(),
       commit: (prepared, actor) => this.commitCommand(prepared, actor),
       jobActor: id => this.identities.get(`job:${id}`)?.actor,
