@@ -1,7 +1,7 @@
 # Proposal 0006: selections in awareness
 
-**Status: DRAFT — not yet opened. Drafted: 2026-11-01. Decision of record:
-none yet.** Covers SYNC Draft 3.3 (SW-7). No DOCUMENT-MODEL change: DM-8
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Opened: 2026-11-01. Decision of record: issue #6.** Covers SYNC Draft 3.3 (SW-7). No DOCUMENT-MODEL change: DM-8
 already names selection as awareness. The spec text lands with this
 proposal; maintainers ratify or amend in the comment period.
 
