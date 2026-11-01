@@ -167,6 +167,12 @@ any tool-calling loop.
 - Streaming suggestions (P-7.4).
 - Transports: browser exposure through WebMCP, and an MCP server for
   headless peers. Each is a separate proposal that wraps this tool list.
+- Hosting agents through the Agent Client Protocol (ACP). There the
+  editor drives the agent, the reverse of this contract, and stable ACP
+  runs the agent as a local subprocess, which a browser host can't do. A
+  host that adopts it passes this tool list as an MCP server in
+  `session/new` and offers no file-write capability, so `nooq_propose`
+  stays the agent's only way to change the document.
 
 ## Tests that will gate this
 
