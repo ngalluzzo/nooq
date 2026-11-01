@@ -135,6 +135,21 @@ const lab = {
     return null;
   },
   blockIds: () => Array.from(surface.element.querySelectorAll("[data-nq-block]")).map((row) => row.getAttribute("data-nq-block")!),
+  /** EB-6 observability: per-keystroke phase marks through the real pipeline. */
+  phaseArm: () => {
+    if ((globalThis as { __phased?: boolean }).__phased) return;
+    (globalThis as { __phased?: boolean }).__phased = true;
+    document.addEventListener("keydown", () => { (globalThis as { __pm?: Record<string, number> }).__pm = { keydown: performance.now() }; }, true);
+    document.addEventListener("input", () => { const pm = (globalThis as { __pm?: Record<string, number> }).__pm; if (pm) pm.input = performance.now(); }, true);
+    editor.onEvents(() => { const pm = (globalThis as { __pm?: Record<string, number> }).__pm; if (pm) pm.tx = performance.now(); });
+    editor.onChange(() => {
+      const pm = (globalThis as { __pm?: Record<string, number> }).__pm; if (!pm) return;
+      pm.change = performance.now();
+      queueMicrotask(() => { pm.rendered = performance.now(); });
+      requestAnimationFrame(() => { pm.frame = performance.now(); (globalThis as { __phases?: Record<string, number>[] }).__phases = [...((globalThis as { __phases?: Record<string, number>[] }).__phases ?? []), pm]; });
+    });
+  },
+  phaseCollect: () => ((globalThis as { __phases?: Record<string, number>[] }).__phases ?? []).splice(0),
   /** EB-7 observability: the surface's remote-render and pin counters. */
   stats: () => ({ statsVersion: 3, remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift, lastAnchorRect: (surface as any).lastAnchorRect, lastViewportTop: (surface as any).lastViewportTop }),
   /** Where focus and selection are, and where a given block sits on screen. */

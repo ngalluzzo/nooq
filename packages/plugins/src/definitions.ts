@@ -11,6 +11,8 @@ export interface BlockDefinition {
   type: string;
   label: string;
   text: "inline" | "none";
+  /** Opt into lossless joins of adjacent same-type leaf siblings with equal fields. */
+  textMerge?: "same-type";
   create(): { fields: Record<string, JsonValue>; text?: RenderedText };
   diagnose(block: Immutable<Block>): readonly Diagnostic[];
 }
@@ -21,6 +23,9 @@ export interface CommandContext {
   parentOf(id: string): string | null | undefined;
   createBlock(type: string): Block;
   selection?: SelectionRequest;
+  blockDefinition(type: string): Readonly<BlockDefinition> | undefined;
+  /** Resolve and prepare a selected command in this snapshot; never commits. */
+  prepare<Args>(command: Command<Args> | string, args: Args): PreparedCommand;
 }
 export interface SelectionRequest { block: string; anchor: number; head: number }
 export type PreparedCommand = { status: "not-applicable" } | {
@@ -79,6 +84,7 @@ export function defineBlock<T extends BlockDefinition>(definition: T): Readonly<
   if (!["inline", "none"].includes(definition.text) || typeof definition.create !== "function" || typeof definition.diagnose !== "function") {
     throw new Error("Invalid block definition");
   }
+  if (definition.textMerge !== undefined && (definition.textMerge !== "same-type" || definition.text !== "inline")) throw new Error("Invalid text merge policy");
   return Object.freeze({ ...definition });
 }
 export function defineCommand<Args>(definition: Command<Args>): Readonly<Command<Args>> {
@@ -104,36 +110,89 @@ export function definePlugin<T extends Plugin>(definition: T): DefinedPlugin<T> 
 
 export function freezeSnapshot<T>(value: T): Immutable<T> {
   const copy = structuredClone(value);
+  return freezeInPlace(copy);
+}
+
+/**
+ * Freeze a THROWAWAY graph in place — no clone (EB-6). The command
+ * preparer's whole-state snapshot cost ~1.75ms per keystroke in
+ * structuredClone; every one of its call sites passes a fresh readState
+ * projection nobody else holds, so cloning before freezing bought nothing.
+ * For caller-owned values, keep freezeSnapshot.
+ */
+export function freezeInPlace<T>(value: T): Immutable<T> {
   function freeze(item: unknown): void {
     if (item && typeof item === "object" && !Object.isFrozen(item)) {
       Object.freeze(item);
       for (const child of Object.values(item)) freeze(child);
     }
   }
-  freeze(copy);
-  return copy as Immutable<T>;
+  freeze(value);
+  return value as Immutable<T>;
 }
 
-/** Preparation only. The host must authorize, allocate a transaction, and commit atomically. */
+/**
+ * Shared synchronous preparation engine. Resolution belongs to the host
+ * registry. @internal The OWNED variant freezes `state` IN PLACE (EB-6):
+ * the runtime's hot path passes a throwaway projection; freezing it saved
+ * the structuredClone that cost ~1.75ms per keystroke. Public callers use
+ * createCommandPreparer, which clones first — they may keep mutating their
+ * own state after building a preparer (tested).
+ */
+export function createCommandPreparerOwned(state: DocState, actor: ActorDescriptor, resolve: {
+  command(id: string): { plugin: string; definition: Command<any> } | undefined;
+  block(type: string): { definition: BlockDefinition } | undefined;
+}) {
+  const snapshot = freezeInPlace(state), tree = liveTree(state), stack = new Set<string>();
+  function prepare<Args>(reference: Command<Args> | string, input: Args, selection?: SelectionRequest): PreparedCommand {
+    const id = typeof reference === "string" ? reference : reference.id, entry = resolve.command(id);
+    if (!entry) throw new Error(`Unknown command: ${id}`);
+    if (stack.has(id) || stack.size >= 32) throw new Error("Recursive command preparation is forbidden");
+    const args = freezeSnapshot(input);
+    if (entry.definition.validateArgs(args) !== true) throw new Error(`Invalid arguments: ${id}`);
+    const identity = freezeSnapshot({ ...actor, plugin: entry.plugin });
+    let active = true;
+    stack.add(id);
+    try {
+      const result = entry.definition.prepare(Object.freeze({ snapshot, actor: identity,
+        isAlive: (id: string) => tree.alive.has(id), parentOf: (id: string) => tree.parentOf.get(id),
+        blockDefinition: (type: string) => resolve.block(type)?.definition,
+        createBlock(type: string) {
+          const definition = resolve.block(type)?.definition;
+          if (!definition) throw new Error(`Unknown block type: ${type}`);
+          const defaults = definition.create();
+          return makeBlock({ type, fields: defaults.fields, ...(defaults.text ? { text: defaults.text } : {}) }, actor.actorId);
+        },
+        prepare<ChildArgs>(command: Command<ChildArgs> | string, childArgs: ChildArgs) {
+          if (!active) throw new Error("Command preparation context has expired");
+          return prepare(command, childArgs);
+        },
+        ...(selection ? { selection: freezeSnapshot(selection) } : {}),
+      }), args);
+      if (!result || (result as any).then || !["ready", "not-applicable"].includes(result.status)) throw new Error("Command must return a synchronous result");
+      if (result.status === "not-applicable") return { status: "not-applicable" };
+      if (typeof result.intent !== "string" || !result.intent || !Array.isArray(result.ops)) throw new Error("Invalid prepared command");
+      if (!result.ops.length) return { status: "not-applicable" };
+      for (const op of result.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text)) throw new Error("Insert attribution must belong to the active actor");
+      return structuredClone(result);
+    } finally { active = false; stack.delete(id); }
+  }
+  return prepare;
+}
+
+
+/** Public API: clones `state` so the caller keeps a mutable original. */
+export function createCommandPreparer(state: DocState, actor: ActorDescriptor, resolve: {
+  command(id: string): { plugin: string; definition: Command<any> } | undefined;
+  block(type: string): { definition: BlockDefinition } | undefined;
+}) {
+  return createCommandPreparerOwned(structuredClone(state) as DocState, actor, resolve);
+}
+
+/** Preparation only, with contributions from this plugin. The host must authorize and commit. */
 export function prepareCommand(plugin: Plugin, id: string, state: DocState, actor: ActorDescriptor, input: unknown): PreparedCommand {
-  const command = plugin.contributes.commands?.find(c => c.id === id);
-  if (!command) throw new Error(`Unknown command: ${id}`);
-  const args = freezeSnapshot(input);
-  if (command.validateArgs(args) !== true) throw new Error(`Invalid arguments: ${id}`);
-  const { alive, parentOf } = liveTree(state);
-  const result = command.prepare({
-    snapshot: freezeSnapshot(state),
-    actor: freezeSnapshot({ ...actor, plugin: plugin.id }),
-    isAlive: id => alive.has(id),
-    parentOf: id => parentOf.get(id),
-    createBlock(type) {
-      const definition = plugin.contributes.blocks?.find(b => b.type === type);
-      if (!definition) throw new Error(`Unknown block type: ${type}`);
-      const defaults = definition.create();
-      return makeBlock({ type, fields: defaults.fields, text: defaults.text }, actor.actorId);
-    },
-  }, args);
-  if (!result || (result.status !== "ready" && result.status !== "not-applicable")) throw new Error("Command must return a synchronous result");
-  if (result.status === "ready" && (!result.intent || !Array.isArray(result.ops))) throw new Error("Invalid prepared command");
-  return structuredClone(result);
+  return createCommandPreparer(state, actor, {
+    command: id => { const definition = plugin.contributes.commands?.find(c => c.id === id); return definition ? { plugin: plugin.id, definition } : undefined; },
+    block: type => { const definition = plugin.contributes.blocks?.find(b => b.type === type); return definition ? { definition } : undefined; },
+  })(id, input);
 }

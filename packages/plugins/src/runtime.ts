@@ -1,6 +1,6 @@
-import { applyTransaction, canonicalJson, liveTree, makeBlock } from "@nooq/core";
+import { applyTransaction, canonicalJson, liveTree, makeBlock, validateTransaction } from "@nooq/core";
 import type { ActorDescriptor, DocState, JsonValue, Transaction } from "@nooq/core";
-import { freezeSnapshot, type ChangeEvent, type Command, type CommandResult, type Diagnostic, type Immutable, type PluginError, type PreparedCommand, type SelectionRequest } from "./definitions.ts";
+import { createCommandPreparerOwned, freezeSnapshot, type ChangeEvent, type Command, type CommandResult, type Diagnostic, type Immutable, type PluginError, type PreparedCommand, type SelectionRequest } from "./definitions.ts";
 import { ProposalCapture, UnsupportedEvidenceError, type Job, type JobHandle, type PublicationResult } from "./jobs.ts";
 import { PluginRegistry } from "./registry.ts";
 import { Scope } from "./scope.ts";
@@ -55,25 +55,21 @@ export class PluginRuntime {
     this.#busy = true;
     try {
       if (!entry) throw new Error(`Unknown command ${id}`);
-      const args = freezeSnapshot(input);
-      if (entry.definition.validateArgs(args) !== true) throw new Error(`Invalid arguments: ${id}`);
-      const state = this.host.read(), tree = liveTree(state), actor = { ...this.host.actor, plugin: entry.plugin };
-      const prepared = entry.definition.prepare({ snapshot: freezeSnapshot(state), actor: freezeSnapshot(actor),
-        isAlive: id => tree.alive.has(id), parentOf: id => tree.parentOf.get(id), createBlock: type => this.createBlock(type, actor),
-        ...(options.selection ? { selection: freezeSnapshot(options.selection) } : {}),
-      }, args);
-      if (!prepared || (prepared as any).then || !["ready", "not-applicable"].includes(prepared.status)) throw new Error("Command must return a synchronous result");
-      if (prepared.status === "not-applicable") return { status: "not-applicable" };
-      if (typeof prepared.intent !== "string" || !prepared.intent || !Array.isArray(prepared.ops)) throw new Error("Invalid prepared command");
-      if (!prepared.ops.length) return { status: "not-applicable" };
-      for (const op of prepared.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text)) throw new Error("Insert attribution must belong to the active actor");
-      const result = structuredClone(prepared);
+      const state = this.host.read(), actor = { ...this.host.actor, plugin: entry.plugin };
+      const result = createCommandPreparerOwned(state, this.host.actor, this.registry)(id, input, options.selection); // runtime state is a throwaway: owned, no clone (EB-6)
+      if (result.status === "not-applicable") return result;
       // Core-check previews too. Selection is a local request, validated before commit.
+      // EB-6: `state` is host.read()'s THROWAWAY projection, so validation
+      // applies IN PLACE — the pure applyTransaction's whole-document clone
+      // cost ~1.4ms per keystroke here, 10x the edit itself.
       if (options.preview || result.selection) {
-        const next = applyTransaction(state, { id: "preview", actor, lamport: 0, causality: {}, ops: [...result.ops] });
+        // NOTE: `state` is FROZEN now (the preparer's snapshot) — validation
+        // mutates, so it gets its own throwaway read (EB-6: still no clone).
+        const scratch = this.host.read();
+        validateTransaction(scratch, { id: "preview", actor, lamport: 0, causality: {}, ops: [...result.ops] });
         if (result.selection) {
-          const { block, anchor, head } = result.selection, length = next.blocks[block]?.text?.s.length ?? 0;
-          if (!liveTree(next).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+          const { block, anchor, head } = result.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
+          if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
         }
       }
       return options.preview ? result : this.host.commit(result, actor);
@@ -92,28 +88,24 @@ export class PluginRuntime {
       if (!entry) throw new Error(`Unknown command ${id}`);
       if (!Array.isArray(inputs)) throw new Error("Batch arguments must be an array");
       if (!inputs.length) return { status: "not-applicable" };
-      const state = this.host.read(), tree = liveTree(state), actor = { ...this.host.actor, plugin: entry.plugin };
-      const context = Object.freeze({ snapshot: freezeSnapshot(state), actor: freezeSnapshot(actor),
-        isAlive: (id: string) => tree.alive.has(id), parentOf: (id: string) => tree.parentOf.get(id), createBlock: (type: string) => this.createBlock(type, actor) });
+      const state = this.host.read(), actor = { ...this.host.actor, plugin: entry.plugin };
+      const prepare = createCommandPreparerOwned(state, this.host.actor, this.registry);
       const combined: Extract<PreparedCommand, { status: "ready" }> = { status: "ready", intent: `batch:${id}`, ops: [] };
       const ops: import("@nooq/core").Op[] = [];
       for (const args of freezeSnapshot(inputs)) {
-        if (entry.definition.validateArgs(args) !== true) throw new Error(`Invalid arguments: ${id}`);
-        const prepared = entry.definition.prepare(context, args);
-        if (!prepared || (prepared as any).then || !["ready", "not-applicable"].includes(prepared.status)) throw new Error("Command must return a synchronous result");
-        if (prepared.status === "not-applicable") return { status: "not-applicable" };
-        if (typeof prepared.intent !== "string" || !prepared.intent || !Array.isArray(prepared.ops)) throw new Error("Invalid prepared command");
-        if (!prepared.ops.length) return { status: "not-applicable" };
-        for (const op of prepared.ops) if (op.op === "insert" && (op.block.attribution.created.actor !== actor.actorId || Object.keys(op.block.attribution.fields).length || op.block.attribution.text)) throw new Error("Insert attribution must belong to the active actor");
-        ops.push(...structuredClone(prepared.ops));
-        if (prepared.selection) combined.selection = structuredClone(prepared.selection);
+        const prepared = prepare(id, args);
+        if (prepared.status === "not-applicable") return prepared;
+        ops.push(...prepared.ops);
+        if (prepared.selection) combined.selection = prepared.selection;
       }
       combined.ops = ops;
       // Validate the complete batch and its selection before the authorization boundary.
-      const next = applyTransaction(state, { id: "batch-preview", actor, lamport: 0, causality: {}, ops });
+      // EB-6: in place on a fresh throwaway — `state` is frozen as the snapshot.
+      const scratch = this.host.read();
+      validateTransaction(scratch, { id: "batch-preview", actor, lamport: 0, causality: {}, ops });
       if (combined.selection) {
-        const { block, anchor, head } = combined.selection, length = next.blocks[block]?.text?.s.length ?? 0;
-        if (!liveTree(next).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+        const { block, anchor, head } = combined.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
+        if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
       }
       return this.host.commit(combined, actor);
     } catch (error) {

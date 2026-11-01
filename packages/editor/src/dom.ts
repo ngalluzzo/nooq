@@ -1,6 +1,6 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
-import { freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
+import { freezeInPlace, freezeSnapshot, type Immutable, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
@@ -103,7 +103,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
   const snapshot = () => {
-    if (snapshotCache?.revision !== editor.revision) snapshotCache = { revision: editor.revision, value: freezeSnapshot(renderState ?? editor.view) };
+    // renderState is a fresh throwaway per render (EB-6): freeze in place —
+    // the clone cost ~1.4ms per keystroke in the render microtask.
+    if (snapshotCache?.revision !== editor.revision) snapshotCache = { revision: editor.revision, value: freezeInPlace(renderState ?? editor.view) };
     return snapshotCache.value;
   };
   const selection = (id: string): SelectionRequest => {
