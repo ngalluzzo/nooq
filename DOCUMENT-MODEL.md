@@ -542,9 +542,15 @@ measurements behind every rule here.)*
 - **DM-14.3 Transactions are actions.** Text input within one block
   coalesces into one transaction per burst. The local document applies
   every keystroke immediately (EB-6); the burst's transaction, update and
-  envelope seal when input pauses, at a word boundary or selection change,
-  when another action starts, or at a maximum duration. Parameters are
-  proposed in proposals/0005. Remote peers see a burst when it seals.
+  envelope seal when input pauses, at a word boundary or selection change
+  (a keystroke away from the caret is one), when another action starts,
+  when a peer changes the block, or at a maximum duration. The last keeps
+  the burst's transaction a description of the text it was typed against.
+  Parameters are proposed in proposals/0005. Remote peers see a burst when
+  it seals. Coalescing is required where envelopes are, in secured
+  documents; an open document's peer MAY ship and record each keystroke.
+  *(Draft 1.9: peer edits seal, the caret-jump reading of selection
+  change, and the secured scope.)*
 - **DM-14.4 The history store.** An append-only sequence of transactions,
   outside replicated state. In secured documents it is the envelope log:
   each envelope carries its `tx`, so intent, verification and audit are one

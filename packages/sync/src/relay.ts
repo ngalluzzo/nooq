@@ -104,22 +104,25 @@ export class NooqRelay {
     return "deny";
   }
 
-  /** Re-evaluate held envelopes after any admission (grants may have arrived). */
+  /** Re-evaluate held envelopes after any admission (grants or predecessors may have arrived), until none admits. */
   private async releaseHeld(docId: string, server: SyncTransport): Promise<void> {
-    const queue = this.held.get(docId);
-    if (!queue || queue.length === 0) return;
-    const remaining: HeldEnvelope[] = [];
-    for (const item of queue) {
-      const verdict = await this.verifyAndAdmit(docId, item.envelope, item.update, item.raw);
-      if (verdict === "allow") {
-        for (const peer of this.connections.get(docId)!) {
-          if (peer !== server) peer.send(item.raw); // released: relay like any update
-        }
-      } else if (verdict === "hold") {
-        remaining.push(item);
-      } // deny: dropped for good; duplicate: already relayed once
+    for (let progress = true; progress;) {
+      progress = false;
+      const queue = this.held.get(docId) ?? [];
+      const remaining: HeldEnvelope[] = [];
+      for (const item of queue) {
+        const verdict = await this.verifyAndAdmit(docId, item.envelope, item.update, item.raw);
+        if (verdict === "allow") {
+          progress = true;
+          for (const peer of this.connections.get(docId)!) {
+            if (peer !== server) peer.send(item.raw); // released: relay like any update
+          }
+        } else if (verdict === "hold") {
+          remaining.push(item);
+        } // deny: dropped for good; duplicate: already relayed once
+      }
+      this.held.set(docId, remaining);
     }
-    this.held.set(docId, remaining);
   }
 
   private async handle(docId: string, server: SyncTransport, raw: string): Promise<void> {

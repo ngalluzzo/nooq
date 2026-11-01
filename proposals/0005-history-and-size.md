@@ -127,4 +127,13 @@ Recorded as the slices land, each with the spec section it changed.
   reference random workload (raw Yjs 10.3); typing 1.2 B per keystroke
   (was 269); a secured keystroke's update 20 B (was 284). Envelopes stay
   ~500 B each until bursts land.
+- **Bursts (DM-14.3, Draft 1.9).** A peer's edit to the block seals the burst,
+  so its transaction describes the text it was typed against; a keystroke
+  away from the caret counts as a selection change; coalescing is required
+  in secured documents and optional in open ones. Measured on typed prose:
+  envelopes per character 1.00 → 0.20.
+- **Held envelopes release in chains (SW-6, SYNC Draft 3.2).** Out-of-order
+  arrival left envelopes held forever in the reference relay, which retried
+  once per admission; it now retries until none admits, and the editor
+  sends envelopes in commit order.
 

@@ -38,6 +38,7 @@ export {
 export {
   applyTextChanges,
   caretAfterChanges,
+  composeTextChanges,
   replaceChanges,
   TextChangeError,
   type TextChange,

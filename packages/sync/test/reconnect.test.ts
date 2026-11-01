@@ -169,6 +169,27 @@ function scriptedPeer(reply: (hello: Extract<WireMessage, { t: "hello" }>) => Wi
   };
 }
 
+describe("held envelopes release in chains (SW-6)", () => {
+  test("envelopes that arrive in reverse order are all admitted and logged", async () => {
+    const relay = new NooqRelay();
+    const { owner, docId, doc, genesis } = await securedDoc();
+    const block = makeBlock({ type: "nooq.paragraph/v1", text: rt("") }, "human:owner");
+    const steps = [
+      await edit(doc, owner, [{ op: "insert", block, parent: null }]),
+      await edit(doc, owner, [{ op: "textEdit", block: block.id, changes: [{ insert: "a" }] }]),
+      await edit(doc, owner, [{ op: "textEdit", block: block.id, changes: [{ retain: 1 }, { insert: "b" }] }]),
+      await edit(doc, owner, [{ op: "textEdit", block: block.id, changes: [{ retain: 2 }, { insert: "c" }] }]),
+    ];
+    const sender = relay.connect(docId);
+    for (const step of [genesis, ...steps.slice(1).reverse(), steps[0]!]) {
+      sender.send(encodeMessage({ v: 1, t: "update", doc: docId, update: toBase64(step.update), envelope: step.envelope }));
+    }
+    await settled(20);
+    expect(relay.envelopesOf(docId)).toHaveLength(5); // one release unblocks the next
+    expect(readState(relay.stored(docId)!).blocks[block.id]!.text!.s).toBe("abc");
+  });
+});
+
 describe("secured bootstrap verifies before it applies (SW-3, Draft 3.1)", () => {
   test("a delta carrying state its envelope log does not attest is discarded", async () => {
     const { owner, docId, doc, genesis } = await securedDoc();

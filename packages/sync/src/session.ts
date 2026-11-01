@@ -259,16 +259,22 @@ export class SyncSession {
     Y.applyUpdate(this.options.doc, update, REMOTE_ORIGIN);
   }
 
+  /** Retry held envelopes until none admits: one release can unblock the next. */
   private async retryPending(): Promise<void> {
-    if (this.pending.length === 0) return;
-    const remaining: Array<{ envelope: Envelope; update: Uint8Array }> = [];
-    for (const item of this.pending) {
-      const admission = await admitEnvelope(this.options.doc, item.envelope, item.update);
-      if (admission.verdict === "hold") remaining.push(item);
-      else if (admission.verdict === "allow") this.options.onEnvelope?.(item.envelope, item.update);
+    for (let progress = true; progress && this.pending.length > 0;) {
+      progress = false;
+      const remaining: Array<{ envelope: Envelope; update: Uint8Array }> = [];
+      for (const item of this.pending) {
+        const admission = await admitEnvelope(this.options.doc, item.envelope, item.update);
+        if (admission.verdict === "hold") remaining.push(item);
+        else if (admission.verdict === "allow") {
+          progress = true;
+          this.options.onEnvelope?.(item.envelope, item.update);
+        }
+      }
+      this.pending.length = 0;
+      this.pending.push(...remaining);
     }
-    this.pending.length = 0;
-    this.pending.push(...remaining);
   }
 
   private async bootstrap(message: Extract<WireMessage, { t: "hello-reply" }>): Promise<void> {

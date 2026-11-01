@@ -16,6 +16,7 @@ import {
   StaleSuggestionError,
   authorizeLocal,
   canonicalJson,
+  composeTextChanges,
   isGenesisFor,
   isSecuredDocId,
   toBase64,
@@ -64,6 +65,47 @@ export interface EditorOptions {
   key?: import("@nooq/core").ActorKey;
   /** The simulated model plugin's key (a suggester, DM-13). */
   aiKey?: import("@nooq/core").ActorKey;
+  /**
+   * DM-14.3: signed typing coalesces into one transaction, update and
+   * envelope per burst. A burst seals after `idleMs` without input (300),
+   * after `maxMs` (1000), at a word boundary, when the caret jumps, on any
+   * other action, or when a peer changes the block. `false` ships every
+   * keystroke on its own.
+   */
+  burst?: { idleMs?: number; maxMs?: number } | false;
+}
+
+/** Keystrokes coalescing into one sealed transaction (DM-14.3). */
+interface Burst {
+  key: string;
+  block: BlockId;
+  first: Transaction;
+  lamport: number;
+  changes: TextChange[];
+  updates: Uint8Array[];
+  signer: string;
+  signingKey: import("@nooq/core").ActorKey;
+  client: number | undefined;
+  /** Where the writer's caret sits after the last keystroke. */
+  caret: number;
+  idle?: ReturnType<typeof setTimeout>;
+  max: ReturnType<typeof setTimeout>;
+}
+
+const BOUNDARY = /[\s\p{P}]/u;
+
+/** The edited span of a change list: where it starts in the old text, where it ends there, and the caret after it. */
+function editSpan(changes: readonly TextChange[]): { start: number; oldEnd: number; caret: number } {
+  let start = -1, old = 0, fresh = 0, oldEnd = 0, caret = 0;
+  for (const change of changes) {
+    const plain = "retain" in change && !("setMarks" in change);
+    if (!plain && start < 0) start = old;
+    if ("retain" in change) { old += change.retain; fresh += change.retain; }
+    else if ("delete" in change) old += change.delete;
+    else fresh += change.insert.length;
+    if (!plain) { oldEnd = old; caret = fresh; }
+  }
+  return { start: Math.max(start, 0), oldEnd, caret };
 }
 
 export interface ProposeOptions {
@@ -112,6 +154,9 @@ export class Editor {
   /** DM-14.4: the local history store — transactions committed here or admitted from peers, in arrival order. */
   private readonly historyEntries: Transaction[] = [];
   private readonly recorded = new Set<string>();
+  private burst: Burst | undefined;
+  /** SW-4: envelopes leave in commit order, though their signatures finish in any order. */
+  private shipping: Promise<void> = Promise.resolve();
 
   readonly commands = {
     batch: <Args>(command: Command<Args> | string, inputs: readonly Args[]): CommandResult => this.runtime.runBatch(command, inputs),
@@ -180,6 +225,8 @@ export class Editor {
       this.events.push(freezeSnapshot({ revision: this.revisionValue, origin: transaction.local ? "local" : "remote", blocks: [...changed],
         changes: Object.fromEntries([...changes].map(([id, value]) => [id, { ...value, fields: [...value.fields] }])), roots: rootsChanged, access: accessChanged,
         ...(this.currentTx ? { transaction: this.currentTx } : {}) }));
+      // DM-14.3: a peer's change to the block seals the burst, so its transaction describes the text it was typed against.
+      if (!transaction.local && this.burst && changed.has(this.burst.block)) this.flush();
       changed.clear(); changes.clear(); rootsChanged = accessChanged = false; this.scheduleNotify();
     });
     this.ready = Promise.all([...this.identities.values()].map(async identity => {
@@ -265,6 +312,8 @@ export class Editor {
 
   private applyBound(tx: Transaction, identity: { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }, genesis = false): void {
     if (this.closed || this.applying) throw new Error("Cannot mutate in this phase");
+    const typing = this.typingKey(tx, identity);
+    if (this.burst && !(typing !== undefined && this.continuesBurst(this.burst, typing, tx))) this.flush(); // any other action seals first
     if (!genesis) {
       const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key });
       if (verdict.reason === "invalid-transaction") throw new Error("Invalid transaction");
@@ -278,6 +327,10 @@ export class Editor {
       // proposing AI but signed by the accepting writer (DM-6.3, DM-13).
       const signer = tx.adoptedBy ?? tx.actor.actorId;
       const captured = applyCaptured(this.ydoc, tx, identity.key, signer);
+      if (typing !== undefined) {
+        this.extendBurst(typing, tx, captured, identity.key, signer);
+        return;
+      }
       this.record(tx); // DM-4: durable intent precedes shipping
       if (captured) void this.ship(captured); // a transaction with no effects has nothing to replicate
       return;
@@ -285,6 +338,53 @@ export class Editor {
     applyToDoc(this.ydoc, tx);
     this.record(tx);
     } finally { this.currentTx = undefined; this.applying = false; }
+  }
+
+  /** DM-14.3: signed typing by this identity, keyed by author and block; undefined for anything else. */
+  private typingKey(tx: Transaction, identity: { key?: import("@nooq/core").ActorKey }): string | undefined {
+    const op = tx.ops[0];
+    if (this.options.burst === false || !identity.key || !isSecuredDocId(this.docId)) return undefined;
+    if (tx.intent !== "type" || tx.adoptedBy || tx.ops.length !== 1 || op?.op !== "textEdit") return undefined;
+    return canonicalJson([tx.actor, op.block]);
+  }
+
+  /** The next keystroke continues the burst when it has the same author and block and touches the caret. */
+  private continuesBurst(burst: Burst, key: string, tx: Transaction): boolean {
+    if (burst.key !== key) return false;
+    const span = editSpan((tx.ops[0] as Extract<Op, { op: "textEdit" }>).changes);
+    return span.start <= burst.caret && burst.caret <= span.oldEnd;
+  }
+
+  private extendBurst(key: string, tx: Transaction, captured: Captured | undefined, signingKey: import("@nooq/core").ActorKey, signer: string): void {
+    const op = tx.ops[0] as Extract<Op, { op: "textEdit" }>;
+    const { idleMs = 300, maxMs = 1000 } = this.options.burst || {};
+    let burst = this.burst;
+    if (burst && captured && burst.client !== undefined && burst.client !== captured.client) { this.flush(); burst = undefined; }
+    if (!burst) {
+      burst = this.burst = { key, block: op.block, first: tx, lamport: tx.lamport, changes: [...op.changes], updates: [], signer, signingKey,
+        client: undefined, caret: 0, max: setTimeout(() => this.flush(), maxMs) };
+    } else {
+      burst.changes = composeTextChanges(burst.changes, op.changes);
+      burst.lamport = tx.lamport;
+    }
+    if (captured) { burst.updates.push(captured.update); burst.client = captured.client; }
+    burst.caret = editSpan(op.changes).caret;
+    clearTimeout(burst.idle);
+    burst.idle = setTimeout(() => this.flush(), idleMs);
+    if (op.changes.some(change => "insert" in change && BOUNDARY.test(change.insert))) this.flush(); // a word boundary seals
+  }
+
+  /** DM-14.3: seal the open typing burst now — one transaction, one update, one envelope. */
+  flush(): void {
+    const burst = this.burst;
+    if (!burst) return;
+    this.burst = undefined;
+    clearTimeout(burst.idle); clearTimeout(burst.max);
+    const tx: Transaction = { ...burst.first, lamport: burst.lamport, ops: [{ op: "textEdit", block: burst.block, changes: burst.changes }] };
+    this.record(tx);
+    if (burst.updates.length === 0 || burst.client === undefined) return; // the burst changed nothing
+    const update = burst.updates.length === 1 ? burst.updates[0]! : Y.mergeUpdates(burst.updates);
+    void this.ship({ tx, update, key: burst.signingKey, signer: burst.signer, client: burst.client });
   }
 
   /** DM-14.4: what happened here and what peers did, as transactions. Not replicated state. */
@@ -329,13 +429,16 @@ export class Editor {
     catch (error) { if (error instanceof AuthorizationError) return { status: "denied", reason: error.reason, retryable: error.retryable }; throw error; }
   }
 
-  private async ship(commit: Captured): Promise<void> {
-    try {
-      const sealed = await sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer, commit.client);
-      this.session?.sendUpdate(commit.update, sealed);
-    } catch (cause) {
-      this.reportError({ phase: "signing", cause });
-    }
+  private ship(commit: Captured): Promise<void> {
+    const sealed = sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer, commit.client); // signing starts now
+    this.shipping = this.shipping.then(async () => {
+      try {
+        this.session?.sendUpdate(commit.update, await sealed);
+      } catch (cause) {
+        this.reportError({ phase: "signing", cause });
+      }
+    });
+    return this.shipping;
   }
 
   private tx(ops: Op[], intent?: string): Transaction {
@@ -508,17 +611,20 @@ export class Editor {
   // ---- awareness (SW-7) ----
 
   setCursor(cursor: { block: BlockId; offset: number } | null): void {
+    if (this.burst && (cursor === null || cursor.block !== this.burst.block || cursor.offset !== this.burst.caret)) this.flush(); // a selection change seals
     this.session?.setCursor(cursor);
   }
 
   /** SW-3: re-run the handshake over a new transport; unconfirmed envelopes resend (SW-4). */
   reconnect(transport: SyncTransport): void {
     if (!this.session) throw new Error("this editor was created without a transport");
+    this.flush();
     this.session.restart(transport);
   }
 
   close(): void {
     if (this.closed) return;
+    this.flush();
     this.closed = true;
     this.runtime.dispose();
     for (const listener of this.closeListeners) try { listener(); } catch (cause) { this.reportError({ phase: "cleanup", cause }); }

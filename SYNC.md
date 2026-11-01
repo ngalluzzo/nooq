@@ -136,7 +136,9 @@ The responding peer replies:
   envelope's clocks, or its envelope log contains the envelope's
   `updateDigest`. Sending while disconnected is not an error; the envelope
   waits in the outbox (DM-4: durable intent precedes shipping). Resending
-  is free (SW-1.3). *(Draft 3.1: Draft 2 shipped envelopes once and kept
+  is free (SW-1.3). A session sends envelopes in commit order, though their
+  signatures may finish in any order, so a peer rarely holds one for a
+  predecessor. *(Draft 3.2.)* *(Draft 3.1: Draft 2 shipped envelopes once and kept
   none, so edits sealed offline were lost.)*
 
 ## SW-5. Snapshots
@@ -180,6 +182,11 @@ A hosted nooq sync service is a peer that:
   Draft 2 logged every retransmission, and its duplicate path skipped
   signature checks, so forged envelopes over honest bytes reached the
   envelope log.)*
+- MUST re-evaluate held envelopes after each admission until none admits:
+  releasing one envelope can unblock the next, and an envelope left held
+  with no later admission to wake it would never be relayed. *(Draft 3.2:
+  the reference relay retried once, so envelopes arriving in reverse order
+  stayed held.)*
 - MAY evict, rate-limit, or require transport-level authentication —
   these are operational policies on the *connection*, never on
   *document content*. A policy that distinguishes between documents'
