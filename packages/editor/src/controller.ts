@@ -328,7 +328,7 @@ export class Editor {
     const typing = this.typingKey(tx, identity);
     if (this.burst && !(typing !== undefined && this.continuesBurst(this.burst, typing, tx))) this.flush(); // any other action seals first
     if (!genesis) {
-      const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key });
+      const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key }, () => readState(this.ydoc)); // structural shapes get a fresh read, not a clone (EB-6)
       if (verdict.reason === "invalid-transaction") throw new Error("Invalid transaction");
       if (verdict.verdict !== "allow") throw new AuthorizationError(verdict.reason, verdict.verdict === "hold");
     }
