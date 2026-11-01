@@ -5,7 +5,7 @@ export async function completeFixture(rich = false): Promise<Sources> {
   const dom = await readFile(new URL("../../plugin-callouts/src/dom.ts",import.meta.url),"utf8");
   return {
     "src/index.ts": source.replaceAll("nooq.callout", "seed.callout") + "\nexport default callouts;\n",
-    "src/dom.ts": dom.replace('label: "Callout"','label: "Insert callout"').replace("ctx.mountRichText", rich ? "ctx.mountRichText" : "ctx.mountText") + "\nexport default calloutsDOM;\n",
+    "src/dom.ts": dom.replace('label: "Callout"','label: "Insert callout"').replace('defaultMode: "rich"', `defaultMode: "${rich ? "rich" : "plain"}"`) + "\nexport default calloutsDOM;\n",
     "src/plugin.stories.ts": `import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect } from "storybook/test";
 import { mountPluginStory, disposePluginStories, type PluginStoryArgs } from "@nooq/plugin-agent/storybook";

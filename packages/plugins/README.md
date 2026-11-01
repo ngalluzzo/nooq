@@ -146,6 +146,30 @@ Rich bindings are currently scoped to individual blocks; document-wide selection
 collaborative undo, rich clipboard codecs, and arbitrary mark definitions remain
 separate work. See [proposal 0004](../../proposals/0004-plugin-authoring-v2.md).
 
+### Text policies
+
+Declare `textPolicy: defineTextPolicy({defaultMode: "rich", enter: "newline"})`
+on a view and mount its text with `ctx.mountTextEditor({label})`. Import both
+public types and the factory from `@nooq/plugins/dom`. Applications choose a
+surface-wide presentation with `createSurface(editor, {plugins, textMode: "plain"})`.
+The preference is fixed at mount; remounting never migrates stored data. The
+binding exposes mode, element, selection, focus, toggleMark, and destroy; plain
+mode returns false from toggleMark. Explicit mountText/mountRichText retain their
+fixed presentation and legacy key behavior.
+
+Writing Basics defaults to plain text with `enter: {command: splitBlock}`;
+Callouts defaults to rich text with literal newlines. Policy Enter takes
+precedence over global Enter shortcuts. Shift+Enter inserts a newline, and
+cancelable beforeinput paragraph/line-break events use the same command path.
+Commands receive the current UTF-16 block selection, mapped through admitted
+remote text even before its queued render. Composition Enter does not split.
+Declined splits never fall back to a different edit; rejected replacements
+restore text and the original directional range. Optional marks restricts
+formatting actions while preserving existing and opaque marks.
+
+These are authoring policies, not admission rules. Cross-block selection,
+rich clipboard codecs, dynamic policies, and collaborative undo are separate work.
+
 ### Shared actions
 
 Define an action once and reuse it across host placements:

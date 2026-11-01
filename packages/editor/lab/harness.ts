@@ -173,7 +173,9 @@ export function summarize(values: number[]): Summary {
 
 /** EB-2.1: every budget writes its numbers as JSON for the regression gate. */
 export async function writeResult(name: string, result: unknown): Promise<void> {
-  await Bun.write(new URL(`results/${name}.json`, import.meta.url), JSON.stringify(result, null, 2) + "\n");
+  const rich = process.env.NQ_LAB_TEXT_MODE === "rich";
+  const payload = rich ? { ...result as object, textMode: "rich" } : result;
+  await Bun.write(new URL(`results/${rich ? "rich/" : ""}${name}.json`, import.meta.url), JSON.stringify(payload, null, 2) + "\n");
 }
 
 export const FRAME_MS = 1000 / 60;

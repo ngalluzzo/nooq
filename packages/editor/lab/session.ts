@@ -8,6 +8,9 @@ import type { RefDocName } from "./refdocs.ts";
 import { startLabServer } from "./server.ts";
 
 export const LAB = process.env.NQ_LAB === "1";
+const requestedMode = process.env.NQ_LAB_TEXT_MODE ?? "plain";
+if (requestedMode !== "plain" && requestedMode !== "rich") throw new Error("NQ_LAB_TEXT_MODE must be plain or rich");
+export const TEXT_MODE = requestedMode;
 
 /**
  * EB-2.2: the lab needs a spawnable Bun.WebView chrome backend. Some
@@ -56,7 +59,7 @@ export async function labSession(options?: LabOptions): Promise<LabSession> {
   return {
     lab,
     async load(doc, condition = "idle") {
-      await lab.open(`${server.url}?doc=${doc}&condition=${condition}`);
+      await lab.open(`${server.url}?doc=${doc}&condition=${condition}&textMode=${TEXT_MODE}`);
       const deadline = Date.now() + 30_000;
       while (!(await lab.evaluate<boolean>("document.documentElement.dataset.labReady === 'true'"))) {
         if (Date.now() > deadline) throw new Error(`lab page for ${doc} never became ready`);
@@ -71,4 +74,4 @@ export async function labSession(options?: LabOptions): Promise<LabSession> {
   };
 }
 
-export const rowSelector = (block: string) => `[data-nq-block="${block}"] textarea`;
+export const rowSelector = (block: string) => `[data-nq-block="${block}"] ${TEXT_MODE === "rich" ? '[contenteditable="true"]' : "textarea"}`;

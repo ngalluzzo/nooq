@@ -20,6 +20,11 @@ disabled reasons, focus navigation, and disposal are host-owned. Unfamiliar tone
 disable cycling with an explanation; explicit field repair remains a command.
 The insertion action uses the same shared action path from the slash menu.
 
+`calloutsDOM` uses a rich-default text policy and `ctx.mountTextEditor`.
+Apps can choose a textarea with `createSurface(editor, {plugins: [calloutsDOM],
+textMode: "plain"})`. With Writing Basics installed, paragraph Enter splits and
+Callout Enter stays inside the Callout. Shift+Enter inserts a newline.
+
 Stored type: `nooq.callout/v1`. Tone cycles through info, warning, and success.
 Diagnostics report invalid tones without rewriting stored fields. Other
 fields and marks survive unchanged. Peers without this plugin see the generic

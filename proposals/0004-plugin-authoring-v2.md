@@ -1,6 +1,6 @@
 # Proposal 0004: plugin authoring v2
 
-Status: slices 1 and 2 implemented; additive to plugin API version 1.
+Status: slices 1–3 implemented; document-wide selection and performance gates remain open. Additive to plugin API version 1.
 Date: 2026-10-31.
 
 ## Decision
@@ -132,6 +132,41 @@ state subscriptions, generalized formatting actions, or document-wide selection.
 It completes the shared-action portion of the writing milestone. The next
 surface slice must address text policies and composition across blocks, including
 the browser experience budgets described below.
+
+## Slice 3: text policies and application presentation
+
+`defineTextPolicy` declares a view's default plain/rich presentation, supported
+formatting actions, and Enter behavior. `ctx.mountTextEditor` mounts host-owned
+text; the application's `textMode` option overrides presentation without rewriting
+stored content. Explicit legacy bindings retain their fixed presentation.
+
+Writing Basics dispatches the registered split command on Enter; Callouts keeps
+literal newlines. Shift+Enter and cancelable beforeinput line-break events use the
+same authorized command boundary. Pending remote text maps the native range
+before dispatch. Declined splits cannot become a different edit, and rejected
+replacements restore the original directional selection. Existing/unknown marks,
+fields, children, and identity remain preserved. Generic fallback content follows
+the presentation preference and has a readable single-column layout.
+
+The agent contract and complete-package fixtures exercise the policy/binding pair
+in both modes. The implementation landed in `a61b282` and `1a4a7f5`; this checkpoint
+completes the agent guidance, documentation, and browser evidence. Shared actions
+is now `d000901` in the reconciled history.
+
+The earlier integrated slice passed 525 repository tests, 156 Storybook checks,
+typechecking, a static build, and native keyboard checks in both modes.
+[Historical browser evidence](evidence/0004-text-policy-browser-budgets.json)
+records the exact measured source hashes: rich EB-5 passed five samples with
+visible-to-editable p95 1 ms. Rich small/idle EB-6 retained all expected characters
+and focus but failed the budget (50.8 ms p95 versus 16.7 ms, maximum 69.5 ms versus
+50 ms). Zero font requests means font-delay behavior was not exercised. These
+measurements predate the subsequent editor performance work; they are not a
+benchmark of the current checkout. Large/storm, selection-fuzz, and native IME
+gates remain open.
+
+The next slice is document-wide selection that preserves arbitrary plugin blocks,
+children, opaque marks, and the selected command boundary. The private
+full-document ProseMirror experiment does not yet meet that contract.
 
 ## Subsequent slices and acceptance criteria
 

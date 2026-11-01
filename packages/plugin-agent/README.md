@@ -219,6 +219,11 @@ complete-package fixture now consumes these APIs in both plain and rich modes;
 the saved model outputs above remain unchanged historical checkpoints. No new
 model-generation throughput claim is implied by this fixture validation.
 
+The current contract teaches `defineTextPolicy` and `ctx.mountTextEditor`.
+Complete-package fixtures exercise both policy-selected presentations through
+independent runtime, browser, and Storybook checks. Historical oMLX outputs are
+unchanged; this SDK checkpoint is not a new model-generation run.
+
 ## Legacy pilot
 
 The original [callout source](examples/callout.ts) and
