@@ -1,6 +1,7 @@
 # Proposal 0003: the writing surface — ProseMirror, CodeMirror within
 
-**Status: OPEN — 7-day comment period (GOVERNANCE). Opened: 2026-10-31.**
+**Status: OPEN — 7-day comment period (GOVERNANCE). Opened: 2026-10-31.
+Decision of record: issue #3.**
 Amends DM-9's surface seam on ratification. Records the CodeMirror
 counter-analysis that informed the decision.
 

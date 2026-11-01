@@ -1,7 +1,7 @@
 # Proposal 0001: signed actors and shared rules
 
 **Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
-Opened: 2026-10-30.** Covers PHILOSOPHY §2/§5 amendments, DOCUMENT-MODEL
+Opened: 2026-10-30. Decision of record: issue #1.** Covers PHILOSOPHY §2/§5 amendments, DOCUMENT-MODEL
 Draft 1.6 (DM-12, DM-13), and SYNC Draft 2. The spec text lands with this
 proposal; maintainers ratify or amend in the comment period.
 

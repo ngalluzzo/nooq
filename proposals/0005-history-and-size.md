@@ -1,7 +1,7 @@
 # Proposal 0005: history layers and size
 
 **Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
-Opened: 2026-10-31.** Covers DOCUMENT-MODEL Draft 1.8 (DM-14, DM-15, DM-16
+Opened: 2026-10-31. Decision of record: issue #4.** Covers DOCUMENT-MODEL Draft 1.8 (DM-14, DM-15, DM-16
 and amendments to DM-4, DM-5, DM-8, DM-9, DM-10) and SYNC Draft 3. The spec
 text lands with this proposal; maintainers ratify or amend in the comment
 period.

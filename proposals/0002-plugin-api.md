@@ -1,6 +1,7 @@
 # Proposal 0002: the plugin API
 
-**Status: implementation available for review — 2026-10-31.** Developer-bundled
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Implementation available for review since 2026-10-31. Decision of record: issue #2.** Developer-bundled
 plugins first. The [API guide](../packages/plugins/README.md) documents the
 implemented names and limits. Registry/commands, local authorization, DOM
 views, scopes, jobs/capture, and revision-checked acceptance are implemented;
