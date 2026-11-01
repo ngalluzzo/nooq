@@ -105,8 +105,8 @@ export class PluginRuntime {
       }
       combined.ops = ops;
       // Validate the complete batch and its selection before the authorization boundary.
-      // EB-6: in place on a fresh throwaway — `state` is frozen as the snapshot.
-      const scratch = this.host.read();
+      // EB-6: fresh and mutable — the shared view is frozen.
+      const scratch = this.host.readFresh();
       validateTransaction(scratch, { id: "batch-preview", actor, lamport: 0, causality: {}, ops });
       if (combined.selection) {
         const { block, anchor, head } = combined.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
