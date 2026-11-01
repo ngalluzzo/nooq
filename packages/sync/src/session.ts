@@ -12,8 +12,8 @@
  */
 
 import * as Y from "yjs";
-import { isSecuredDocId, rootDigest, verifyCheckpoint } from "@nooq/core";
-import { admitEnvelope, documentHeader, keepFormatting, newDocument, readState, restoreCheckpoint } from "@nooq/yjs";
+import { isSecuredDocId, rootDigest } from "@nooq/core";
+import { admitEnvelope, documentHeader, keepFormatting, newDocument, readState, sameBytes, verifyLog } from "@nooq/yjs";
 import type { Envelope } from "@nooq/core";
 import { fromBase64, toBase64 } from "./base64.ts";
 import {
@@ -339,18 +339,13 @@ export class SyncSession {
       this.options.onError?.({ code, message });
       return false;
     };
-    let attested = newDocument(this.docId);
-    if (checkpoint) {
-      const restored = await restoreCheckpoint(this.docId, checkpoint.checkpoint, fromBase64(checkpoint.state));
-      if (!restored) return fail("checkpoint-invalid", "checkpoint state does not reproduce its digest");
-      const verdict = await verifyCheckpoint(checkpoint.checkpoint, { docId: this.docId, access: readState(restored).access, accessProof: checkpoint.accessProof });
-      if (!verdict.ok) return fail("checkpoint-invalid", verdict.reason);
-      attested = restored;
-    }
-    for (const item of envelopes) {
-      const admission = await admitEnvelope(attested, item.envelope, fromBase64(item.update));
-      if (admission.verdict !== "allow") return fail("envelope-log-invalid", `bootstrap envelope log: ${admission.reason}`);
-    }
+    // DM-14.6: the log is a set, replayed in any order from the checkpoint or genesis.
+    const verified = await verifyLog(this.docId, {
+      ...(checkpoint ? { checkpoint: { checkpoint: checkpoint.checkpoint, state: fromBase64(checkpoint.state), accessProof: checkpoint.accessProof } } : {}),
+      envelopes: envelopes.map((item) => ({ envelope: item.envelope, update: fromBase64(item.update) })),
+    });
+    if (!verified.ok) return fail(verified.code, `bootstrap: ${verified.reason}`);
+    const attested = verified.doc;
     if (claimed !== null) {
       const actual = await rootDigest(readState(attested));
       if (actual !== claimed) return fail("verification-failed", `bootstrap digest mismatch: claimed ${claimed}, log projects ${actual}`);
@@ -375,10 +370,4 @@ export class SyncSession {
     this.syncedFlag = true;
     this.options.onSynced?.();
   }
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }

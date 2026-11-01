@@ -152,4 +152,13 @@ Recorded as the slices land, each with the spec section it changed.
   tombstones and history (under half the bytes on the test document), and
   a fresh peer admits the secured genesis; a version rebuilds its past state
   exactly, attribution included.
+- **Host persistence (DM-14.6, Draft 1.10).** The history store had no
+  contract for hosts that persist documents. A stored document is its header
+  beside its canonical state; hosts keep the history store and the outbox
+  beside it. A secured document loaded from an untrusted store must equal the
+  replay of its log, and the log is a set: replay admits in any order, so two
+  histories merge as their union by `updateDigest` (a gooi workspace's
+  history records, say). Gate: an editor reopened from its stored document,
+  outbox and history resumes with offline edits delivered, and the stored
+  state verifies against the envelopes the host kept.
 

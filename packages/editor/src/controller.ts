@@ -40,9 +40,9 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
-import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, textAuthors, type Captured } from "@nooq/yjs";
+import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, storeDocument, textAuthors, type Captured, type StoredDocument } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
-import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
+import { SyncSession, type AwarenessEntry, type OutboxEntry, type SyncTransport } from "@nooq/sync";
 import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
@@ -73,6 +73,22 @@ export interface EditorOptions {
    * keystroke on its own.
    */
   burst?: { idleMs?: number; maxMs?: number } | false;
+  /**
+   * DM-14.6: reopen a persisted document. `stored` is loaded before the
+   * session starts (it never ships as an update); `outbox` resends what no
+   * peer confirmed (SW-4); `history` seeds the history store.
+   */
+  stored?: StoredDocument;
+  outbox?: ReadonlyArray<OutboxEntry>;
+  history?: readonly Transaction[];
+  /** DM-14.6: each transaction the history store records — persist it beside the document. */
+  onHistory?: (tx: Transaction) => void;
+  /**
+   * DM-14.6: each envelope this editor sealed ("local", before it ships) or
+   * admitted from a peer ("remote"). A secured document's history store is
+   * these envelopes. Remote ones may repeat: dedupe by `updateDigest`.
+   */
+  onEnvelope?: (entry: { envelope: import("@nooq/core").Envelope; update: Uint8Array; origin: "local" | "remote" }) => void;
 }
 
 /** Keystrokes coalescing into one sealed transaction (DM-14.3). */
@@ -180,6 +196,11 @@ export class Editor {
     }
     for (const { definition } of this.registry.jobs) if (definition.publishes && !this.identities.has(`job:${definition.id}`)) throw new Error(`Publishing job ${definition.id} needs a host binding`);
     this.ydoc = newDocument(options.docId);
+    if (options.stored) {
+      if (options.stored.docId !== options.docId) throw new Error(`stored document ${options.stored.docId} is not ${options.docId}`);
+      Y.applyUpdate(this.ydoc, options.stored.state); // before any listener: loading is not an edit
+    }
+    for (const tx of options.history ?? []) this.record(tx, false);
     this.runtime = new PluginRuntime(this.registry, {
       read: () => this.view, // shared frozen projection: preparer consumes it read-only (EB-6/ref-large)
       readFresh: () => readState(this.ydoc), // mutable: validation scratch (EB-6)
@@ -196,7 +217,11 @@ export class Editor {
           actor: options.actor.actorId,
           ...(options.actor.name !== undefined ? { name: options.actor.name } : {}),
           onSynced: () => this.scheduleNotify(),
-          onEnvelope: (envelope) => this.record(envelope.tx),
+          ...(options.outbox ? { outbox: options.outbox } : {}),
+          onEnvelope: (envelope, update) => {
+            this.record(envelope.tx);
+            this.notifyEnvelope({ envelope, update, origin: "remote" });
+          },
           onAwareness: (entry) => {
             this.awareness.set(entry.actor, entry);
             this.scheduleNotify();
@@ -393,10 +418,26 @@ export class Editor {
     return this.historyEntries;
   }
 
-  private record(tx: Transaction): void {
+  private record(tx: Transaction, notify = true): void {
     if (this.recorded.has(tx.id)) return;
     this.recorded.add(tx.id);
-    this.historyEntries.push(freezeInPlace(structuredClone(tx)) as unknown as Transaction);
+    const entry = freezeInPlace(structuredClone(tx)) as unknown as Transaction;
+    this.historyEntries.push(entry);
+    if (notify && this.options.onHistory) try { this.options.onHistory(entry); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+  }
+
+  private notifyEnvelope(entry: { envelope: import("@nooq/core").Envelope; update: Uint8Array; origin: "local" | "remote" }): void {
+    if (this.options.onEnvelope) try { this.options.onEnvelope(entry); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+  }
+
+  /** DM-14.6: this document at rest — header beside the canonical state. */
+  store(): StoredDocument {
+    return storeDocument(this.ydoc);
+  }
+
+  /** SW-4: envelopes no peer has confirmed yet — persist them with the document. */
+  get outbox(): ReadonlyArray<OutboxEntry> {
+    return this.session?.outbox ?? [];
   }
 
   /** DM-14.2: who wrote a block's text, by registered client, in first-appearance order. */
@@ -434,7 +475,9 @@ export class Editor {
     const sealed = sealEnvelope(this.ydoc, commit.tx, commit.update, commit.key, commit.signer, commit.client); // signing starts now
     this.shipping = this.shipping.then(async () => {
       try {
-        this.session?.sendUpdate(commit.update, await sealed);
+        const envelope = await sealed;
+        this.notifyEnvelope({ envelope, update: commit.update, origin: "local" }); // DM-4: durable intent precedes shipping
+        this.session?.sendUpdate(commit.update, envelope);
       } catch (cause) {
         this.reportError({ phase: "signing", cause });
       }

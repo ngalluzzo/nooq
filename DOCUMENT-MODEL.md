@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.9 — pre-implementation.** This spec converts
+**Status: Draft 1.10 — pre-implementation.** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -561,6 +561,25 @@ measurements behind every rule here.)*
   set of a past state. Because GC is off, live state plus a snapshot rebuilds
   that state exactly, attribution included, on any peer holding the state.
   Hosts may store versions as snapshots or as deltas between them.
+- **DM-14.6 Persistence.** A stored document is its header (`docId`,
+  `schemaVersion`) beside its state in the canonical encoding (SW-5).
+  Identical states store identical bytes, so a host may fingerprint them.
+  The header is side-channel metadata (SYNC Draft 1.2), so it MUST be stored
+  with the state, not inside it. Beside the document a host persists its
+  history store (envelopes in secured documents, transactions otherwise)
+  and its outbox (SW-4); a peer reopened from them resumes exactly where it
+  stopped, offline edits included.
+  - A host that loads a secured document from a store it does not trust
+    verifies it: rebuild the state from the checkpoint (DM-15) or genesis
+    and the envelopes, and require the stored state to equal it in the
+    canonical encoding. An envelope log is a **set**, not a sequence: replay
+    admits envelopes in any order, retrying held ones until none admits
+    (SW-6). A denied envelope, or one that never becomes admissible, fails
+    verification.
+  - Two histories of one document merge as their union by `updateDigest`,
+    verified the same way. *(Draft 1.10: hosts that persist documents, such
+    as a gooi workspace keeping history in its own records, had no contract
+    for it.)*
 
 ## DM-15. Checkpoints
 
