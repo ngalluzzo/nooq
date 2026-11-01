@@ -37,8 +37,9 @@ export class MaintainedProjection {
     const { blocks: yblocks, roots: yroots, placement, access: yaccess } = layout(doc);
 
     const deep = (events: Y.YEvent<never>[]): void => {
-      // Coalesce rebuilds per block; childrenOf work still happens per block
-      // below, but only ONCE each even when an event fan-out repeats a path.
+      // Coalesce rebuilds per block. EB-8: a huge fan-out (initial sync of a
+      // 10k-block document fires one event per block) rebuilds cheaper as ONE
+      // bulk re-seed from readState than as N incremental readBlocks.
       const rebuild = new Set<string>();
       const drop = new Set<string>();
       for (const event of events) {
@@ -52,6 +53,7 @@ export class MaintainedProjection {
           rebuild.add(String(path[0]));
         }
       }
+      if (rebuild.size + drop.size > 200) { this.#reseed(); this.#dirty = true; return; }
       for (const id of drop) this.#dropBlock(id);
       for (const id of rebuild) if (!drop.has(id)) this.#rebuildBlock(id);
       this.#dirty = true;
@@ -109,6 +111,12 @@ export class MaintainedProjection {
   }
 
   // --- indexing -----------------------------------------------------------
+
+  /** Rebuild everything from the pure projection (bulk fan-outs, EB-8). */
+  #reseed(): void {
+    this.#state = readState(this.#doc);
+    this.#index();
+  }
 
   #index(): void {
     const { blocks: yblocks, roots: yroots, placement } = layout(this.#doc);

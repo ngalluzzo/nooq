@@ -23,7 +23,8 @@ export interface EditorSurface {
   readonly lastDrift: number;
   readonly lastAnchorRect: { top: number; bottom: number } | null;
   readonly lastViewportTop: number;
-  readonly renderCounts: { targeted: number; full: number; presence: number };
+  readonly renderCounts: { targeted: number; full: number; presence: number; windowed: number };
+  readonly mountedRows: number;
 }
 export interface SurfaceOptions {
   plugins?: readonly DOMPlugin[];
@@ -362,7 +363,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
   let mountedFocused = false;
   /** Lab/test observability: remote renders seen, pins applied (EB-7). */
-  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0, renderCounts: { targeted: 0, full: 0, presence: 0 } };
+  const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0, renderCounts: { targeted: 0, full: 0, presence: 0, windowed: 0 } };
 
   /** The anchor row keeping the viewport still across remote renders (EB-7):
    *  the FIRST row overlapping the viewport top — the same block the lab's
@@ -390,6 +391,32 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     stats.lastDrift = drift;
     if (drift !== 0) { scroller.scrollTop += drift; stats.pins++; }
   }
+
+  // ---- EB-8 windowing: mount only what the viewport needs -----------------
+  // Estimated row height drives placeholder sizing; measured rows correct it.
+  let lastWindowAt = -Infinity, scrollSignal: AbortController | undefined;
+  const estimateOf = (block: { text?: { s: string }; children: readonly string[] }): number => {
+    const lines = Math.max(1, Math.ceil((block.text?.s.length ?? 0) / 90));
+    return 8 + lines * 21 + (block.children.length ? 4 : 0);
+  };
+  const visibleWindow = (): [number, number] => {
+    const vh = window.innerHeight || 800, top = window.scrollY || 0;
+    return [top - 2 * vh, top + 3 * vh]; // two screens of overscan above, three below
+  };
+  function onScroll(): void {
+    if (scheduled || destroyed) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      if (destroyed) return;
+      if (Math.abs((window.scrollY || 0) - lastWindowAt) < (window.innerHeight || 800) / 2) return;
+      lastWindowAt = window.scrollY || 0;
+      render();
+    });
+  }
+  scrollSignal?.abort();
+  scrollSignal = new AbortController();
+  window.addEventListener("scroll", onScroll, { passive: true, signal: scrollSignal.signal });
 
   function render() {
     documentSelection?.beforeRender();
@@ -423,10 +450,55 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const activeSelection = active?.selection();
     status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }));
     const peers = [...editor.awareness.values()];
+    // EB-8 windowing: placeholders carry unmounted subtrees' estimated
+    // height; the walk is O(doc) iteration + O(visible) DOM work.
+    const placeholders = new Map<string, HTMLElement>();
+    const estMemo = new Map<string, number>();
+    const estSubtree = (id: string): number => {
+      const memo = estMemo.get(id); if (memo !== undefined) return memo;
+      const block = state.blocks[id];
+      const total = block ? estimateOf(block) + block.children.reduce((n, child) => n + estSubtree(child), 0) : 0;
+      estMemo.set(id, total);
+      return total;
+    };
+    const [winTop, winBottom] = visibleWindow();
+    lastWindowAt = window.scrollY || 0;
+    let walkY = 0;
+    const placeholderFor = (id: string, height: number, parent: HTMLElement, at: number): HTMLElement => {
+      let el: HTMLElement | undefined = placeholders.get(id);
+      if (!el) {
+        el = document.createElement("div");
+        el.setAttribute("data-nq-block", id);
+        el.setAttribute("data-nq-ph", "1");
+        el.style.pointerEvents = "auto";
+        const node = el;
+        node.addEventListener("click", () => { node.scrollIntoView({ block: "center" }); requestAnimationFrame(() => requestAnimationFrame(() => render())); }, { signal: surfaceAbort.signal });
+      }
+      el!.style.height = `${Math.max(1, Math.round(height))}px`;
+      if (parent.children[at] !== el) parent.insertBefore(el, parent.children[at] ?? null);
+      return el;
+    };
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
       for (const id of ids) {
         const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
+        const est = estSubtree(id);
+        const mounted = rows.get(id);
+        if (!mounted && (walkY + est < winTop || walkY > winBottom)) {
+          // Outside the window and never mounted: placeholder only.
+          placeholderFor(id, est, parent, at);
+          at++; walkY += est;
+          continue;
+        }
+        if (mounted && walkY + est < winTop - (window.innerHeight || 800)) {
+          // Mounted but far above the window: release it.
+          cleanup(mounted); mounted.shell.remove(); rows.delete(id);
+          placeholderFor(id, est, parent, at);
+          at++; walkY += est;
+          continue;
+        }
+        const stalePh = parent.children[at];
+        if (stalePh instanceof HTMLElement && stalePh.getAttribute("data-nq-ph") === "1") stalePh.remove();
         wanted.add(id);
         let row = rows.get(id);
         if (row && row.type !== block.type) { cleanup(row); row.shell.remove(); rows.delete(id); row = undefined; }
@@ -442,7 +514,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         const chips = row.bindings[0]?.marks === undefined ? peers.filter(p => p.cursor?.block === id) : [];
         row.presence.replaceChildren(...chips.map(p => presenceCaret({ name: p.name ?? p.actor, ink: "slate" })));
         if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
-        at++; walk(block.children, row.children);
+        at++; walkY += estimateOf(block); walk(block.children, row.children);
       }
     };
     walk(state.roots, body);
@@ -452,6 +524,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       walk(historic.filter(id => !alive.has(id)), history);
     }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
+    for (const el of Array.from(body.querySelectorAll("[data-nq-ph]"))) if (!el.isConnected || wanted.has(el.getAttribute("data-nq-block") ?? "")) el.remove();
+    stats.renderCounts.windowed = rows.size;
     presence.update(state, peers);
     // EB-5: editable in the frame the surface becomes visible — no clicking.
     if (!mountedFocused && root.isConnected) {
@@ -491,5 +565,5 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let offClose = () => {};
   const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; } };
+  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; } };
 }

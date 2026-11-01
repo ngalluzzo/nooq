@@ -182,10 +182,16 @@ The journey map's "every keystroke paints in one frame."
   are noisy; comparing against a sibling run is what keeps a regression
   from being silent (§3, "broken when").
 
-## EB-8. Budget (DRAFT): load to first editable
+## EB-8. Budget: load to first editable
 
-The journey map's "a document opens ready to write." **Draft: measured,
-not yet gated** — the number is the product owner's call to set.
+The journey map's "a document opens ready to write."
+
+- **Gate (accepted by the product owner, 2026-11-01):** three
+  consecutive cold loads of `ref-huge` (10,000 blocks) at the rig's 4x
+  profile; EVERY load reaches `lab:editable` within **1,000 ms**.
+  Windowing is the intended mechanism — the gate is flat-in-document-
+  size by construction (mount the viewport plus overscan), so it also
+  holds at ref-large and ref-small trivially.
 
 - **Definition:** navigation start to the first frame in which the
   surface holds focus and accepts a keystroke (`lab:editable`).
@@ -201,10 +207,10 @@ not yet gated** — the number is the product owner's call to set.
 
   Native is roughly linear (5x blocks -> 7.2x time), no cliff. The rig
   profile is where load collapses: mounting every row before the first
-  keystroke. The candidate fix is surface windowing (mount the viewport
-  plus overscan, keyed by the signature index, anchored by the EB-7
-  pinning machinery) — it would flatten the row to a constant and is
-  also the prerequisite the 0003 binding contract wants anyway.
+  keystroke. The fix is surface windowing (mount the viewport plus
+  overscan, keyed by the signature index, anchored by the EB-7 pinning
+  machinery) — it flattens the load row to a constant and is also the
+  prerequisite the 0003 binding contract wants anyway.
 
   *(Finding on the way: the reference-doc generator replayed one
   transaction per block — minutes of CPU at ref-huge. Generation is now

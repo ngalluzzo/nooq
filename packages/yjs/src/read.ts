@@ -33,9 +33,18 @@ export function readState(doc: Y.Doc): DocState {
   const { blocks: yblocks, roots: yroots, placement, access: yaccess } = layout(doc);
 
   const containerOf = new Map<BlockId, BlockId | null>();
+  // Register-authority membership by container (EB-8): the heal pass is
+  // O(members of THIS container) instead of O(document) per query — the old
+  // scan made readState quadratic (10k blocks = 100M operations, seconds).
+  const byContainer = new Map<BlockId | null, Set<BlockId>>();
   for (const id of yblocks.keys()) {
     const entry = placement.get(id);
-    if (entry && !entry.tombstoned) containerOf.set(id, entry.parent);
+    if (entry && !entry.tombstoned) {
+      containerOf.set(id, entry.parent);
+      let set = byContainer.get(entry.parent);
+      if (!set) { set = new Set(); byContainer.set(entry.parent, set); }
+      set.add(id);
+    }
   }
 
   const childrenOf = (container: BlockId | null): BlockId[] => {
@@ -52,9 +61,7 @@ export function readState(doc: Y.Doc): DocState {
       out.push(id);
     }
     const missing: BlockId[] = [];
-    for (const [id, container2] of containerOf) {
-      if (container2 === container && !seen.has(id)) missing.push(id);
-    }
+    for (const id of byContainer.get(container) ?? []) if (!seen.has(id)) missing.push(id);
     missing.sort();
     out.push(...missing);
     return out;

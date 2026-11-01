@@ -31,9 +31,12 @@ const editor = new Editor({
 });
 editor.attachMaintainedProjection(); // EB-6 stage 2: the lab measures the incremental projection
 const update = new Uint8Array(await (await fetch(`/doc/${docName}?id=${DOC_ID}`)).arrayBuffer());
+performance.mark("lab:fetched");
 Y.applyUpdate(editor.ydoc, update);
+performance.mark("lab:applied");
 const peer = relay ? new Editor({ docId: DOC_ID, actor: { actorId: "human:storm", name: "Storm" }, transport: relay.connect(DOC_ID) }) : null;
 const surface = createSurface(editor, { plugins: referenceDOM, textMode });
+performance.mark("lab:surface");
 document.getElementById("root")!.append(surface.element);
 
 /**
@@ -278,4 +281,5 @@ const lab = {
 
 (window as unknown as { lab: typeof lab }).lab = lab;
 if (peer) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+performance.mark("lab:readied");
 document.documentElement.dataset.labReady = "true";
