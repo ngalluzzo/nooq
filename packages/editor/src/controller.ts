@@ -40,6 +40,7 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
+import { MaintainedProjection } from "@nooq/yjs";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, textAuthors, type Captured } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
@@ -274,11 +275,22 @@ export class Editor {
    * throws instead of corrupting the cache. Paths that MUTATE a projection
    * (engine validation, the command preparer) use fresh readState calls.
    */
+  /**
+   * The shared read-only projection (EB-6 stage 2). Served from the
+   * MaintainedProjection when one is attached — incremental from Yjs events,
+   * property-tested equal to readState — falling back to the revision-memoized
+   * full read. NOT frozen in maintained mode: the projection mutates its own
+   * state between transactions, never during a synchronous read; treat as
+   * immutable, do not hold across awaits.
+   */
   private viewCache: { revision: number; value: DocState } | undefined;
+  #maintained: import("@nooq/yjs").MaintainedProjection | undefined;
   get view(): DocState {
-    const cache = this.viewCache?.revision === this.revisionValue ? this.viewCache : (this.viewCache = { revision: this.revisionValue, value: freezeInPlace(readState(this.ydoc)) as unknown as DocState }); // Immutable typed as DocState: reads compile, mutation throws at runtime
+    if (this.#maintained) { this.#maintained.sync(); return this.#maintained.value; }
+    const cache = this.viewCache?.revision === this.revisionValue ? this.viewCache : (this.viewCache = { revision: this.revisionValue, value: freezeInPlace(readState(this.ydoc)) as unknown as DocState });
     return cache.value;
   }
+  attachMaintainedProjection(): void { if (!this.#maintained) this.#maintained = new MaintainedProjection(this.ydoc); }
 
   onChange(callback: () => void): () => void {
     this.listeners.add(callback);
@@ -336,7 +348,7 @@ export class Editor {
       if (captured) void this.ship(captured); // a transaction with no effects has nothing to replicate
       return;
     }
-    applyToDoc(this.ydoc, tx);
+    applyToDoc(this.ydoc, tx, undefined, undefined, this.#maintained?.value); // fast path on the shared projection (EB-6 stage 2)
     this.record(tx);
     } finally { this.currentTx = undefined; this.applying = false; }
   }

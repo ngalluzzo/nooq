@@ -29,6 +29,7 @@ const editor = new Editor({
   actor: { actorId: "human:lab", name: "Lab writer" },
   ...(relay ? { transport: relay.connect(DOC_ID) } : {}),
 });
+editor.attachMaintainedProjection(); // EB-6 stage 2: the lab measures the incremental projection
 const update = new Uint8Array(await (await fetch(`/doc/${docName}?id=${DOC_ID}`)).arrayBuffer());
 Y.applyUpdate(editor.ydoc, update);
 const peer = relay ? new Editor({ docId: DOC_ID, actor: { actorId: "human:storm", name: "Storm" }, transport: relay.connect(DOC_ID) }) : null;
@@ -152,7 +153,7 @@ const lab = {
   },
   phaseCollect: () => ((globalThis as { __phases?: Record<string, number>[] }).__phases ?? []).splice(0),
   /** EB-7 observability: the surface's remote-render and pin counters. */
-  stats: () => ({ statsVersion: 3, remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift, lastAnchorRect: (surface as any).lastAnchorRect, lastViewportTop: (surface as any).lastViewportTop }),
+  stats: () => ({ statsVersion: 3, remoteRenders: surface.remoteRenders, pins: surface.pins, lastAnchor: (surface as any).lastAnchor, lastDrift: (surface as any).lastDrift, lastAnchorRect: (surface as any).lastAnchorRect, lastViewportTop: (surface as any).lastViewportTop, renderCounts: surface.renderCounts }),
   /** Where focus and selection are, and where a given block sits on screen. */
   probe: (anchor: BlockId) => {
     const active = document.activeElement as HTMLTextAreaElement | null;

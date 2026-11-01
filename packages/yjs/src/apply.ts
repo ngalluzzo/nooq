@@ -20,7 +20,7 @@ import {
   type RenderedText,
   type Transaction,
 } from "@nooq/core";
-import { validateTransaction } from "@nooq/core";
+import { tryValidateReadonly, validateTransaction } from "@nooq/core";
 import { REGISTER, layout, registerHeader } from "./layout.ts";
 import type { TextChange } from "@nooq/core";
 import { readState } from "./read.ts";
@@ -61,14 +61,18 @@ export function keepFormatting(doc: Y.Doc): void {
  * history store (DM-14.4); the document gets only its effects, written
  * through the client registered to its author (DM-14.2).
  */
-export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown, base?: import("@nooq/core").DocState): void {
+export function applyTransaction(doc: Y.Doc, tx: Transaction, origin?: unknown, base?: import("@nooq/core").DocState, shared?: import("@nooq/core").DocState): void {
   // Atomicity (DM-12): validate the WHOLE transaction against the
   // sequential engine over the current projection before any Yjs
   // mutation — a failing op never leaves its siblings applied.
   // `base` (EB-6/ref-large): a caller-supplied FRESH projection at the
   // doc's current revision — validation mutates it, which is exactly the
   // throwaway contract; saves a ~30ms readState at 2,000 blocks.
-  validateTransaction(base ?? readState(doc), tx);
+  // EB-6 stage 2: the caller's SHARED projection (maintained, read-only)
+  // serves the fast path for free; structural shapes pay a fresh read.
+  // `base` remains what the FALLBACK may mutate — never pass a shared view.
+  const fastView = shared ?? base ?? readState(doc);
+  if (!tryValidateReadonly(fastView, tx)) validateTransaction(base ?? readState(doc), tx);
   const registration = registrationOf(tx);
   useClientFor(doc, registration);
   doc.transact(() => {
