@@ -1,14 +1,39 @@
 /** Explicit first-party features, implemented through the same API as third parties. */
 import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Proposal } from "@nooq/core";
 import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@nooq/plugins";
-import { defineDOMPlugin, defineTextPolicy, type BlockViewDefinition } from "@nooq/plugins/dom";
+import { defineDOMPlugin, defineTextPolicy, type BlockViewDefinition, type MarkRenderer } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock, deleteBlock } from "@nooq/plugins/essentials";
 import { blockRow, suggestionCard, tooltip, type DiffSegment, type SuggestionState } from "@nooq/design";
 import { actorKindOf, type JobBinding } from "./controller.ts";
 import { announce } from "./status.ts";
 
 export { essentials } from "@nooq/plugins/essentials";
-export const writingTextPolicy = defineTextPolicy({ defaultMode: "plain", enter: { command: splitBlock } });
+
+/** Only schemes a document may safely point at; anything else renders as an anchor with no href (never executable). */
+const SAFE_HREF = /^(https?:|mailto:)/i;
+const safeHref = (value: string): boolean => SAFE_HREF.test(value) || ["/", "#", "./", "../"].some(prefix => value.startsWith(prefix));
+
+/**
+ * 0009 §5: links dogfood the payloaded-mark path a plugin would use. The
+ * renderer contributes the anchor carrying the href, styled by class (the
+ * theme's nq-link, in ink — brand book: links in ink); the covered text is
+ * the content. The host resolves the payload and hands the text; PM places
+ * the real covered text inside the returned element.
+ */
+export const renderLinkMark: MarkRenderer = (payload, text) => {
+  const anchor = document.createElement("a");
+  anchor.className = "nq-link";
+  if (typeof payload === "string" && safeHref(payload)) anchor.setAttribute("href", payload);
+  anchor.textContent = text;
+  return anchor;
+};
+
+/** Writing Basics: the reference policy — the reserved payloaded base `link` admitted and rendered (0009 §5). */
+export const writingTextPolicy = defineTextPolicy({
+  defaultMode: "plain", enter: { command: splitBlock },
+  marks: ["strong", "em", "code", "link"],
+  renderMarks: { link: renderLinkMark },
+});
 export const essentialsDOM = defineDOMPlugin({
   id: "nooq.essentials", forPlugin: essentials,
   views: essentials.contributes.blocks.map((block, i) => ({ type: block.type, textPolicy: writingTextPolicy, mount(ctx) {

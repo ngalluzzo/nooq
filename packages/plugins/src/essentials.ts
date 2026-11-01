@@ -1,4 +1,5 @@
 import { defineBlock, defineCommand, definePlugin } from "./definitions.ts";
+import { markWithPayload } from "./recipes.ts";
 import { mergeText } from "./merge.ts";
 export { mergeText } from "./merge.ts";
 import type { Op, TextChange } from "@nooq/core";
@@ -61,6 +62,23 @@ export const splitBlock = defineCommand<{ block: string; anchor: number; head: n
     ], selection: { block: block.id, anchor: 0, head: 0 } };
   },
 });
+/**
+ * The payload recipe behind nooq's own link mark (0009 §5): the reserved
+ * bare base `link` with the href as its payload, dogfooded through the same
+ * path a plugin author would use.
+ */
+const linkRecipe = markWithPayload("link", { id: "nooq.text.link", label: "Link",
+  intents: { apply: "add-link", remove: "remove-link" },
+  validatePayload: (value): value is string => typeof value === "string" && value.length > 0,
+});
+export interface LinkArgs { block: string; from: number; to: number; href?: string }
+/** A nonempty href links the range; omitting it removes the link (the field stays, DM-3.4). */
+export const link = defineCommand<LinkArgs>({
+  id: "nooq.text.link", label: "Link",
+  validateArgs: (a): a is LinkArgs => object(a) && typeof a.block === "string" && Number.isSafeInteger(a.from) && Number.isSafeInteger(a.to)
+    && (a.href === undefined || (typeof a.href === "string" && a.href.length > 0)),
+  prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
+});
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, quote], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText] },
+  contributes: { blocks: [paragraph, heading, quote], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link] },
 });

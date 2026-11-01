@@ -1,6 +1,7 @@
 /** Declarative recipes compile to the ordinary v1 block/command contracts. */
-import type { JsonValue, Op } from "@nooq/core";
+import { newBlockId, type JsonValue, type Op, type RenderedText, type TextChange } from "@nooq/core";
 import { defineBlock, defineCommand, type BlockDefinition, type Command, type Diagnostic, type Immutable } from "./definitions.ts";
+import { baseOf } from "./text-policy.ts";
 
 export interface Field<T extends JsonValue = JsonValue> {
   readonly default: T;
@@ -104,6 +105,79 @@ export function setFieldCommand<S extends FieldSchema, K extends keyof S & strin
       const target = ctx.snapshot.blocks[args.block];
       if (!ctx.isAlive(args.block) || target?.type !== type || target.fields[key] === args.value) return { status: "not-applicable" };
       return { status: "ready", intent: options.id, ops: [{ op: "setField", block: args.block, key, value: args.value }] };
+    },
+  });
+}
+
+const isJson = (value: unknown): boolean =>
+  value === null || typeof value === "string" || typeof value === "boolean"
+  || (typeof value === "number" && Number.isFinite(value))
+  || (Array.isArray(value) && value.every(isJson))
+  || (!!value && typeof value === "object" && !Array.isArray(value) && Object.values(value).every(isJson));
+
+/** Coalesce one range's per-character marks into minimal retain steps; a null run keeps its characters untouched. */
+function reflowMarks(text: Immutable<RenderedText>, from: number, to: number, next: (current: readonly string[]) => readonly string[]): { changes: TextChange[]; changed: boolean } {
+  const changes: TextChange[] = [];
+  if (from > 0) changes.push({ retain: from });
+  const signature = (marks: readonly string[]) => marks.join("\u0000");
+  const flush = (run: { marks: string[] | null; length: number }) => {
+    if (run.length > 0) changes.push(run.marks === null ? { retain: run.length } : { retain: run.length, setMarks: run.marks });
+  };
+  let run: { marks: string[] | null; length: number } | undefined;
+  let changed = false;
+  for (let at = from; at < to; at++) {
+    const current = text.marks[at] ?? [], transformed = [...next(current)];
+    const unchanged = transformed.length === current.length && signature(transformed) === signature(current);
+    changed ||= !unchanged;
+    const marks = unchanged ? null : transformed;
+    const same = run !== undefined && (run.marks === null) === (marks === null)
+      && (marks === null || (run.marks !== null && signature(marks) === signature(run.marks)));
+    if (same) run!.length++;
+    else { if (run) flush(run); run = { marks: marks === null ? null : [...marks], length: 1 }; }
+  }
+  if (run) flush(run);
+  return { changes, changed };
+}
+
+export interface MarkWithPayloadArgs { block: string; from: number; to: number; payload?: JsonValue }
+
+/**
+ * The 0009 §4 recipe: ONE authorized transaction for a payloaded mark.
+ * Applying builds the token `<base>:<fresh id>` (the block-id generator's
+ * discipline), sets it over the range — replacing any same-base token,
+ * preserving every other mark — and writes `fields[full token] = payload`.
+ * Omitting the payload is the removal form: it clears the base's tokens and
+ * leaves the field (garbage collection is a non-goal, DM-3.4 precedent).
+ */
+export function markWithPayload(base: string, options: {
+  id: string; label: string;
+  intents?: { apply?: string; remove?: string };
+  /** Narrows the accepted payload; defaults to any JSON value. */
+  validatePayload?: (value: unknown) => boolean;
+}): Command<MarkWithPayloadArgs> {
+  if (!base || base.includes(":") || base !== base.trim()) throw new Error("Mark base must be a name without ':'");
+  const applyIntent = options.intents?.apply ?? `mark:${base}`, removeIntent = options.intents?.remove ?? `unmark:${base}`;
+  const acceptPayload = options.validatePayload ?? isJson;
+  return defineCommand<MarkWithPayloadArgs>({ ...options,
+    validateArgs: (a): a is MarkWithPayloadArgs => object(a) && typeof a.block === "string"
+      && Number.isSafeInteger(a.from) && Number.isSafeInteger(a.to)
+      && (a.payload === undefined || acceptPayload(a.payload)),
+    prepare(ctx, args) {
+      if (!ctx.isAlive(args.block)) return { status: "not-applicable" };
+      const target = ctx.snapshot.blocks[args.block];
+      if (!target?.text) return { status: "not-applicable" }; // payloaded marks live on inline text only
+      const from = Math.min(args.from, args.to), to = Math.max(args.from, args.to);
+      if (from < 0 || to > target.text.s.length) throw new Error("Selection out of range");
+      if (from === to) return { status: "not-applicable" };
+      const apply = args.payload !== undefined, token = apply ? `${base}:${newBlockId()}` : undefined;
+      const { changes, changed } = reflowMarks(target.text, from, to, current => {
+        const kept = current.filter(mark => baseOf(mark) !== base);
+        return apply ? [...new Set([...kept, token!])].sort() : kept;
+      });
+      if (!changed) return { status: "not-applicable" };
+      const ops: Op[] = [{ op: "textEdit", block: args.block, changes }];
+      if (apply) ops.push({ op: "setField", block: args.block, key: token!, value: args.payload! });
+      return { status: "ready", intent: apply ? applyIntent : removeIntent, ops, selection: { block: args.block, anchor: from, head: to } };
     },
   });
 }

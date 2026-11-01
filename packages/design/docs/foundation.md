@@ -38,7 +38,7 @@ protocol to be visible to writers. P2 completes the reference app.
 All nine P0 areas from the first draft are built. What remains of them:
 
 - **Missing tokens:** icon sizes and the hit-target minimum (control heights exist: `control-sm`, `control-md`, `control-handle`); find and comment highlights when they arrive (the remote-selection wash exists: `highlight-peer`). Motion (`fade`, `blink`) and layering (`layer-presence` through `layer-dialog`) are tokens — the logo timings stay with the logo in `brand/geometry.ts`.
-- **Surfaces onto the popover:** the primitive exists (collision-aware, Esc-dismissible, focus returns, `tooltip` opens on keyboard focus); the slash menu, toolbar overflow, link editing and block history still mount themselves and should move onto it.
+- **Surfaces onto the popover:** the primitive exists (collision-aware, Esc-dismissible, focus returns, `tooltip` opens on keyboard focus); block history and link editing (Mod-k, 0009) sit on it. The slash menu and toolbar overflow still mount themselves and should move onto it.
 - **Toolbar overflow and placement:** overflow into a menu (needs the popover) and the placement rule that never covers the caret's line (§3).
 - **Notice beyond the error channel:** the editor surfaces view/plugin errors as one dismissable notice; authorization holds/denials and model errors still flow only through the toolbar's status line, and should use the notice's `hold`, `denial` and `model` kinds.
 
@@ -46,7 +46,7 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-Four of the seven are built; three still want decisions (or the spec) first.
+Four of the seven are built; the links decision landed (0009) and leaves the formatting toolbar buildable. Still open: the toolbar's appearance policy, access, and the spec-blocked lost moves.
 
 Built:
 
@@ -54,10 +54,11 @@ Built:
 - **Block history.** The change bar is the door: a button with a hover-and-focus tooltip ("Last edited by …") opening the history popover — writer, intent as written, lamport exact ("lamport 42"), newest first — and tombstoned blocks draw the deleted BlockRow with Restore and later-edits counts instead of the generic fallback. Views can keep their own history presentation (`rendersHistory` on the view).
 - **Presence roster.** Compact ink-dotted list beside the sync status; idle shows as a word. Idle is a local 5-minute recency heuristic — truthful idle wants a timestamp on the awareness wire, named below.
 - **Announcer.** One shared, persistent, rate-limited live region (750ms, latest-wins): "X joined.", "X left.", "Suggestion is now stale." Never per keystroke.
+- **Links and inline payloads (0009).** Marks are bases with tokens (`link:<id>`), payloads live in fields keyed by the full token, policies admit bases (reserved bare for nooq, namespaced for plugins, enforced at defineDOMPlugin), and views contribute renderers. Links are the dogfooded first consumer: `nooq.text.link` is one atomic transaction, anchors render in ink through the policy renderer, Mod-k opens the href popover on the selection, and foreign hosts preserve everything with the §8 dotted fallback. The mechanism is the plugin path — mentions, term definitions and comment anchors ship the same way.
 
 Still to decide or build:
 
-- **Formatting toolbar.** Needs a links-in-the-text-model decision (marks are opaque strings today; a link needs a payload) and an appearance policy that respects §3. Built on Toolbar and Popover when decided.
+- **Formatting toolbar.** Links exist (0009); what remains is the selection-anchored toolbar's appearance policy — when it may show without violating §3 — over Toolbar and Popover.
 - **Access and signers.** Waiting on a home (the document header is P2) and on what peer-verification state the sync layer exposes (DM-12, DM-13).
 - **Away markers and lost moves.** The change-bar variant needs seen-state semantics; the lost-move notice is blocked until DM-10 resolves what a lost move observably is.
 

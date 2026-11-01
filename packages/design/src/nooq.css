@@ -178,6 +178,14 @@
    rich hosts carry data-nq-empty and the theme draws the hint as ::before. */
 .nq-input[data-nq-empty]::before { content: "Type / for blocks"; color: var(--nq-graphite-muted); pointer-events: none; }
 
+/* Links (0009 §5, brand book: links in ink). The payloaded mark's renderer
+   contributes the anchor carrying the nq-link class; the theme owns every
+   painted value. Ink sets the link apart from graphite text, and the ink
+   underline keeps it from relying on color alone (§9); focus carries the same
+   ring as every control. Nothing animates. */
+.nq-link { color: var(--nq-ink); text-decoration: underline; text-decoration-color: var(--nq-ink); text-underline-offset: var(--nq-space-1); }
+.nq-link:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
+
 /* SlashMenu: the one entrance animation in the editor (§3). */
 .nq-menu { z-index: var(--nq-layer-overlay); width: 320px; max-width: 100%; box-sizing: border-box; padding: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); animation: nq-fade var(--nq-fade) ease-out; }
 @keyframes nq-fade { from { opacity: 0; } }

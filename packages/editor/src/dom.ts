@@ -4,10 +4,11 @@ import { freezeInPlace, freezeSnapshot, type Immutable, type PluginError, type S
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import type { Editor } from "./controller.ts";
-import { mountRichText as createRichText } from "./rich-text.ts";
+import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
+import { createLinkUI } from "./link-ui.ts";
 import { createDocumentSelection } from "./document-selection.ts";
 import { createPresence } from "./presence.ts";
 import { createSurfaceStatus } from "./status.ts";
@@ -39,7 +40,8 @@ export interface SurfaceOptions {
   /** Opt in to cross-block rich-text selection; requires textMode: rich and nooq.text.edit. */
   selectionMode?: "block" | "document";
 }
-interface Binding { marks?: readonly TextMark[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
+/** Rich bindings carry the bases their policy admits for authoring (0009 §2); plain bindings carry none. */
+interface Binding { marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
 type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy; /** View-level extra the raw definition carried (rendersHistory for tombstone-keeping views). */ rendersHistory?: boolean };
 const defaultTextPolicy = defineTextPolicy();
 interface Row {
@@ -118,6 +120,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // The working state (foundation P1): strips and draft previews for running
   // jobs, re-attached by the row walk below. Mounts nothing until a job starts.
   const jobs = createJobsUI(editor);
+  // Link editing (0009 §5): Mod-k on a rich host's selection. Admission is the
+  // selected view's policy; the chord lives off the input path (§3).
+  const links = createLinkUI({ editor, report: cause => fail(undefined, cause), host: id => {
+    const row = rows.get(id), binding = row?.bindings[0];
+    if (!binding || binding.marks === undefined || !binding.element.isConnected) return undefined;
+    return { anchor: binding.element, selection: binding.selection, focus: binding.focus, marks: views.get(row.type)?.textPolicy?.marks };
+  } });
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
@@ -223,6 +232,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function keyDown(id: string, event: KeyboardEvent): boolean {
     if (typeof process !== "undefined" && process.env.NQ_DEBUG_KEYS) console.log("[keyDown]", id, event.key, "actions:", (keys.get([event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+")) ?? []).map((a) => a.id).join(","));
     if (event.key === "Escape") { closeMenu(); return true; }
+    // Mod-k is the writer-facing link chord (0009 §5): one popover over the
+    // selection, before any plugin key binding could claim the same chord.
+    if (links.keyDown(id, event)) return true;
     const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
     for (const action of keys.get(key) ?? []) try {
       const outcome = invoke(action, id);
@@ -231,14 +243,16 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     } catch (cause) { fail(undefined, cause); return true; }
     return false;
   }
-  function mountRichText(id: string, row: Row, options?: RichTextOptions, input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }) {
+  function mountRichText(id: string, row: Row, options?: RichTextSurfaceOptions, input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }) {
     if (row.bindings.length) throw new Error(`View ${id} mounted more than one text controller`);
     const rich = createRichText({ read: () => editor.view.blocks[id]?.text ?? { s: "", marks: [] },
+      // The block's fields ride the update path so payloaded spans re-render when their entries change (0009 §1).
+      fields: () => editor.view.blocks[id]?.fields ?? {},
       commit: changes => sendText(id, row, changes), keyDown: event => input ? input.keyDown(event) : keyDown(id, event),
       beforeInput: event => input?.beforeInput(event) ?? false,
       input: text => { if (text === "/") openMenu(id); else closeMenu(); },
     }, options);
-    row.bindings.push({ ...rich, marks: options?.marks ?? ["strong", "em", "code"], update: block => rich.update(block.text ?? { s: "", marks: [] }) });
+    row.bindings.push({ ...rich, marks: options?.marks ?? ["strong", "em", "code"], update: block => rich.update(block.text ?? { s: "", marks: [] }, block.fields) });
     return rich;
   }
   function mountText(id: string, row: Row, label = "Text block", input?: { keyDown(event: KeyboardEvent): boolean; beforeInput(event: InputEvent): boolean }): Binding & TextBinding {
@@ -341,7 +355,10 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         enter(event.inputType === "insertLineBreak"); return true;
       },
     };
-    binding = mode === "rich" ? { ...mountRichText(id, row, { label, marks: policy.marks }, input), mode }
+    // Toggle authoring stays the reserved trio (0009 §2); payloaded and plugin bases
+    // arrive through commands and renderers, never toggle formatting. The policy's
+    // renderMarks build this surface's schema for them (0009 §3).
+    binding = mode === "rich" ? { ...mountRichText(id, row, { label, marks: (policy.marks ?? []).filter((mark): mark is TextMark => (["strong", "em", "code"] as readonly string[]).includes(mark)), ...(policy.renderMarks ? { renderMarks: policy.renderMarks } : {}) }, input), mode }
       : { ...mountText(id, row, label, input), mode, toggleMark: () => false };
     return binding;
   }
@@ -357,6 +374,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
   function cleanup(row: Row) {
     jobs.unmount(row.id);
+    links.closeFor(row.id); // an open link editor never outlives its block's row
     row.abort.abort();
     for (const binding of row.bindings.splice(0)) binding.destroy();
     for (const dispose of row.cleanups.splice(0).reverse()) try { dispose(); } catch (cause) { fail(undefined, cause); }
@@ -612,10 +630,15 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (structural || changedIds === null) {
       const historic: string[] = [];
       for (const plugin of plugins) try { historic.push(...plugin.history?.(snapshot()) ?? []); } catch (cause) { fail(plugin.id, cause); }
+      // The panel renders the RECENT tail of the store (DM-14.4): a long
+      // session's history grows without bound, and rendering every dead block
+      // per structural change went quadratic — 10k fuzz ops exceeded 20
+      // minutes. The store keeps everything; the surface shows the last 200.
+      const recent = historic.slice(-200);
       // Dead blocks draw two ways: a view that keeps its own history (the
       // settled suggestion card) still mounts; everything else renders as the
       // deleted BlockRow with Restore (DM-3.4) instead of the generic fallback.
-      const dead = historic.filter(id => !alive.has(id));
+      const dead = recent.filter(id => !alive.has(id));
       walk(dead.filter(id => viewKeepsHistory(views.get(state.blocks[id]?.type ?? ""))), history);
       historyLayer.update(dead.filter(id => !viewKeepsHistory(views.get(state.blocks[id]?.type ?? ""))));
     }
@@ -681,7 +704,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     notices.replaceChildren(notice({ kind: "error", word: `${who} failed in ${error.phase}: ${what}`, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
   });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };

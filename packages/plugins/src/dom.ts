@@ -2,7 +2,7 @@
 import type { Block, DocState, Evaluation } from "@nooq/core";
 import type { Command, CommandResult, Immutable, Plugin, SelectionRequest } from "./definitions.ts";
 import { defineAction, type Action, type ActionToolbar, type BlockActions, type SurfaceAction, type SurfaceActionContext } from "./actions.ts";
-import { defineTextPolicy, type TextMode, type TextMark, type TextPolicy } from "./text-policy.ts";
+import { defineTextPolicy, validateMarkBases, type TextMode, type TextMark, type TextPolicy, type TextPolicyDefinition } from "./text-policy.ts";
 export * from "./actions.ts";
 export * from "./text-policy.ts";
 // The DOM block frame, re-exported for plugin authors: a view styles itself
@@ -97,6 +97,16 @@ export interface DOMPlugin {
   keys?: readonly (SurfaceAction & { key: string; when?(context: SurfaceActionContext): boolean })[];
   history?(snapshot: Immutable<DocState>): readonly string[];
 }
+/**
+ * A view's policy must be grammatical for its plugin (0009 §2): reserved
+ * bare bases, or bases — marks and renderer keys alike — namespaced by this
+ * plugin's own id. Poached namespaces and foreign bare names are rejected.
+ */
+function viewTextPolicy(definition: TextPolicyDefinition, pluginId: string): Readonly<TextPolicy> {
+  const policy = defineTextPolicy(definition);
+  validateMarkBases([...(policy.marks ?? []), ...Object.keys(policy.renderMarks ?? {})], pluginId);
+  return policy;
+}
 export function defineDOMPlugin<T extends DOMPlugin>(plugin: T): Readonly<T> {
   if (!plugin.id || !plugin.forPlugin?.id) throw new Error("DOM plugin must name its headless plugin");
   const types = plugin.views.map(v => v.type);
@@ -104,7 +114,7 @@ export function defineDOMPlugin<T extends DOMPlugin>(plugin: T): Readonly<T> {
   const actions = plugin.actions?.map(action => defineAction(action as Parameters<typeof defineAction>[0]));
   if (actions && new Set(actions.map(a => a.id)).size !== actions.length) throw new Error(`Duplicate action in ${plugin.id}`);
   return Object.freeze({ ...plugin, views: Object.freeze(plugin.views.map(v => Object.freeze({ ...v,
-    ...(v.textPolicy ? { textPolicy: defineTextPolicy(v.textPolicy) } : {}),
+    ...(v.textPolicy ? { textPolicy: viewTextPolicy(v.textPolicy, plugin.id) } : {}),
   }))),
     ...(actions ? { actions: Object.freeze(actions) } : {}),
     ...(plugin.menus ? { menus: Object.freeze(plugin.menus.map(m => Object.freeze({ ...m }))) } : {}),

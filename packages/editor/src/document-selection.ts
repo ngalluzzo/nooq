@@ -5,8 +5,8 @@ import type { Editor } from "./controller.ts";
 
 export interface SelectionBinding {
   element: HTMLElement;
-  /** null is a legacy textarea, which forms a document-selection barrier. */
-  marks: readonly TextMark[] | null;
+  /** null is a legacy textarea, which forms a document-selection barrier. Rich bindings carry their policy's authoring bases (0009 §2). */
+  marks: readonly string[] | null;
   selection(): TextSelection;
   focus(selection?: TextSelection): void;
   update(block: Block): void;
