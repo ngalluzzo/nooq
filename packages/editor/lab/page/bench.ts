@@ -139,6 +139,7 @@ const lab = {
   phaseArm: () => {
     if ((globalThis as { __phased?: boolean }).__phased) return;
     (globalThis as { __phased?: boolean }).__phased = true;
+    window.addEventListener("keydown", () => { const g = globalThis as { __pm?: Record<string, number> }; if (g.__pm && !g.__pm.keydownWindow) g.__pm.keydownWindow = performance.now(); if (!g.__pm) g.__pm = { keydownWindow: performance.now() }; }, true);
     document.addEventListener("keydown", () => { (globalThis as { __pm?: Record<string, number> }).__pm = { keydown: performance.now() }; }, true);
     document.addEventListener("input", () => { const pm = (globalThis as { __pm?: Record<string, number> }).__pm; if (pm) pm.input = performance.now(); }, true);
     editor.onEvents(() => { const pm = (globalThis as { __pm?: Record<string, number> }).__pm; if (pm) pm.tx = performance.now(); });

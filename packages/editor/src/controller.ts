@@ -41,7 +41,7 @@ import {
 import { replaceChanges } from "@nooq/core";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope } from "@nooq/yjs";
 import { SyncSession, type AwarenessEntry, type SyncTransport } from "@nooq/sync";
-import { PluginRegistry, PluginRuntime, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
+import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
 export interface JobBinding { job: Job<any, any> | string; actor: ActorDescriptor; signer?: import("@nooq/core").ActorKey }
@@ -132,7 +132,8 @@ export class Editor {
     for (const { definition } of this.registry.jobs) if (definition.publishes && !this.identities.has(`job:${definition.id}`)) throw new Error(`Publishing job ${definition.id} needs a host binding`);
     this.ydoc = newDocument(options.docId);
     this.runtime = new PluginRuntime(this.registry, {
-      read: () => this.view, actor: this.localActor(),
+      read: () => readState(this.ydoc), // FRESH: the preparer freezes it, validation mutates it (EB-6)
+      actor: this.localActor(),
       commit: (prepared, actor) => this.commitCommand(prepared, actor),
       jobActor: id => this.identities.get(`job:${id}`)?.actor,
       publish: (job, proposal, intent) => this.publishJob(job, proposal, intent),
@@ -213,8 +214,17 @@ export class Editor {
   }
 
   /** The projection IS the engine view (DM-9): every core function works on it. */
+  /**
+   * The shared read-only projection, memoized by revision (EB-6): it was
+   * rebuilt ~5x per keystroke across handler, authorize, render and reviews.
+   * Mutating it (or its blocks) is a caller bug — freeze it so such a bug
+   * throws instead of corrupting the cache. Paths that MUTATE a projection
+   * (engine validation, the command preparer) use fresh readState calls.
+   */
+  private viewCache: { revision: number; value: DocState } | undefined;
   get view(): DocState {
-    return readState(this.ydoc);
+    const cache = this.viewCache?.revision === this.revisionValue ? this.viewCache : (this.viewCache = { revision: this.revisionValue, value: freezeInPlace(readState(this.ydoc)) as unknown as DocState }); // Immutable typed as DocState: reads compile, mutation throws at runtime
+    return cache.value;
   }
 
   onChange(callback: () => void): () => void {
