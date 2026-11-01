@@ -5,7 +5,9 @@
 set -eu
 
 bad=0
-for commit in $(git rev-list --all); do
+# Merge commits are mechanical joins (GitHub PR merges carry no signoff);
+# every real commit — both parents' histories — is still walked and checked.
+for commit in $(git rev-list --all --no-merges); do
   count=$(git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$commit" | grep -c . || true)
   if [ "$count" -eq 0 ]; then
     short=$(git log -1 --format='%h %s' "$commit")
