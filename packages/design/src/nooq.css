@@ -68,6 +68,7 @@
 /* BlockRow */
 .nq-doc { width: 100%; max-width: calc(var(--nq-measure) + var(--nq-gutter)); display: flex; flex-direction: column; gap: var(--nq-block-gap); }
 .nq-block { position: relative; display: grid; grid-template-columns: var(--nq-gutter) minmax(0, 1fr); color: var(--nq-graphite); }
+.nq-fallback { grid-template-columns: minmax(0, 1fr); gap: var(--nq-space-2); padding-inline-start: var(--nq-gutter); }
 .nq-gutter { position: relative; display: flex; justify-content: flex-end; gap: 10px; padding-right: 12px; }
 .nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: 30px; padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; opacity: 0; }
 .nq-block:hover .nq-handle, .nq-block.is-active .nq-handle, .nq-handle:focus-visible { opacity: 1; }

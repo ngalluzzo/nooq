@@ -67,11 +67,13 @@ export function rebaseTextChanges(changes: readonly TextChange[], before: string
 
 export interface HostedRichText extends RichTextBinding {
   update(text: RenderedText): void;
+  insertText(text: string): boolean;
 }
 export function mountRichText(host: {
   read(): RenderedText;
   commit(changes: TextChange[]): boolean;
   keyDown(event: KeyboardEvent): boolean;
+  beforeInput?(event: InputEvent): boolean;
   input(text: string): void;
 }, options: RichTextOptions = {}): HostedRichText {
   const allowed = new Set(options.marks ?? ["strong", "em", "code"]);
@@ -111,12 +113,22 @@ export function mountRichText(host: {
   }
   function dispatch(tr: Transaction): boolean {
     if (disposed) return false;
+    const previousSelection = state.selection, previousMarks = state.storedMarks;
     const before = textOf(state.doc), next = state.apply(tr), after = textOf(next.doc);
     const changes = richTextChanges(before, after);
     updateState(next);
     let accepted = true;
     if (changes.length) accepted = host.commit(rebaseTextChanges(changes, before.s, host.read().s));
-    update(host.read(), !accepted);
+    const admitted = host.read();
+    update(admitted, !accepted);
+    if (!accepted) {
+      // A replacement collapses PM's selection before authorization. Restore the
+      // original range after rollback, mapped through any already-admitted drift.
+      const remote = replaceChanges(before.s, admitted.s);
+      const offset = (position: number) => Math.min(state.doc.content.size, Math.max(0, caretAfterChanges(remote, position)));
+      updateState(state.apply(state.tr.setSelection(TextSelection.create(state.doc,
+        offset(previousSelection.anchor), offset(previousSelection.head))).setStoredMarks(previousMarks)));
+    }
     if (accepted && changes.length && !composing) host.input(host.read().s);
     return accepted;
   }
@@ -130,6 +142,10 @@ export function mountRichText(host: {
     }
     return dispatch(state.doc.rangeHasMark(from, to, type) ? state.tr.removeMark(from, to, type) : state.tr.addMark(from, to, type.create()));
   }
+  function insertText(text: string): boolean {
+    if (disposed || composing || view.composing) return false;
+    syncSelection(); return dispatch(state.tr.insertText(text));
+  }
   view = new EditorView({ mount: element }, {
     state, dispatchTransaction: tr => { dispatch(tr); },
     attributes: { class: "nq-input nq-rich-text", role: "textbox", "aria-label": options.label ?? "Text block", "aria-multiline": "true", style: "white-space:pre-wrap;overflow-wrap:anywhere;min-height:2em" },
@@ -138,9 +154,11 @@ export function mountRichText(host: {
       if (host.keyDown(event)) return true;
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
         const mark = ({ b: "strong", i: "em", "`": "code" } as const)[event.key.toLowerCase() as "b" | "i" | "`"];
-        if (mark && allowed.has(mark)) { toggleMark(mark); return true; }
+        // Consume known formatting shortcuts even when disallowed: browser defaults
+        // must not introduce formatting outside this binding's authoring policy.
+        if (mark) { toggleMark(mark); return true; }
       }
-      if (event.key === "Enter") { dispatch(state.tr.insertText("\n")); return true; }
+      if (event.key === "Enter") { insertText("\n"); return true; }
       return false;
     },
     handlePaste(_view, _event, slice) {
@@ -148,6 +166,17 @@ export function mountRichText(host: {
       dispatch(state.tr.insertText(slice.content.textBetween(0, slice.content.size, "\n"))); return true;
     },
     handleDOMEvents: {
+      beforeinput(_view, event) {
+        const input = event as InputEvent;
+        if (!input.cancelable || composing || input.isComposing || view.composing) return false;
+        if (host.beforeInput?.(input)) { input.preventDefault(); return true; }
+        if (input.inputType === "insertParagraph" || input.inputType === "insertLineBreak") {
+          input.preventDefault(); insertText("\n"); return true;
+        }
+        const mark = ({ formatBold: "strong", formatItalic: "em" } as const)[input.inputType as "formatBold" | "formatItalic"];
+        if (mark) { input.preventDefault(); toggleMark(mark); return true; }
+        return false;
+      },
       compositionstart() { composing = true; if (finishing) clearTimeout(finishing); return false; },
       compositionend() {
         // Allow PM's DOM observer to consume the final native input first.
@@ -156,7 +185,7 @@ export function mountRichText(host: {
       },
     },
   });
-  return { element, update,
+  return { element, update, insertText,
     selection: () => { if (!disposed && !composing) syncSelection(); return { anchor: state.selection.anchor, head: state.selection.head }; },
     focus(selection) {
       if (disposed) return;

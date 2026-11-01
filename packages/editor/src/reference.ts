@@ -1,16 +1,17 @@
 /** Explicit first-party features, implemented through the same API as third parties. */
 import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Proposal } from "@nooq/core";
 import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@nooq/plugins";
-import { defineDOMPlugin } from "@nooq/plugins/dom";
+import { defineDOMPlugin, defineTextPolicy } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock, deleteBlock } from "@nooq/plugins/essentials";
 import { blockRow, suggestionCard, type DiffSegment, type SuggestionState } from "@nooq/design";
 import { actorKindOf, type JobBinding } from "./controller.ts";
 
 export { essentials } from "@nooq/plugins/essentials";
+export const writingTextPolicy = defineTextPolicy({ defaultMode: "plain", enter: { command: splitBlock } });
 export const essentialsDOM = defineDOMPlugin({
   id: "nooq.essentials", forPlugin: essentials,
-  views: essentials.contributes.blocks.map((block, i) => ({ type: block.type, mount(ctx) {
-    const text = ctx.mountText({ label: block.label });
+  views: essentials.contributes.blocks.map((block, i) => ({ type: block.type, textPolicy: writingTextPolicy, mount(ctx) {
+    const text = ctx.mountTextEditor({ label: block.label });
     const element = blockRow({ content: [text.element, ctx.children.element], kind: (["paragraph", "heading", "quote"] as const)[i]!, actor: "human" });
     const bar = element.querySelector<HTMLElement>(".nq-bar")!;
     return { element, update(block) {
