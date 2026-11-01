@@ -14,7 +14,9 @@ const lists = {
   color: tokens.color.tokens,
   spacing: tokens.spacing.tokens,
   radius: tokens.radius.tokens,
+  size: tokens.size.tokens,
   shadow: tokens.shadow.tokens,
+  highlight: tokens.highlight.tokens,
   editor: tokens.editor.tokens,
 };
 
@@ -46,12 +48,18 @@ describe("tokens.json", () => {
   }
 
   test("lengths are plain CSS lengths", () => {
-    for (const t of [...lists.spacing, ...lists.radius, ...lists.editor]) expect(t.value).toMatch(LENGTH);
+    for (const t of [...lists.spacing, ...lists.radius, ...lists.size, ...lists.highlight, ...lists.editor]) expect(t.value).toMatch(LENGTH);
   });
 
   test("the spacing scale only grows", () => {
     const px = lists.spacing.map((t) => parseFloat(t.value));
     expect(px).toEqual([...px].sort((a, b) => a - b));
+  });
+
+  test("control heights grow small to medium to handle", () => {
+    const height = (name: string) => parseFloat(lists.size.find((t) => t.name === name)!.value);
+    expect(height("control-sm")).toBeLessThan(height("control-md"));
+    expect(height("control-handle")).toBeLessThan(height("control-md"));
   });
 
   test("type styles name a declared family and use valid sizes", () => {
@@ -88,6 +96,16 @@ describe("tokens.css", () => {
     const used = new Set([...themeCss.matchAll(/var\((--nq-[\w-]+)/g)].map((m) => m[1]!));
     const missing = [...used].filter((u) => !defined.has(u));
     expect(missing).toEqual([]);
+  });
+
+  test("control heights and highlight washes are tokens, not literals", () => {
+    // Icon-size literals (the actor mark's 10px, the sr clip's 1px) wait on the icon-size token family below.
+    const iconLiterals = new Set(["height: 1px", "height: 10px"]);
+    for (const declaration of themeCss.match(/(?<![\w-])height: [^;}]+/g) ?? []) {
+      if (/\dpx/.test(declaration) && !iconLiterals.has(declaration)) expect(declaration).toMatch(/^height: var\(--nq-/);
+    }
+    expect(themeCss).not.toMatch(/\d+(?:\.\d+)?%, transparent/);
+    expect(themeCss.match(/var\(--nq-highlight-peer\)/g)?.length).toBeGreaterThanOrEqual(7);
   });
 
   test("never sets color-scheme on :root, so a host page keeps its own", () => {

@@ -58,7 +58,9 @@ export interface Tokens {
   type: { fonts: unknown[]; families: Record<string, string>; groups: TypeGroup[] };
   spacing: { note?: string; tokens: LengthToken[] };
   radius: { note?: string; tokens: LengthToken[] };
+  size: { note?: string; tokens: LengthToken[] };
   shadow: { note?: string; tokens: ShadowToken[] };
+  highlight: { note?: string; tokens: LengthToken[] };
   editor: { note?: string; tokens: LengthToken[] };
 }
 
@@ -135,7 +137,7 @@ export function tokensToCss(tokens: Tokens): string {
     "",
     ":root {",
   );
-  for (const family of ["spacing", "radius", "editor"] as const) {
+  for (const family of ["spacing", "radius", "size", "editor", "highlight"] as const) {
     for (const t of tokens[family].tokens) lines.push(`  ${cssVar(t.name)}: ${t.value};`);
   }
   for (const [key, stack] of Object.entries(tokens.type.families)) lines.push(`  ${cssVar(`font-${key}`)}: ${stack};`);

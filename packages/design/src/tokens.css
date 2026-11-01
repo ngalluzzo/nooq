@@ -149,11 +149,15 @@
   --nq-radius-sm: 4px;
   --nq-radius-md: 8px;
   --nq-radius-full: 9999px;
+  --nq-control-sm: 22px;
+  --nq-control-md: 32px;
+  --nq-control-handle: 30px;
   --nq-measure: 680px;
   --nq-gutter: 44px;
   --nq-change-bar: 3px;
   --nq-caret-width: 2px;
   --nq-block-gap: 8px;
+  --nq-highlight-peer: 22%;
   --nq-font-serif: "Literata Variable", "Literata Fallback", Georgia, serif;
   --nq-font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next Fallback", system-ui, sans-serif;
   --nq-font-mono: "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono Fallback", ui-monospace, Menlo, monospace;

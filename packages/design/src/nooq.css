@@ -8,7 +8,7 @@
 .nq-glyph { flex: none; display: block; }
 
 /* Button */
-.nq-btn { display: inline-flex; align-items: center; gap: var(--nq-space-2); height: 32px; padding: 0 var(--nq-space-3); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; }
+.nq-btn { display: inline-flex; align-items: center; gap: var(--nq-space-2); box-sizing: border-box; height: var(--nq-control-md); padding: 0 var(--nq-space-3); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); color: var(--nq-graphite); cursor: pointer; }
 .nq-btn:hover { background: var(--nq-paper-sunken); }
 .nq-btn:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
 .nq-btn-primary { border-color: var(--nq-ink-fill); background: var(--nq-ink-fill); color: var(--nq-on-ink); }
@@ -29,7 +29,7 @@
 .nq-actor-ai .nq-actor-kind { background: var(--nq-pencil); color: var(--nq-on-pencil); }
 
 /* StateTag */
-.nq-state { display: inline-flex; align-items: center; gap: var(--nq-space-1); height: 20px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--nq-radius-sm); white-space: nowrap; }
+.nq-state { display: inline-flex; align-items: center; gap: var(--nq-space-1); box-sizing: border-box; height: var(--nq-control-sm); padding: 0 6px; border: 1px solid transparent; border-radius: var(--nq-radius-sm); white-space: nowrap; }
 .nq-state-fresh { background: var(--nq-pencil); color: var(--nq-on-pencil); }
 .nq-state-stale { border: 1px dashed var(--nq-pencil-text); color: var(--nq-pencil-text); }
 .nq-state-conflicted { background: var(--nq-stamp); color: var(--nq-on-stamp); }
@@ -37,7 +37,7 @@
 .nq-state-rejected { border-color: var(--nq-rule); color: var(--nq-graphite-muted); }
 
 /* Digest */
-.nq-digest-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 22px; padding: 0 6px; border: 0; border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); color: var(--nq-graphite); cursor: copy; }
+.nq-digest-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: var(--nq-control-sm); padding: 0 6px; border: 0; border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); color: var(--nq-graphite); cursor: copy; }
 .nq-digest-chip:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
 .nq-digest-kind { color: var(--nq-graphite-muted); }
 .nq-digest-algo { color: var(--nq-graphite-muted); }
@@ -70,7 +70,7 @@
 .nq-block { position: relative; display: grid; grid-template-columns: var(--nq-gutter) minmax(0, 1fr); color: var(--nq-graphite); }
 .nq-fallback { grid-template-columns: minmax(0, 1fr); gap: var(--nq-space-2); padding-inline-start: var(--nq-gutter); }
 .nq-gutter { position: relative; display: flex; justify-content: flex-end; gap: 10px; padding-right: 12px; }
-.nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: 30px; padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; opacity: 0; }
+.nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: var(--nq-control-handle); padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; opacity: 0; }
 .nq-block:hover .nq-handle, .nq-block.is-active .nq-handle, .nq-handle:focus-visible { opacity: 1; }
 .nq-handle:hover { background: var(--nq-paper-sunken); }
 .nq-handle:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
@@ -88,7 +88,7 @@
 @media (prefers-reduced-motion: reduce) { .nq-caret { animation: none; } }
 .nq-surface ::selection, .nq-selection { background: var(--nq-selection); }
 .nq-peer { position: relative; }
-.nq-peer-sel { background: color-mix(in srgb, var(--nq-peer) 22%, transparent); }
+.nq-peer-sel { background: color-mix(in srgb, var(--nq-peer) var(--nq-highlight-peer), transparent); }
 .nq-peer-caret { position: relative; display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-peer); }
 /* Presence overlay (SW-7): remote carets ride above the text, never in it; remote selections are CSS custom highlights (§3). */
 .nq-editor { position: relative; }
@@ -96,12 +96,12 @@
 .nq-presence-peer { position: absolute; width: 0; }
 .nq-presence-peer .nq-peer, .nq-presence-peer .nq-peer-caret { display: block; height: 100%; margin: 0; }
 .nq-presence-peer .nq-peer-caret { margin-left: -1px; }
-.nq-editor ::highlight(nq-peer-teal) { background-color: color-mix(in srgb, var(--nq-peer-teal) 22%, transparent); }
-.nq-editor ::highlight(nq-peer-violet) { background-color: color-mix(in srgb, var(--nq-peer-violet) 22%, transparent); }
-.nq-editor ::highlight(nq-peer-green) { background-color: color-mix(in srgb, var(--nq-peer-green) 22%, transparent); }
-.nq-editor ::highlight(nq-peer-sepia) { background-color: color-mix(in srgb, var(--nq-peer-sepia) 22%, transparent); }
-.nq-editor ::highlight(nq-peer-magenta) { background-color: color-mix(in srgb, var(--nq-peer-magenta) 22%, transparent); }
-.nq-editor ::highlight(nq-peer-slate) { background-color: color-mix(in srgb, var(--nq-peer-slate) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-teal) { background-color: color-mix(in srgb, var(--nq-peer-teal) var(--nq-highlight-peer), transparent); }
+.nq-editor ::highlight(nq-peer-violet) { background-color: color-mix(in srgb, var(--nq-peer-violet) var(--nq-highlight-peer), transparent); }
+.nq-editor ::highlight(nq-peer-green) { background-color: color-mix(in srgb, var(--nq-peer-green) var(--nq-highlight-peer), transparent); }
+.nq-editor ::highlight(nq-peer-sepia) { background-color: color-mix(in srgb, var(--nq-peer-sepia) var(--nq-highlight-peer), transparent); }
+.nq-editor ::highlight(nq-peer-magenta) { background-color: color-mix(in srgb, var(--nq-peer-magenta) var(--nq-highlight-peer), transparent); }
+.nq-editor ::highlight(nq-peer-slate) { background-color: color-mix(in srgb, var(--nq-peer-slate) var(--nq-highlight-peer), transparent); }
 .nq-peer-flag { position: absolute; bottom: 100%; left: 0; padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-xs) var(--nq-radius-xs) var(--nq-radius-xs) 0; background: var(--nq-peer); color: var(--nq-on-peer); font-family: var(--nq-font-sans); font-size: 12px; font-weight: 600; font-style: normal; line-height: 16px; white-space: nowrap; }
 
 /* SlashMenu */
@@ -109,10 +109,10 @@
 .nq-menu-query { margin: 0 0 var(--nq-space-1); padding: var(--nq-space-1) var(--nq-space-2); border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
 .nq-menu-list { border-radius: var(--nq-radius-sm); }
 .nq-menu-list:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
-.nq-menu-item { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: var(--nq-space-2); padding: 6px var(--nq-space-2); border-radius: var(--nq-radius-sm); cursor: pointer; }
+.nq-menu-item { display: grid; grid-template-columns: var(--nq-control-md) minmax(0, 1fr) auto; align-items: center; gap: var(--nq-space-2); padding: 6px var(--nq-space-2); border-radius: var(--nq-radius-sm); cursor: pointer; }
 .nq-menu-item:hover { background: var(--nq-paper-sunken); }
 .nq-menu-item.is-active { background: var(--nq-ink-soft); }
-.nq-menu-glyph { display: grid; place-items: center; width: 32px; height: 32px; box-sizing: border-box; border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); background: var(--nq-paper); color: var(--nq-graphite); font-family: var(--nq-font-serif); font-size: 15px; font-weight: 600; }
+.nq-menu-glyph { display: grid; place-items: center; width: var(--nq-control-md); height: var(--nq-control-md); box-sizing: border-box; border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); background: var(--nq-paper); color: var(--nq-graphite); font-family: var(--nq-font-serif); font-size: 15px; font-weight: 600; }
 .nq-menu-glyph.is-ai { border-color: var(--nq-pencil-text); background: repeating-linear-gradient(135deg, var(--nq-pencil-soft) 0 3px, var(--nq-paper) 3px 6px); color: var(--nq-pencil-text); }
 .nq-menu-text { display: flex; flex-direction: column; min-width: 0; }
 .nq-menu-type { overflow: hidden; color: var(--nq-graphite-muted); text-overflow: ellipsis; white-space: nowrap; }
