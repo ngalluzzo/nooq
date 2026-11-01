@@ -236,7 +236,7 @@ export function tryValidateReadonly(state: DocState, tx: Transaction, selection?
   for (const op of tx.ops) {
     if (op.op === "textEdit") {
       const block = state.blocks[op.block];
-      if (!block || !tree.alive.has(op.block)) throw new Error(`block ${op.block} is tombstoned`);
+      if (!block) throw new Error(`no such block ${op.block}`); // engine semantics: requireBlock, existence only — tombstones keep data and stay editable
       const base = block.text ?? { s: "", marks: [] as string[][] };
       if (!splicesInScope(base, op.changes)) return false; // fall back to full application for the precise error
       let delta = 0;
@@ -247,7 +247,7 @@ export function tryValidateReadonly(state: DocState, tx: Transaction, selection?
       lengths.set(op.block, base.s.length + delta);
     } else if (op.op === "setField") {
       const block = state.blocks[op.block];
-      if (!block || !tree.alive.has(op.block)) throw new Error(`block ${op.block} is tombstoned`);
+      if (!block) throw new Error(`no such block ${op.block}`); // engine semantics: existence only
     } else if (op.op === "insert") {
       if (!selection || selection.block !== op.block.id) return false; // structural; full path unless the selected new block
       lengths.set(op.block.id, op.block.text?.s.length ?? 0); // the fresh block: offsets against its own text

@@ -27,10 +27,11 @@ describe("read-only fast validation (EB-6)", () => {
     expect(() => validateTransaction(full, bad)).toThrow();
   });
 
-  test("tombstoned target throws", () => {
+  test("tombstoned target: textEdit ALLOWED (engine semantics — tombstones keep data), structural ops still throw", () => {
     let { state, a } = doc();
     state = applyTransaction(state, tx([{ op: "delete", block: a.id }]));
-    expect(() => validateTransaction(state, tx([{ op: "textEdit", block: a.id, changes: [{ insert: "x" }] }]))).toThrow(/tombstoned/);
+    expect(() => validateTransaction(state, tx([{ op: "textEdit", block: a.id, changes: [{ insert: "x" }] }]))).not.toThrow();
+    expect(() => validateTransaction(state, tx([{ op: "move", block: a.id, newParent: null }]))).toThrow();
   });
 
   test("structural ops still take the full path (equivalence oracle)", () => {
