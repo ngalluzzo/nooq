@@ -19,5 +19,6 @@ export { checkContrast, contrastRatio, CONTRAST_PAIRS, luminance, type ContrastP
 export { glyph, type GlyphName } from "./glyphs.ts";
 export { PEER_INKS, peerInk, type PeerInk } from "./peer.ts";
 export { cssVar, PREFIX, resolveColor, THEMES, tokensToCss, type ThemeId, type Tokens } from "./tokens.ts";
+export { applyStoryTheme, pageLevelA11yRules, pageLevelAxeRuleIds, pageLevelAxeRuleOverrides, themeAttribute } from "./story-settings.ts";
 export { animateWordmark, mark, renderWordmarkFrame, wordmark, type AnimateOptions, type LogoProps, type WordmarkAnimation } from "./brand/wordmark.ts";
 export { logoFrame, PIECE_LENGTH, REST, TIMINGS, type LogoFrame, type Phase, type Timing, type TimingName } from "./brand/geometry.ts";

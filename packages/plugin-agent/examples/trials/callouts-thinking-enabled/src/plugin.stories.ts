@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect } from "storybook/test";
-import { mountPluginStory, disposePluginStories, type PluginStoryArgs } from "@nooq/plugin-agent/storybook";
+import { mountPluginStory, disposePluginStories, type PluginStoryArgs } from "@nooq/editor/testing";
 import plugin from "./index.ts";
 import dom from "./dom.ts";
 const meta = {

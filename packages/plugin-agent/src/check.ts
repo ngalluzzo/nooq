@@ -37,7 +37,7 @@ export function checkSourcePolicy(source: string, path: CandidatePath = "src/ind
         const allowed = ts.isStringLiteral(spec) && (spec.text === "@nooq/plugins"
           || (spec.text === "@nooq/core" && typeOnly)
           || (path !== "src/index.ts" && ["@nooq/plugins/dom", "./index.ts"].includes(spec.text))
-          || (path === "src/plugin.stories.ts" && (["./dom.ts", "storybook/test", "@nooq/plugin-agent/storybook"].includes(spec.text) || (spec.text === "@storybook/html-vite" && typeOnly))));
+          || (path === "src/plugin.stories.ts" && (["./dom.ts", "storybook/test", "@nooq/editor/testing"].includes(spec.text) || (spec.text === "@storybook/html-vite" && typeOnly))));
         if (!allowed) errors.push(`Import is outside the ${path} capability allowlist`);
       }
     }
@@ -170,8 +170,8 @@ export async function validatePackage(sources: Sources, brief: Brief, options: {
   try {
     await mkdir(join(scratch, "src"));
     for (const path of candidatePaths) await writeFile(join(scratch, path), sources[path]);
-    const paths: Record<string, string[]> = { "@nooq/plugin-agent/storybook": [join(import.meta.dir, "storybook.ts")] };
-    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@storybook/html-vite", "storybook/test"]) {
+    const paths: Record<string, string[]> = {};
+    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@nooq/editor/testing", "@storybook/html-vite", "storybook/test"]) {
       paths[name] = [import.meta.resolve(name).replace(/^file:\/\//, "").replace(/\.js$/, ".d.ts")];
       // Workspace exports are TypeScript sources already.
     }

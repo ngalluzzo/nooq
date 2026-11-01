@@ -21,11 +21,8 @@
     "@nooq/design": "workspace:*",
     "playwright": "1.64.1",
     "@storybook/html": "10.6.5",
-    "@storybook/html-vite": "10.6.5",
-    "storybook": "10.6.5",
+    "@storybook/html-vite": "catalog:",
+    "storybook": "catalog:",
     "axe-core": "4.14.0"
-  },
-  "exports": {
-    "./storybook": "./src/storybook.ts"
   }
 }

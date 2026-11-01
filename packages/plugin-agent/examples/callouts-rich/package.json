@@ -11,8 +11,8 @@
     "@nooq/plugins": "workspace:*"
   },
   "devDependencies": {
-    "@nooq/plugin-agent": "workspace:*",
-    "@storybook/html-vite": "10.6.5",
-    "storybook": "10.6.5"
+    "@nooq/editor": "workspace:*",
+    "@storybook/html-vite": "catalog:",
+    "storybook": "catalog:"
   }
 }

@@ -1,5 +1,9 @@
-/** Browser-only story fixture. Every mount gets its own editor and explicit cleanup. */
-import { Editor, createSurface } from "@nooq/editor";
+/**
+ * Nooq testkit: editor fixtures with no Storybook imports. The same helpers
+ * mount a plugin for CSF stories, `bun test` under happy-dom, or any browser
+ * runner. Every mount gets its own editor and explicit cleanup.
+ */
+import { Editor, createSurface } from "./index.ts";
 import type { Plugin, JsonValue } from "@nooq/plugins";
 import type { DOMPlugin } from "@nooq/plugins/dom";
 export interface PluginStoryArgs { fields?: Record<string, JsonValue>; text?: string; children?: boolean }
