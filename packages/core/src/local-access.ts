@@ -1,8 +1,10 @@
 /** Logical authoring checks. Remote admission must still inspect physical updates. */
 import { authorize, isSecuredDocId, type Touched, type Verdict } from "./access.ts";
 import { canonicalJson } from "./canonical.ts";
-import { applyTransaction } from "./engine.ts";
+import { tryValidateReadonly, validateTransaction } from "./engine.ts";
 import type { ActorDescriptor, DocState, Proposal, Transaction } from "./model.ts";
+
+
 import { registrationOf } from "./registry.ts";
 import { liveTree } from "./tree.ts";
 
@@ -34,11 +36,18 @@ export function adoptionMatchesState(state: DocState, tx: Transaction): boolean 
   } catch { return false; }
 }
 
-export function authorizeLocal(state: DocState, tx: Transaction, principal: LocalPrincipal): LocalVerdict {
+export function authorizeLocal(state: DocState, tx: Transaction, principal: LocalPrincipal, fresh?: () => DocState): LocalVerdict {
   const deny = (reason: string): LocalVerdict => ({ verdict: "deny", reason });
   if ((tx.adoptedBy ?? tx.actor.actorId) !== principal.actorId) return deny("signer-author-mismatch");
-  // Core validation observes earlier operations in the same batch, without mutation.
-  try { canonicalJson(tx); applyTransaction(state, tx); } catch { return deny("invalid-transaction"); }
+  // Core validation observes earlier operations in the same batch, without
+  // mutating the caller's state. EB-6: the read-only fast path covers the
+  // dominant shapes against the SHARED projection for free; structural
+  // shapes pay one fresh in-place validation. (The old pure applyTransaction
+  // cloned the whole state — ~26ms per keystroke at 2,000 blocks.)
+  try {
+    canonicalJson(tx);
+    if (!tryValidateReadonly(state, tx)) validateTransaction(fresh ? fresh() : structuredClone(state), tx);
+  } catch { return deny("invalid-transaction"); }
   if (tx.adoptedBy) {
     if (adoptionMatchesState(state, tx) !== true) return deny("invalid-adoption");
     const settlement = tx.ops.at(-1)!;

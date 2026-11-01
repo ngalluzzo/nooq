@@ -40,9 +40,10 @@ import {
   type Transaction,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
+import { MaintainedProjection } from "@nooq/yjs";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, storeDocument, textAuthors, type Captured, type StoredDocument } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
-import { SyncSession, type AwarenessEntry, type OutboxEntry, type SyncTransport } from "@nooq/sync";
+import { SyncSession, type AwarenessEntry, type Cursor, type OutboxEntry, type SyncTransport } from "@nooq/sync";
 import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
@@ -173,6 +174,9 @@ export class Editor {
   private burst: Burst | undefined;
   /** SW-4: envelopes leave in commit order, though their signatures finish in any order. */
   private shipping: Promise<void> = Promise.resolve();
+  /** SW-7: the writer's latest cursor; pending while it sits in a burst peers have not received. */
+  private cursor: Cursor = null;
+  private cursorPending = false;
 
   readonly commands = {
     batch: <Args>(command: Command<Args> | string, inputs: readonly Args[]): CommandResult => this.runtime.runBatch(command, inputs),
@@ -299,11 +303,22 @@ export class Editor {
    * throws instead of corrupting the cache. Paths that MUTATE a projection
    * (engine validation, the command preparer) use fresh readState calls.
    */
+  /**
+   * The shared read-only projection (EB-6 stage 2). Served from the
+   * MaintainedProjection when one is attached — incremental from Yjs events,
+   * property-tested equal to readState — falling back to the revision-memoized
+   * full read. NOT frozen in maintained mode: the projection mutates its own
+   * state between transactions, never during a synchronous read; treat as
+   * immutable, do not hold across awaits.
+   */
   private viewCache: { revision: number; value: DocState } | undefined;
+  #maintained: import("@nooq/yjs").MaintainedProjection | undefined;
   get view(): DocState {
-    const cache = this.viewCache?.revision === this.revisionValue ? this.viewCache : (this.viewCache = { revision: this.revisionValue, value: freezeInPlace(readState(this.ydoc)) as unknown as DocState }); // Immutable typed as DocState: reads compile, mutation throws at runtime
+    if (this.#maintained) { this.#maintained.sync(); return this.#maintained.value; }
+    const cache = this.viewCache?.revision === this.revisionValue ? this.viewCache : (this.viewCache = { revision: this.revisionValue, value: freezeInPlace(readState(this.ydoc)) as unknown as DocState });
     return cache.value;
   }
+  attachMaintainedProjection(): void { if (!this.#maintained) this.#maintained = new MaintainedProjection(this.ydoc); }
 
   onChange(callback: () => void): () => void {
     this.listeners.add(callback);
@@ -341,7 +356,7 @@ export class Editor {
     const typing = this.typingKey(tx, identity);
     if (this.burst && !(typing !== undefined && this.continuesBurst(this.burst, typing, tx))) this.flush(); // any other action seals first
     if (!genesis) {
-      const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key });
+      const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key }, () => readState(this.ydoc)); // structural shapes get a fresh read, not a clone (EB-6)
       if (verdict.reason === "invalid-transaction") throw new Error("Invalid transaction");
       if (verdict.verdict !== "allow") throw new AuthorizationError(verdict.reason, verdict.verdict === "hold");
     }
@@ -361,7 +376,7 @@ export class Editor {
       if (captured) void this.ship(captured); // a transaction with no effects has nothing to replicate
       return;
     }
-    applyToDoc(this.ydoc, tx);
+    applyToDoc(this.ydoc, tx, undefined, undefined, this.#maintained?.value); // fast path on the shared projection (EB-6 stage 2)
     this.record(tx);
     } finally { this.currentTx = undefined; this.applying = false; }
   }
@@ -408,9 +423,11 @@ export class Editor {
     clearTimeout(burst.idle); clearTimeout(burst.max);
     const tx: Transaction = { ...burst.first, lamport: burst.lamport, ops: [{ op: "textEdit", block: burst.block, changes: burst.changes }] };
     this.record(tx);
-    if (burst.updates.length === 0 || burst.client === undefined) return; // the burst changed nothing
-    const update = burst.updates.length === 1 ? burst.updates[0]! : Y.mergeUpdates(burst.updates);
-    void this.ship({ tx, update, key: burst.signingKey, signer: burst.signer, client: burst.client });
+    if (burst.updates.length > 0 && burst.client !== undefined) { // a burst that changed nothing has nothing to replicate
+      const update = burst.updates.length === 1 ? burst.updates[0]! : Y.mergeUpdates(burst.updates);
+      void this.ship({ tx, update, key: burst.signingKey, signer: burst.signer, client: burst.client });
+    }
+    if (this.cursorPending) this.announce();
   }
 
   /** DM-14.4: what happened here and what peers did, as transactions. Not replicated state. */
@@ -654,9 +671,20 @@ export class Editor {
 
   // ---- awareness (SW-7) ----
 
-  setCursor(cursor: { block: BlockId; offset: number } | null): void {
-    if (this.burst && (cursor === null || cursor.block !== this.burst.block || cursor.offset !== this.burst.caret)) this.flush(); // a selection change seals
-    this.session?.setCursor(cursor);
+  setCursor(cursor: Cursor): void {
+    if (this.burst && (cursor === null || cursor.anchor || cursor.block !== this.burst.block || cursor.offset !== this.burst.caret)) this.flush(); // a selection change seals
+    this.cursor = cursor;
+    // Mid-burst the caret sits in text peers have not received: it goes out when the burst seals.
+    if (this.burst) this.cursorPending = true; else this.announce();
+  }
+
+  /**
+   * Leaves behind every update already shipping. Peers that verify updates
+   * asynchronously can still see it first; presence clamps until the text lands.
+   */
+  private announce(): void {
+    this.cursorPending = false;
+    this.shipping = this.shipping.then(() => { if (!this.closed) this.session?.setCursor(this.cursor); });
   }
 
   /** SW-3: re-run the handshake over a new transport; unconfirmed envelopes resend (SW-4). */

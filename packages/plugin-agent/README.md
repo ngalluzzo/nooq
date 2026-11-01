@@ -68,7 +68,7 @@ The agent is explicitly guided to use `Meta`/`StoryObj` from
 `@storybook/html-vite`, awaited `expect` calls from `storybook/test`, and
 role/label queries scoped to `canvas`. Interactions use `userEvent` and assert
 the resulting behavior. A test that merely renders a component is insufficient.
-Use `mountPluginStory` from `@nooq/plugin-agent/storybook` for an isolated editor
+Use `mountPluginStory` from `@nooq/editor/testing` for an isolated editor
 and return `disposePluginStories` from `beforeEach` as cleanup.
 
 Rich contenteditable values use `toHaveTextContent`; textarea values use

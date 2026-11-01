@@ -25,7 +25,7 @@ export async function writeArtifacts(dir: string, brief: Brief, validation: Vali
   await writeFile(join(dir, "package.json"), JSON.stringify({
     name: `@nooq-generated/${brief.id}`, version: "0.1.0", private: true, type: "module",
     exports: { ".": "./src/index.ts", ...(brief.view ? { "./dom": "./src/dom.ts" } : {}) }, dependencies: { "@nooq/plugins": "workspace:*" },
-    ...(brief.view ? { devDependencies: { "@nooq/plugin-agent": "workspace:*", "@storybook/html-vite": "10.6.5", "storybook": "10.6.5" } } : {}),
+    ...(brief.view ? { devDependencies: { "@nooq/editor": "workspace:*", "@storybook/html-vite": "catalog:", "storybook": "catalog:" } } : {}),
   }, null, 2) + "\n");
   await writeFile(join(dir, "README.md"), `# ${brief.label}\n\n${brief.description}\n\nGenerated candidate for the nooq plugin API. Review src/index.ts and report.json before copying into the nooq workspace. This package uses workspace dependencies and is not a standalone published package.\n\nOpen preview.html for the isolated working preview when browser checks ran; report.html is the static validation summary. src/plugin.stories.ts contains standard CSF3 stories with interaction tests and can be included in the host Storybook stories glob. There is no automatic installation, merge, or publication. The report names the supported checks and remaining integration gaps.\n`);
 }

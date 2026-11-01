@@ -152,17 +152,18 @@ import * as renderer from "@storybook/html/entry-preview";
 import { composeStories } from "storybook/preview-api";
 import { within, userEvent } from "storybook/test";
 import axe from "axe-core";
-import { disposePluginStories } from "@nooq/plugin-agent/storybook";
+import { disposePluginStories } from "@nooq/editor/testing";
+import { applyStoryTheme, pageLevelAxeRuleOverrides } from "@nooq/design/story-settings";
 const stories = composeStories(exports, renderer);
 const plays=Object.fromEntries(Object.entries(exports).filter(([name])=>name!=="default").map(([name,value])=>[name,typeof value.play==="function"]));
 Object.assign(window,{__stories:Object.keys(stories), __plays:plays, __runStory:async(name,theme)=>{
-  disposePluginStories(); document.body.replaceChildren(); document.documentElement.dataset.nqTheme=theme;
+  disposePluginStories(); document.body.replaceChildren(); applyStoryTheme(document.documentElement, theme);
   const canvas=document.createElement("main");document.body.append(canvas);
   let edits=0;canvas.addEventListener("input",()=>edits++);
   try {
     await stories[name].run({canvasElement:canvas,canvas:within(canvas),userEvent:userEvent.setup({document})});
     if(name==="Default" && edits===0)throw new Error("Default must exercise textbox editing with userEvent.clear/type and assert the new value");
-    const result=await axe.run(canvas,{rules:{region:{enabled:false},"page-has-heading-one":{enabled:false},"landmark-one-main":{enabled:false}}});
+    const result=await axe.run(canvas,{rules:pageLevelAxeRuleOverrides});
     if(result.violations.length)throw new Error(JSON.stringify(result.violations.map(v=>({id:v.id,impact:v.impact,description:v.description,nodes:v.nodes.map(n=>n.target)}))));
     return {ok:true};
   } catch(error){return {ok:false,error:String(error)}} finally {disposePluginStories();}

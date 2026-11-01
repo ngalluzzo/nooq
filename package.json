@@ -1,9 +1,13 @@
 {
   "name": "nooq",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": ["packages/*"],
+    "catalog": {
+      "storybook": "10.6.5",
+      "@storybook/html-vite": "10.6.5"
+    }
+  },
   "scripts": {
     "test": "bun test",
     "test:stories": "bun run --cwd packages/design test:stories",

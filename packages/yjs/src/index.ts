@@ -9,6 +9,7 @@ export { REGISTER, documentHeader, layout, registerHeader, type DocumentHeader, 
 export { normalize } from "./normalize.ts";
 export { admitEnvelope, applyCaptured, commitSigned, inspectUpdate, sealEnvelope, type Admission, type Captured, type Committed } from "./enforcement.ts";
 export { readState } from "./read.ts";
+export { MaintainedProjection } from "./projection.ts";
 export { clientRegistry, textAuthors, type AuthorRun } from "./registry.ts";
 export { createCheckpoint, restoreCheckpoint, stateDigestOf } from "./checkpoint.ts";
 export { rebase, stateAt, versionOf, type RebaseOptions } from "./lineage.ts";

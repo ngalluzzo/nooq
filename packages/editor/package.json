@@ -6,7 +6,8 @@
   "description": "The nooq reference editor: a headless controller over the public framework API plus a DOM surface built from @nooq/design. The framework is the product; this editor is the proof.",
   "exports": {
     ".": "./src/index.ts",
-    "./reference": "./src/reference.ts"
+    "./reference": "./src/reference.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "test": "bun test",

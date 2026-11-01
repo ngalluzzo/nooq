@@ -83,6 +83,7 @@ export function applyTransaction(state: DocState, tx: Transaction): DocState {
  * whole-document clone applyTransaction pays to stay pure.
  */
 export function validateTransaction(state: DocState, tx: Transaction): void {
+  if (tryValidateReadonly(state, tx)) return; // EB-6 fast path: O(ops) on the SHARED state, no copy, no mutation
   tx.ops.forEach((op, index) => {
     try {
       applyOp(state, op, tx);
@@ -212,4 +213,66 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       return;
     }
   }
+}
+
+
+/**
+ * EB-6 fast path: read-only validation for the dominant keystroke shapes.
+ * textEdit: block alive (roots-reachable is checked via the same liveTree
+ * the mutating path uses — cached per call) and the splice in range.
+ * setField on a live block: same liveness check. Returns true when the
+ * whole transaction was validated WITHOUT mutation; false means the
+ * caller falls back to the full in-place path. Property-tested equal.
+ */
+export function tryValidateReadonly(state: DocState, tx: Transaction, selection?: { block: BlockId; anchor: number; head: number }): boolean {
+  if (tx.adoptedBy !== undefined) return false;
+  const tree = liveTree(state);
+  /** Post-application text length per block (only what selection needs). */
+  const lengths = new Map<BlockId, number>();
+  const lengthOf = (id: BlockId): number | undefined => {
+    if (lengths.has(id)) return lengths.get(id);
+    return state.blocks[id]?.text?.s.length;
+  };
+  for (const op of tx.ops) {
+    if (op.op === "textEdit") {
+      const block = state.blocks[op.block];
+      if (!block) throw new Error(`no such block ${op.block}`); // engine semantics: requireBlock, existence only — tombstones keep data and stay editable
+      const base = block.text ?? { s: "", marks: [] as string[][] };
+      if (!splicesInScope(base, op.changes)) return false; // fall back to full application for the precise error
+      let delta = 0;
+      for (const change of op.changes) {
+        if ("delete" in change) delta -= change.delete;
+        else if ("insert" in change) delta += change.insert.length;
+      }
+      lengths.set(op.block, base.s.length + delta);
+    } else if (op.op === "setField") {
+      const block = state.blocks[op.block];
+      if (!block) throw new Error(`no such block ${op.block}`); // engine semantics: existence only
+    } else if (op.op === "insert") {
+      if (!selection || selection.block !== op.block.id) return false; // structural; full path unless the selected new block
+      lengths.set(op.block.id, op.block.text?.s.length ?? 0); // the fresh block: offsets against its own text
+    } else {
+      return false; // structural ops: full path (register semantics)
+    }
+  }
+  if (selection) {
+    const length = lengthOf(selection.block);
+    if (length === undefined) return false; // block neither in state nor created by this tx
+    if (!state.blocks[selection.block] && !lengths.has(selection.block)) return false;
+    if (state.blocks[selection.block] && !tree.alive.has(selection.block)) return false;
+    if (![selection.anchor, selection.head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+  }
+  return true;
+}
+
+/** Splice scope check without applying: every delete/retain step stays in range. */
+function splicesInScope(base: { s: string }, changes: readonly import("./text.ts").TextChange[]): boolean {
+  let at = 0;
+  for (const change of changes) {
+    if ("retain" in change && !("setMarks" in change)) at += change.retain;
+    else if ("retain" in change) at += change.retain;
+    else if ("delete" in change) { if (at + change.delete > base.s.length) return false; at += change.delete; }
+    // insert: no position effect
+  }
+  return at <= base.s.length;
 }

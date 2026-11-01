@@ -7,6 +7,8 @@ import type { Editor } from "./controller.ts";
 import { mountRichText as createRichText } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { createDocumentSelection } from "./document-selection.ts";
+import { createPresence } from "./presence.ts";
+import type { CursorAnchor } from "@nooq/sync";
 
 export interface EditorSurface {
   element: HTMLElement;
@@ -97,6 +99,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const surfaceAbort = new AbortController();
   root.className = "nq-editor"; root.append(status, body, history);
   const rows = new Map<string, Row>();
+  const presence = createPresence(root, () => new Map([...rows].flatMap(([id, row]) => row.bindings[0]?.marks !== undefined ? [[id, row.bindings[0].element] as const] : [])));
   let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
   let menuBlock: string | undefined;
   const actionRefreshers = new Set<() => void>();
@@ -126,9 +129,30 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       for (const refresh of actionRefreshers) refresh();
     });
   };
-  for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, refreshActions, { signal: surfaceAbort.signal });
+  /** SW-7: where this writer's caret and selection sit, from the document selection or the focused text host. */
+  const localCursor = (): CursorAnchor | undefined => {
+    const range = documentSelection?.service.get();
+    if (range) return { ...range.head, ...(range.anchor.block !== range.head.block || range.anchor.offset !== range.head.offset ? { anchor: { ...range.anchor } } : {}) };
+    const active = document.activeElement, id = active?.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock;
+    const binding = id !== undefined ? rows.get(id)?.bindings.find(b => b.element.contains(active)) : undefined;
+    if (!binding) return;
+    const { anchor, head } = binding.selection();
+    return { block: id!, offset: head, ...(anchor !== head ? { anchor: { block: id!, offset: anchor } } : {}) };
+  };
+  let published: string | undefined, publishScheduled = false;
+  const publishCursor = () => {
+    if (publishScheduled || destroyed || !editor.hasTransport) return;
+    publishScheduled = true;
+    queueMicrotask(() => {
+      publishScheduled = false; if (destroyed) return;
+      const cursor = localCursor(), key = cursor && JSON.stringify(cursor);
+      if (cursor && key !== published) { published = key; editor.setCursor(cursor); }
+    });
+  };
+  const selected = () => { refreshActions(); publishCursor(); };
+  for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, selected, { signal: surfaceAbort.signal });
   root.ownerDocument.addEventListener("selectionchange", () => {
-    if (root.contains(root.ownerDocument.activeElement)) refreshActions();
+    if (root.contains(root.ownerDocument.activeElement)) selected();
   }, { signal: surfaceAbort.signal });
   const invoke = actions.invoke;
   const closeMenu = () => { menu?.remove(); menu = undefined; menuBlock = undefined; };
@@ -398,6 +422,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const active = [...rows.values()].flatMap(row => row.bindings).find(binding => binding.element.contains(document.activeElement));
     const activeSelection = active?.selection();
     status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }));
+    const peers = [...editor.awareness.values()];
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
       for (const id of ids) {
@@ -413,8 +438,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
           catch (cause) { fail(views.get(block.type)?.plugin, cause); cleanup(row); row.abort = new AbortController(); row.view.element.remove(); row.view = fallback(id, row); row.view.update(freezeSnapshot(block)); row.shell.append(row.view.element); }
           row.signature = signature;
         }
-        const peers = [...editor.awareness.values()].filter(p => p.cursor?.block === id);
-        row.presence.replaceChildren(...peers.map(p => presenceCaret({ name: p.name ?? p.actor, ink: "slate" })));
+        // The presence overlay places carets in rich text; a textarea or text-less view shows its peers as a chip.
+        const chips = row.bindings[0]?.marks === undefined ? peers.filter(p => p.cursor?.block === id) : [];
+        row.presence.replaceChildren(...chips.map(p => presenceCaret({ name: p.name ?? p.actor, ink: "slate" })));
         if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
         at++; walk(block.children, row.children);
       }
@@ -426,6 +452,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       walk(historic.filter(id => !alive.has(id)), history);
     }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
+    presence.update(state, peers);
     // EB-5: editable in the frame the surface becomes visible — no clicking.
     if (!mountedFocused && root.isConnected) {
       mountedFocused = true;
@@ -462,7 +489,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   if (documentSelection) { root.classList.add("nq-document-selection"); root.tabIndex = -1; root.dataset.nqDocumentSelection = "true"; }
   const offChange = editor.onChange(schedule), offSelection = editor.onSelection(request => { pendingSelection = request; schedule(); });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; } };
 }

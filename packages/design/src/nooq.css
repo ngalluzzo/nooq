@@ -90,6 +90,18 @@
 .nq-peer { position: relative; }
 .nq-peer-sel { background: color-mix(in srgb, var(--nq-peer) 22%, transparent); }
 .nq-peer-caret { position: relative; display: inline-block; width: var(--nq-caret-width); height: 1.25em; margin: 0 -1px; vertical-align: -0.25em; background: var(--nq-peer); }
+/* Presence overlay (SW-7): remote carets ride above the text, never in it; remote selections are CSS custom highlights (§3). */
+.nq-editor { position: relative; }
+.nq-presence { position: absolute; inset: 0; pointer-events: none; }
+.nq-presence-peer { position: absolute; width: 0; }
+.nq-presence-peer .nq-peer, .nq-presence-peer .nq-peer-caret { display: block; height: 100%; margin: 0; }
+.nq-presence-peer .nq-peer-caret { margin-left: -1px; }
+.nq-editor ::highlight(nq-peer-teal) { background-color: color-mix(in srgb, var(--nq-peer-teal) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-violet) { background-color: color-mix(in srgb, var(--nq-peer-violet) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-green) { background-color: color-mix(in srgb, var(--nq-peer-green) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-sepia) { background-color: color-mix(in srgb, var(--nq-peer-sepia) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-magenta) { background-color: color-mix(in srgb, var(--nq-peer-magenta) 22%, transparent); }
+.nq-editor ::highlight(nq-peer-slate) { background-color: color-mix(in srgb, var(--nq-peer-slate) 22%, transparent); }
 .nq-peer-flag { position: absolute; bottom: 100%; left: 0; padding: 0 var(--nq-space-1); border-radius: var(--nq-radius-xs) var(--nq-radius-xs) var(--nq-radius-xs) 0; background: var(--nq-peer); color: var(--nq-on-peer); font-family: var(--nq-font-sans); font-size: 12px; font-weight: 600; font-style: normal; line-height: 16px; white-space: nowrap; }
 
 /* SlashMenu */

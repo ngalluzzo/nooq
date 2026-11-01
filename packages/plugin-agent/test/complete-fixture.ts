@@ -8,7 +8,7 @@ export async function completeFixture(rich = false): Promise<Sources> {
     "src/dom.ts": dom.replace('label: "Callout"','label: "Insert callout"').replace('defaultMode: "rich"', `defaultMode: "${rich ? "rich" : "plain"}"`) + "\nexport default calloutsDOM;\n",
     "src/plugin.stories.ts": `import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect } from "storybook/test";
-import { mountPluginStory, disposePluginStories, type PluginStoryArgs } from "@nooq/plugin-agent/storybook";
+import { mountPluginStory, disposePluginStories, type PluginStoryArgs } from "@nooq/editor/testing";
 import plugin from "./index.ts"; import dom from "./dom.ts";
 const meta={title:"Plugins/Callouts",render:(args)=>mountPluginStory(plugin,dom,args),beforeEach:()=>()=>disposePluginStories(),args:{text:"Story text",fields:{tone:"info"}}} satisfies Meta<PluginStoryArgs>;
 export default meta;type Story=StoryObj<PluginStoryArgs>;

@@ -10,9 +10,8 @@ export async function buildCandidate(sources: Sources, code: string, target: "br
     const entry = join(dir, "entry.ts"); await writeFile(entry, code);
     const aliases: Record<string, string> = {
       "candidate-index": join(dir, "src/index.ts"), "candidate-dom": join(dir, "src/dom.ts"), "candidate-stories": join(dir, "src/plugin.stories.ts"),
-      "@nooq/plugin-agent/storybook": join(import.meta.dir, "storybook.ts"),
     };
-    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@nooq/yjs", "@nooq/editor", "@nooq/plugins/essentials", "@storybook/html", "@storybook/html/entry-preview", "storybook/test", "storybook/preview-api", "axe-core"]) aliases[name] = import.meta.resolve(name).replace(/^file:\/\//, "");
+    for (const name of ["@nooq/plugins", "@nooq/plugins/dom", "@nooq/core", "@nooq/yjs", "@nooq/editor", "@nooq/editor/testing", "@nooq/design/story-settings", "@nooq/plugins/essentials", "@storybook/html", "@storybook/html/entry-preview", "storybook/test", "storybook/preview-api", "axe-core"]) aliases[name] = import.meta.resolve(name).replace(/^file:\/\//, "");
     const build = await Bun.build({ entrypoints: [entry], target, packages: "bundle", define: { "process.env.NODE_ENV": '"production"' },
       plugins: [{ name: "candidate-imports", setup(builder) { builder.onResolve({ filter: /^(candidate-|@nooq\/|@storybook\/html|storybook\/|axe-core$)/ }, args => aliases[args.path] ? { path: aliases[args.path] } : undefined); } }],
     });

@@ -76,7 +76,8 @@ export function readState(doc: Y.Doc): DocState {
   };
 }
 
-function readBlock(id: BlockId, yb: Y.Map<unknown>, childrenOf: (container: BlockId | null) => BlockId[]): Block {
+/** @internal reused by the maintained projection */
+export function readBlock(id: BlockId, yb: Y.Map<unknown>, childrenOf: (container: BlockId | null) => BlockId[]): Block {
   const fields: Record<string, JsonValue> = {};
   const attribution: Attribution = {
     created: { actor: (yb.get("createdBy") as ActorId | undefined) ?? "" },

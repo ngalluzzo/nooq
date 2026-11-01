@@ -1,4 +1,4 @@
-import { applyTransaction, canonicalJson, liveTree, makeBlock, validateTransaction } from "@nooq/core";
+import { applyTransaction, canonicalJson, liveTree, makeBlock, tryValidateReadonly, validateTransaction } from "@nooq/core";
 import type { ActorDescriptor, DocState, JsonValue, Transaction } from "@nooq/core";
 import { createCommandPreparerOwned, freezeSnapshot, type ChangeEvent, type Command, type CommandResult, type Diagnostic, type Immutable, type PluginError, type PreparedCommand, type SelectionRequest } from "./definitions.ts";
 import { ProposalCapture, UnsupportedEvidenceError, type Job, type JobHandle, type PublicationResult } from "./jobs.ts";
@@ -68,13 +68,17 @@ export class PluginRuntime {
       // Validation mutates, so it gets a fresh throwaway read (EB-6: still no
       // clone; at 2,000 blocks a readState is ~30ms, so reads are rationed).
       if (options.preview || result.selection) {
-        // NOTE: `state` is FROZEN now (the preparer's snapshot) — validation
-        // mutates, so it gets its own throwaway read (EB-6: still no clone).
-        const scratch = this.host.readFresh();
-        validateTransaction(scratch, { id: "preview", actor, lamport: 0, causality: {}, ops: [...result.ops] });
-        if (result.selection) {
-          const { block, anchor, head } = result.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
-          if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+        // EB-6 stage 2: the read-only fast path validates against the SHARED
+        // view (free); only structural shapes pay a fresh ~30ms read.
+        const shared = this.host.read();
+        const preview = { id: "preview", actor, lamport: 0, causality: {}, ops: [...result.ops] } as import("@nooq/core").Transaction;
+        if (!tryValidateReadonly(shared, preview, result.selection)) {
+          const scratch = this.host.readFresh();
+          validateTransaction(scratch, preview);
+          if (result.selection) {
+            const { block, anchor, head } = result.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
+            if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+          }
         }
       }
       return options.preview ? result : this.host.commit(result, actor);
@@ -106,11 +110,16 @@ export class PluginRuntime {
       combined.ops = ops;
       // Validate the complete batch and its selection before the authorization boundary.
       // EB-6: fresh and mutable — the shared view is frozen.
-      const scratch = this.host.readFresh();
-      validateTransaction(scratch, { id: "batch-preview", actor, lamport: 0, causality: {}, ops });
-      if (combined.selection) {
-        const { block, anchor, head } = combined.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
-        if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+      // EB-6 stage 2: read-only fast path first; fresh only for structural shapes.
+      const shared = this.host.read();
+      const preview = { id: "batch-preview", actor, lamport: 0, causality: {}, ops } as import("@nooq/core").Transaction;
+      if (!tryValidateReadonly(shared, preview, combined.selection)) {
+        const scratch = this.host.readFresh();
+        validateTransaction(scratch, preview);
+        if (combined.selection) {
+          const { block, anchor, head } = combined.selection, length = scratch.blocks[block]?.text?.s.length ?? 0;
+          if (!liveTree(scratch).alive.has(block) || ![anchor, head].every(n => Number.isInteger(n) && n >= 0 && n <= length)) throw new Error("Invalid selection request");
+        }
       }
       return this.host.commit(combined, actor);
     } catch (error) {

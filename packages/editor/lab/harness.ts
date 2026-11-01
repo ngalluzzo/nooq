@@ -93,7 +93,7 @@ export async function openLab(options: LabOptions = {}): Promise<Lab> {
   return {
     view,
     browser: product,
-    open: (url) => within(`navigate to ${url}`, 30_000, view.navigate(url)),
+    open: (url) => within(`navigate to ${url}`, Number(process.env.NQ_LAB_NAVIGATE_MS ?? 30_000), view.navigate(url)),
     evaluate: (script, ms = 30_000) => within(`evaluate ${script.slice(0, 60)}`, ms, view.evaluate(script)),
     click: (selector) => within(`click ${selector}`, 15_000, view.click(selector, { timeout: 10_000 })),
     scrollTo: (selector) => within(`scroll to ${selector}`, 15_000, view.scrollTo(selector, { block: "center", timeout: 10_000 })),
