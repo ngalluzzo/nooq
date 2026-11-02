@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, summarize, writeResult } from "./harness.ts";
-import { ENFORCE, LAB, labSession, labCapable } from "./session.ts";
+import { ENFORCE, LAB, labSession, labBudgetCapable as labCapable } from "./session.ts";
 
 const SAMPLES = 5;
 

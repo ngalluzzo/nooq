@@ -3,7 +3,7 @@
  * run when NQ_LAB=1 (`bun run lab`), so the repo's plain `bun test` stays fast.
  */
 
-import { openLab, type Lab, type LabOptions } from "./harness.ts";
+import { LAB_BACKEND, openLab, type Lab, type LabOptions } from "./harness.ts";
 import type { RefDocName } from "./refdocs.ts";
 import { startLabServer } from "./server.ts";
 
@@ -13,7 +13,7 @@ if (requestedMode !== "plain" && requestedMode !== "rich") throw new Error("NQ_L
 export const TEXT_MODE = requestedMode;
 
 /**
- * EB-2.2: the lab needs a spawnable Bun.WebView chrome backend. Some
+ * EB-2.2: the lab needs a usable Bun.WebView backend. Some
  * environments cannot dlopen it (ubuntu runners, confined checkouts —
  * ERR_DLOPEN_FAILED / "Failed to spawn Chrome"). The lab SKIPS there
  * rather than fail — an unmeasured environment is not a measured one,
@@ -22,22 +22,26 @@ export const TEXT_MODE = requestedMode;
 export const labCapable: boolean = await (async () => {
   if (!LAB) return false;
   let probe: { close?: () => void; navigate?: (url: string) => Promise<unknown> } | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    probe = new Bun.WebView({ backend: { type: "chrome", url: false }, width: 64, height: 64 }) as unknown as { close?: () => void; navigate: (url: string) => Promise<unknown> };
+    probe = new Bun.WebView({ backend: LAB_BACKEND === "chrome" ? { type: "chrome", url: false } : { type: "webkit" }, width: 64, height: 64 }) as unknown as { close?: () => void; navigate: (url: string) => Promise<unknown> };
     // A constructor that succeeds while the pipe dies is not a capability:
     // require a real handshake.
     await Promise.race([
       probe.navigate!("about:blank"),
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("probe timeout")), 5_000)),
+      new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error("probe timeout")), 5_000); }),
     ]);
     probe.close?.();
     return true;
   } catch {
     probe?.close?.();
-    console.warn("[lab] Bun.WebView chrome backend cannot run here — EB gates skip rather than lie (needs a spawnable Chrome/Chromium; BUN_CHROME_PATH).");
+    console.warn(`[lab] Bun.WebView ${LAB_BACKEND} backend cannot run here — EB gates skip rather than lie.`);
     return false;
-  }
+  } finally { clearTimeout(timer); }
 })();
+
+/** EB-2.1: native WebKit runs invariants, never CDP timing budgets. */
+export const labBudgetCapable = labCapable && LAB_BACKEND === "chrome";
 
 /**
  * NQ_LAB_GATE=report writes every result but skips the absolute budget
@@ -55,7 +59,7 @@ export interface LabSession {
 
 export async function labSession(options?: LabOptions): Promise<LabSession> {
   const server = startLabServer();
-  const lab = await openLab(options);
+  const lab = await openLab(options).catch(error => { server.stop(); throw error; });
   return {
     lab,
     async load(doc, condition = "idle") {

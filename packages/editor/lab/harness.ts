@@ -4,6 +4,11 @@
  * (Bun.WebView is experimental) without touching a test.
  */
 
+export type LabBackend = "chrome" | "webkit";
+const backend = process.env.NQ_LAB_BACKEND ?? "chrome";
+if (backend !== "chrome" && backend !== "webkit") throw new Error("NQ_LAB_BACKEND must be chrome or webkit");
+export const LAB_BACKEND: LabBackend = backend;
+
 /** One Chrome DevTools Protocol trace event, as Chrome reports it. */
 export interface TraceEvent {
   name: string;
@@ -28,7 +33,9 @@ export interface LabOptions {
 
 export interface Lab {
   view: Bun.WebView;
+  backend: LabBackend;
   browser: string;
+  cpuThrottle: number | null;
   open(url: string): Promise<void>;
   /** Evaluate in the page; `ms` is the deadline (default 30s). */
   evaluate<T>(script: string, ms?: number): Promise<T>;
@@ -67,18 +74,25 @@ const TRACE_CATEGORIES = ["benchmark", "disabled-by-default-v8.gc"];
 
 export async function openLab(options: LabOptions = {}): Promise<Lab> {
   const view = new Bun.WebView({
-    backend: { type: "chrome", url: false, ...(process.env.BUN_CHROME_PATH ? { path: process.env.BUN_CHROME_PATH } : {}) },
+    backend: LAB_BACKEND === "chrome" ? { type: "chrome", url: false, ...(process.env.BUN_CHROME_PATH ? { path: process.env.BUN_CHROME_PATH } : {}) } : { type: "webkit" },
     width: options.width ?? 1280,
     height: options.height ?? 800,
+    console: process.env.NQ_LAB_PROGRESS === "1" ? globalThis.console : undefined,
   });
   // The first navigation sets up the CDP session; everything below must precede the real page.
   await view.navigate("about:blank");
-  const { product } = await view.cdp<{ product: string }>("Browser.getVersion");
-  await view.cdp("Emulation.setCPUThrottlingRate", { rate: options.throttle ?? 4 });
-  // Without focus emulation, a Backspace with no editable focus hides the page in headless Chrome and frames stop.
-  await view.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
-  await view.cdp("Network.enable");
-  await view.cdp("Network.setCacheDisabled", { cacheDisabled: true });
+  let product: string;
+  if (LAB_BACKEND === "chrome") {
+    ({ product } = await view.cdp<{ product: string }>("Browser.getVersion"));
+    await view.cdp("Emulation.setCPUThrottlingRate", { rate: options.throttle ?? 4 });
+    // Without focus emulation, a Backspace with no editable focus hides the page in headless Chrome and frames stop.
+    await view.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await view.cdp("Network.enable");
+    await view.cdp("Network.setCacheDisabled", { cacheDisabled: true });
+  } else {
+    if (options.requests || options.throttle !== undefined) { view.close(); throw new Error("CDP network rules and CPU throttling require the Chrome backend"); }
+    product = `WebKit (${await view.evaluate("navigator.userAgent")})`;
+  }
 
   const rules = Object.entries(options.requests ?? {});
   if (rules.length > 0) {
@@ -93,12 +107,15 @@ export async function openLab(options: LabOptions = {}): Promise<Lab> {
 
   return {
     view,
+    backend: LAB_BACKEND,
     browser: product,
+    cpuThrottle: LAB_BACKEND === "chrome" ? options.throttle ?? 4 : null,
     open: (url) => within(`navigate to ${url}`, Number(process.env.NQ_LAB_NAVIGATE_MS ?? 30_000), view.navigate(url)),
     evaluate: (script, ms = 30_000) => within(`evaluate ${script.slice(0, 60)}`, ms, view.evaluate(script)),
     click: (selector) => within(`click ${selector}`, 15_000, view.click(selector, { timeout: 10_000 })),
     scrollTo: (selector) => within(`scroll to ${selector}`, 15_000, view.scrollTo(selector, { block: "center", timeout: 10_000 })),
     async press(key) {
+      if (LAB_BACKEND === "webkit") { await within(`key ${key}`, 10_000, view.press(key)); return; }
       const { code, keyCode, text, command } = keyInfo(key);
       const base = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode };
       const commands = command && process.platform === "darwin" ? { commands: [command] } : {};
@@ -106,6 +123,7 @@ export async function openLab(options: LabOptions = {}): Promise<Lab> {
       await within(`keyUp ${key}`, 10_000, view.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base }));
     },
     async trace(during) {
+      if (LAB_BACKEND !== "chrome") throw new Error("Presentation traces require the Chrome backend");
       const events: TraceEvent[] = [];
       let complete!: () => void;
       const done = new Promise<void>((resolve) => (complete = resolve));
@@ -175,8 +193,8 @@ export function summarize(values: number[]): Summary {
 /** EB-2.1: every budget writes its numbers as JSON for the regression gate. */
 export async function writeResult(name: string, result: unknown): Promise<void> {
   const rich = process.env.NQ_LAB_TEXT_MODE === "rich";
-  const payload = rich ? { ...result as object, textMode: "rich" } : result;
-  await Bun.write(new URL(`results/${rich ? "rich/" : ""}${name}.json`, import.meta.url), JSON.stringify(payload, null, 2) + "\n");
+  const payload = { ...result as object, backend: LAB_BACKEND, textMode: rich ? "rich" : "plain" };
+  await Bun.write(new URL(`results/${LAB_BACKEND === "webkit" ? "webkit/" : ""}${rich ? "rich/" : ""}${name}.json`, import.meta.url), JSON.stringify(payload, null, 2) + "\n");
 }
 
 export const FRAME_MS = 1000 / 60;

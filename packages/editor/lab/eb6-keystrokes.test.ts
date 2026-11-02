@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { FRAME_MS, keystrokeLatencies, summarize, writeResult, type Lab } from "./harness.ts";
 import type { RefDocName } from "./refdocs.ts";
-import { ENFORCE, LAB, labSession, rowSelector, labCapable } from "./session.ts";
+import { ENFORCE, LAB, labSession, rowSelector, labBudgetCapable as labCapable } from "./session.ts";
 
 type Condition = "idle" | "sync-storm";
 

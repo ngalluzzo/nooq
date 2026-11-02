@@ -9,7 +9,7 @@
 
 import { describe, test } from "bun:test";
 import { keystrokeLatencies, openLab, summarize, writeResult } from "./harness.ts";
-import { LAB, labCapable } from "./session.ts";
+import { LAB, labBudgetCapable as labCapable } from "./session.ts";
 
 describe.skipIf(!LAB || !labCapable)("EB-2.4 rig floor", () => {
   test("bare textarea: input-to-frame with no editor at all", async () => {

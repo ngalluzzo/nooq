@@ -1,6 +1,8 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
-import { freezeInPlace, freezeSnapshot, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
+import * as Y from "yjs";
+import { layout } from "@nooq/yjs";
+import { freezeInPlace, freezeSnapshot, textBlockOrder, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { loading, notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
@@ -533,7 +535,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"].includes(event.key)) releaseViewportSpace();
   }, { signal: surfaceAbort.signal });
 
-  /** EB-7.2: preserve the first unchanged live row at/below the viewport top.
+  /** EB-7.2: start at a genuinely visible old row, then choose its fallback.
    *  Choose from the old DOM before rendering: a changed/deleted top block
    *  yields to the nearest unchanged block below it, across the whole batch. */
   function pickAnchor(changed: ReadonlySet<string>, alive: ReadonlySet<string>): { row: HTMLElement; top: number } | null {
@@ -542,13 +544,20 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     // Rects are viewport-relative: the visible top is 0. (The scroller's own
     // rect top is NOT a proxy — a scrolling <html> reports -scrollY, which
     // once admitted rows 800px above the viewport; measured, not assumed.)
+    let visibleOrigin = false;
     for (const shell of Array.from(body.querySelectorAll<HTMLElement>("[data-nq-block]"))) {
       const id = shell.dataset.nqBlock!;
       // History rows and aggregate windowing placeholders are not live
       // block anchors. Descendants of a deleted block are excluded by alive.
-      if (rows.get(id)?.shell !== shell || !alive.has(id) || changed.has(id)) continue;
+      if (rows.get(id)?.shell !== shell) continue;
       const rect = shell.getBoundingClientRect();
-      if (rect.bottom > 0) return { row: shell, top: rect.top };
+      // The origin may just have been deleted. Its old DOM still defines
+      // what was visible; only the surviving fallback needs to be alive.
+      if (!visibleOrigin) {
+        if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+        visibleOrigin = true;
+      }
+      if (rect.bottom > 0 && alive.has(id) && !changed.has(id)) return { row: shell, top: rect.top };
     }
     return null;
   }
@@ -582,6 +591,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
    *  estimates converge to reality as blocks are visited, so placeholder
    *  heights and window decisions stop drifting from the real document. */
   const heightCache = new Map<string, number>();
+  const gaps = new Map<HTMLElement, { top?: HTMLElement; bottom?: HTMLElement }>();
   /** Subtree estimates, persistent across renders (EB-6): structural
    *  keystrokes pay full renders; rebuilding 2k estimates each time was
    *  most of it. Cleared when structure or measured heights change. */
@@ -630,6 +640,29 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   scrollSignal = new AbortController();
   window.addEventListener("scroll", onScroll, { passive: true, signal: scrollSignal.signal });
 
+  // EB-7.1: capture real character identities BEFORE merging. String diffs
+  // cannot locate a deletion among repeated characters or choose range affinity.
+  let remoteSelection: { block: string; element: HTMLElement; anchor: Y.RelativePosition; head: Y.RelativePosition; order: string[]; transaction: Y.Transaction } | undefined;
+  let nativeComposing = false;
+  root.addEventListener("compositionstart", () => { nativeComposing = true; }, { signal: surfaceAbort.signal });
+  root.addEventListener("compositionend", () => { nativeComposing = false; }, { signal: surfaceAbort.signal });
+  const captureRemoteSelection = (transaction: Y.Transaction) => {
+    if (transaction.local || remoteSelection || nativeComposing || destroyed) return;
+    const row = [...rows.values()].find(row => row.bindings.some(binding => binding.element.contains(document.activeElement)));
+    const binding = row?.bindings.find(binding => binding.element.contains(document.activeElement));
+    const text = row && layout(editor.ydoc).blocks.get(row.id)?.get("text");
+    if (!row || !binding || !(text instanceof Y.Text)) return;
+    const selection = binding.selection(), low = Math.min(selection.anchor, selection.head);
+    const relative = (position: number) => Y.createRelativePositionFromTypeIndex(text, position,
+      selection.anchor !== selection.head && position === low ? 0 : -1);
+    remoteSelection = { block: row.id, element: binding.element, anchor: relative(selection.anchor), head: relative(selection.head), order: textBlockOrder(editor.view), transaction };
+  };
+  const releaseEmptySelection = (transaction: Y.Transaction) => {
+    if (remoteSelection?.transaction === transaction && transaction.changed.size === 0) remoteSelection = undefined;
+  };
+  editor.ydoc.on("beforeTransaction", captureRemoteSelection);
+  editor.ydoc.on("afterTransaction", releaseEmptySelection);
+
   function render() {
     documentSelection?.beforeRender();
     scheduled = false; if (destroyed) return;
@@ -664,6 +697,26 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     renderState = state;
     const active = [...rows.values()].flatMap(row => row.bindings).find(binding => binding.element.contains(document.activeElement));
     const activeSelection = active?.selection();
+    const tracked = remoteSelection?.element.contains(document.activeElement) ? remoteSelection : undefined; remoteSelection = undefined;
+    let remoteFocus: SelectionRequest | undefined;
+    if (tracked) {
+      if (alive.has(tracked.block)) {
+        const anchor = Y.createAbsolutePositionFromRelativePosition(tracked.anchor, editor.ydoc);
+        const head = Y.createAbsolutePositionFromRelativePosition(tracked.head, editor.ydoc);
+        if (anchor && head) remoteFocus = { block: tracked.block, anchor: anchor.index, head: head.index };
+      } else {
+        const at = tracked.order.indexOf(tracked.block);
+        const next = tracked.order.slice(at + 1).find(id => alive.has(id) && state.blocks[id]?.text !== undefined);
+        const previous = tracked.order.slice(0, at).reverse().find(id => alive.has(id) && state.blocks[id]?.text !== undefined);
+        const block = next ?? previous ?? textBlockOrder(state)[0];
+        if (block) {
+          const offset = next || !previous ? 0 : state.blocks[block]?.text?.s.length ?? 0;
+          remoteFocus = { block, anchor: offset, head: offset };
+        }
+      }
+    }
+    const focusedBlock = remoteFocus?.block ?? [...rows.values()].find(row => row.bindings.includes(active!))?.id;
+    const anchorBlock = anchor?.row.dataset.nqBlock;
     const peers = [...editor.awareness.values()];
     status.replaceChildren(syncStatus({ state: editor.hasTransport ? editor.synced ? "synced" : "syncing" : "local", count: editor.awareness.size }), surfaceStatus.element);
     surfaceStatus.update(peers);
@@ -693,7 +746,6 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
      * per-render create/delete version stopped a 33M-pixel height leak but
      * churned layout; a div per skipped block was 9,953 elements at ref-huge.
      */
-    const gaps = new Map<HTMLElement, { top?: HTMLElement; bottom?: HTMLElement }>();
     const gapSums = new Map<HTMLElement, number>();
     const usedGaps = new Set<HTMLElement>();
     const gapFor = (parent: HTMLElement, which: "top" | "bottom", id: string, at: number): { el: HTMLElement; height: number } => {
@@ -706,7 +758,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         el.addEventListener("click", () => { el.scrollIntoView({ block: "center" }); requestAnimationFrame(() => requestAnimationFrame(() => render())); }, { signal: surfaceAbort.signal });
         pair[which] = el;
       }
-      return { el: pair[which]!, height: 0 };
+      const el = pair[which]!;
+      if (!usedGaps.has(el)) el.setAttribute("data-nq-block", id);
+      return { el, height: 0 };
     };
     const walk = (ids: readonly string[], parent: HTMLElement) => {
       let at = 0;
@@ -714,18 +768,17 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
         const est = estSubtree(id);
         const mounted = rows.get(id);
-        if (!mounted && (walkY + est < winTop || walkY > winBottom)) {
+        if (!mounted && id !== focusedBlock && id !== anchorBlock && (walkY + est < winTop || walkY > winBottom)) {
           // Outside the window and never mounted: accumulate into the gap.
           const which: "top" | "bottom" = walkY + est < winTop ? "top" : "bottom";
           const gap = gapFor(parent, which, id, at);
           gap.height += est;
-          gap.el.setAttribute("data-nq-block", gap.el.getAttribute("data-nq-block") ?? id);
           gapSums.set(gap.el, (gapSums.get(gap.el) ?? 0) + est);
           usedGaps.add(gap.el);
           walkY += est;
           continue;
         }
-        if (mounted && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
+        if (mounted && id !== focusedBlock && id !== anchorBlock && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
           // Mounted but far above the window: release it — never the focused
           // row (it is by definition visible; estimate drift must not eat it).
           cleanup(mounted); mounted.shell.remove(); rows.delete(id);
@@ -806,13 +859,20 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         first?.bindings[0]?.focus({ anchor: caret, head: caret });
       }
     }
-    if (anchor) pinViewport(anchor);
     if (!(globalThis as { __nqFirstRender?: boolean }).__nqFirstRender) { (globalThis as { __nqFirstRender?: boolean }).__nqFirstRender = true; try { performance.mark("nq:first-render"); } catch { /* non-browser */ } }
     if (active && root.contains(active.element) && !active.element.contains(document.activeElement)) active.focus(activeSelection);
+    if (remoteFocus) rows.get(remoteFocus.block)?.bindings[0]?.focus(remoteFocus);
+    else if (tracked && !alive.has(tracked.block)) { root.tabIndex = -1; root.focus({ preventScroll: true }); }
     if (pendingSelection) {
       const request = pendingSelection; pendingSelection = undefined;
       const binding = rows.get(request.block)?.bindings[0];
       if (binding && alive.has(request.block)) binding.focus(request);
+    }
+    if (anchor) {
+      pinViewport(anchor);
+      // EB-7.2: our own scroll must not immediately rewindow using a new
+      // origin and undo the fallback pin, including a fallback below screen.
+      lastWindowAt = window.scrollY || 0;
     }
     for (const refresh of actionRefreshers) refresh();
     if (menuBlock) {
@@ -870,7 +930,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const markReady = () => { readyForContent = true; settleLoading(); };
   void editor.ready.then(markReady, markReady);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); editor.ydoc.off("beforeTransaction", captureRemoteSelection); editor.ydoc.off("afterTransaction", releaseEmptySelection); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, keymap: keys, textMode, away, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };

@@ -93,3 +93,95 @@ describe("EB-7: remote renders pin the viewport", () => {
     surface.destroy();
   });
 });
+
+test("windowing gaps stay bounded across repeated renders", async () => {
+  const { editor, surface, ids } = mounted(Array.from({ length: 60 }, () => "word ".repeat(40)));
+  try {
+    await flush();
+    const before = surface.element.querySelectorAll("[data-nq-ph]").length;
+    expect(before).toBeGreaterThan(0); // The fixture actually reaches the unmounted window.
+    for (let i = 0; i < 10; i++) {
+      editor.applyTextChanges(ids[0]!, [{ insert: "x" }]);
+      await flush();
+    }
+    const after = surface.element.querySelectorAll("[data-nq-ph]").length;
+    console.log(JSON.stringify({ windowingGaps: { before, after } }));
+    expect(after).toBeLessThanOrEqual(2);
+  } finally {
+    surface.destroy();
+    editor.close();
+  }
+});
+
+test("remote deletion maps backward ranges by character identity in repeated text", async () => {
+  const { editor, surface, ids } = mounted(["aaaaaaaa"]);
+  const peer = new Editor({ docId: "eb-fixes-doc", actor: { actorId: "peer" } });
+  const Y = await import("yjs");
+  try {
+    await flush();
+    Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(editor.ydoc));
+    const area = surface.element.querySelector("textarea")!;
+    area.setSelectionRange(3, 6, "backward");
+    peer.applyTextChanges(ids[0]!, [{ retain: 1 }, { delete: 2 }]);
+    Y.applyUpdate(editor.ydoc, Y.encodeStateAsUpdate(peer.ydoc));
+    await flush();
+    expect(area.value).toBe("aaaaaa");
+    expect([area.selectionStart, area.selectionEnd, area.selectionDirection]).toEqual([1, 4, "backward"]);
+    expect(document.activeElement).toBe(area);
+  } finally { peer.close(); surface.destroy(); editor.close(); }
+});
+
+test("remote deletion skips deleted neighbors and keeps an empty surface focused", async () => {
+  const { editor, surface, ids } = mounted(["first", "selected", "also deleted", "next"]);
+  const peer = new Editor({ docId: "eb-fixes-doc", actor: { actorId: "peer" } });
+  const Y = await import("yjs");
+  try {
+    await flush();
+    Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(editor.ydoc));
+    const area = surface.element.querySelectorAll("textarea")[1]!;
+    area.focus(); area.setSelectionRange(1, 4);
+    peer.deleteBlock(ids[1]!); peer.deleteBlock(ids[2]!);
+    Y.applyUpdate(editor.ydoc, Y.encodeStateAsUpdate(peer.ydoc));
+    await flush();
+    const next = surface.element.querySelector(`[data-nq-block="${ids[3]}"] textarea`) as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(next);
+    expect([next.selectionStart, next.selectionEnd]).toEqual([0, 0]);
+    peer.deleteBlock(ids[0]!); peer.deleteBlock(ids[3]!);
+    Y.applyUpdate(editor.ydoc, Y.encodeStateAsUpdate(peer.ydoc));
+    await flush();
+    expect(document.activeElement).toBe(surface.element);
+  } finally { peer.close(); surface.destroy(); editor.close(); }
+});
+
+test("a deliberate focus change before the remote render wins over a captured selection", async () => {
+  const { editor, surface, ids } = mounted(["selected"]);
+  const peer = new Editor({ docId: "eb-fixes-doc", actor: { actorId: "peer" } });
+  const Y = await import("yjs");
+  const button = document.createElement("button"); document.body.append(button);
+  try {
+    await flush();
+    Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(editor.ydoc));
+    peer.applyTextChanges(ids[0]!, [{ insert: "remote " }]);
+    Y.applyUpdate(editor.ydoc, Y.encodeStateAsUpdate(peer.ydoc));
+    button.focus();
+    await flush();
+    expect(document.activeElement).toBe(button);
+  } finally { button.remove(); peer.close(); surface.destroy(); editor.close(); }
+});
+
+test("an empty remote update cannot retain a stale selection across writer navigation", async () => {
+  const { editor, surface, ids } = mounted(["abcdefgh"]);
+  const peer = new Editor({ docId: "eb-fixes-doc", actor: { actorId: "peer" } });
+  const Y = await import("yjs");
+  try {
+    await flush();
+    Y.applyUpdate(peer.ydoc, Y.encodeStateAsUpdate(editor.ydoc));
+    Y.applyUpdate(editor.ydoc, new Uint8Array([0, 0]));
+    const area = surface.element.querySelector("textarea")!;
+    area.setSelectionRange(1, 4);
+    peer.applyTextChanges(ids[0]!, [{ insert: "++" }]);
+    Y.applyUpdate(editor.ydoc, Y.encodeStateAsUpdate(peer.ydoc));
+    await flush();
+    expect([area.selectionStart, area.selectionEnd]).toEqual([3, 6]);
+  } finally { peer.close(); surface.destroy(); editor.close(); }
+});

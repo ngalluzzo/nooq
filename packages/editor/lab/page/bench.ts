@@ -8,7 +8,7 @@
  */
 
 import * as Y from "yjs";
-import { applyTransaction } from "@nooq/yjs";
+import { applyTransaction, MaintainedProjection, newDocument } from "@nooq/yjs";
 import { newBlockId, type BlockId, type Op } from "@nooq/core";
 import { NooqRelay } from "@nooq/sync";
 import { Editor } from "../../src/controller.ts";
@@ -93,14 +93,14 @@ function random(seed: number): () => number {
   };
 }
 
-const rowOf = (block: BlockId) => surface.element.querySelector<HTMLElement>(`[data-nq-block="${block}"]`);
+const rowOf = (block: BlockId) => surface.element.querySelector<HTMLElement>(`[data-nq-block="${block}"]:not([data-nq-ph])`);
 const unmarked = (s: string) => ({ s, marks: Array.from({ length: s.length }, () => [] as string[]) });
 /** The editor renders in microtasks; one macrotask later its DOM is current. */
 const rendered = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** Inspect native selection in either presentation; a missing range is not a passing probe. */
 function textSelection(element: Element | null): [number, number] | null {
-  if (element instanceof HTMLTextAreaElement) return [element.selectionStart, element.selectionEnd];
+  if (element instanceof HTMLTextAreaElement) return element.selectionDirection === "backward" ? [element.selectionEnd, element.selectionStart] : [element.selectionStart, element.selectionEnd];
   const selection = document.getSelection();
   if (!(element instanceof HTMLElement) || !element.isContentEditable || !selection?.anchorNode || !selection.focusNode
     || !element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return null;
@@ -111,6 +111,76 @@ function textSelection(element: Element | null): [number, number] | null {
 let storm: ReturnType<typeof setInterval> | null = null;
 
 /** Helpers the harness calls through view.evaluate(). */
+interface Replica { doc: Y.Doc; projection: MaintainedProjection }
+interface Delivery { op: Op; send(): void }
+let remotePeer: Replica | undefined, competingPeer: Replica | undefined;
+const competingActor = { actorId: "human:remote-b", kind: "human" as const };
+const seen: Record<string, number> = {};
+function makeReplica(): Replica {
+  const doc = newDocument(DOC_ID); // retain tombstones and disable Yjs format cleanup (DM-12)
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(editor.ydoc));
+  return { doc, projection: new MaintainedProjection(doc) };
+}
+function syncReplica(replica: Replica): void {
+  Y.applyUpdate(replica.doc, Y.encodeStateAsUpdate(editor.ydoc, Y.encodeStateVector(replica.doc)));
+  replica.projection.sync();
+}
+function primaryReplica(): Replica {
+  if (!remotePeer) {
+    remotePeer = makeReplica();
+    for (const tx of editor.history()) seen[tx.actor.actorId] = Math.max(seen[tx.actor.actorId] ?? 0, tx.lamport);
+  }
+  return remotePeer;
+}
+function author(replica: Replica, op: Op, actor: typeof remoteActor, lamport: number, causality: Record<string, number>): void {
+  applyTransaction(replica.doc, { id: newBlockId(), actor, lamport, causality, intent: "lab-remote", ops: [op] }, undefined, undefined, replica.projection.value);
+  replica.projection.sync();
+}
+function singleRemote(op: Op): Delivery {
+  const replica = primaryReplica();
+  syncReplica(replica);
+  const lamport = ++remoteLamport + 1_000_000;
+  author(replica, op, remoteActor, lamport, { ...seen });
+  seen[remoteActor.actorId] = lamport;
+  const delta = Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(editor.ydoc));
+  return { op, send: () => Y.applyUpdate(editor.ydoc, delta, "lab-remote-merge") };
+}
+function sameFrontier(a: Y.Doc, b: Y.Doc): boolean {
+  const left = Y.decodeStateVector(Y.encodeStateVector(a)), right = Y.decodeStateVector(Y.encodeStateVector(b));
+  return left.size === right.size && [...left].every(([client, clock]) => right.get(client) === clock);
+}
+/** Author both conflicting moves BEFORE either update reaches the recipient. */
+function concurrentRemote(block: BlockId, first: number, second: number, reverse: boolean) {
+  const a = primaryReplica(), b = competingPeer ??= makeReplica();
+  syncReplica(a); syncReplica(b);
+  if (!sameFrontier(a.doc, b.doc) || !sameFrontier(a.doc, editor.ydoc)) throw new Error("Concurrent moves must fork at the same causal frontier");
+  const frontier = Y.encodeStateVector(editor.ydoc), causality = { ...seen };
+  const lamport = ++remoteLamport + 1_000_000;
+  const opA: Op = { op: "move", block, newParent: null, index: first };
+  const opB: Op = { op: "move", block, newParent: null, index: second };
+  author(a, opA, remoteActor, lamport, causality);
+  author(b, opB, competingActor, lamport, causality);
+  const deltaA = Y.encodeStateAsUpdate(a.doc, frontier), deltaB = Y.encodeStateAsUpdate(b.doc, frontier);
+  const deliveries: Delivery[] = [
+    { op: opA, send: () => Y.applyUpdate(editor.ydoc, deltaA, "lab-concurrent-a") },
+    { op: opB, send: () => Y.applyUpdate(editor.ydoc, deltaB, "lab-concurrent-b") },
+  ];
+  return {
+    deliveries: reverse ? deliveries.reverse() : deliveries,
+    finish: () => {
+      // A saw A→B; B saw B→A. Both must agree with either recipient order.
+      syncReplica(a); syncReplica(b);
+      seen[remoteActor.actorId] = seen[competingActor.actorId] = lamport;
+      const roots = editor.view.roots;
+      return sameFrontier(a.doc, b.doc) && sameFrontier(a.doc, editor.ydoc)
+        && roots.filter(id => id === block).length === 1 && new Set(roots).size === roots.length
+        && JSON.stringify(a.projection.value.roots) === JSON.stringify(roots)
+        && JSON.stringify(b.projection.value.roots) === JSON.stringify(roots)
+        && JSON.stringify(a.projection.value.blocks[block]?.text) === JSON.stringify(editor.view.blocks[block]?.text)
+        && JSON.stringify(b.projection.value.blocks[block]?.text) === JSON.stringify(editor.view.blocks[block]?.text);
+    },
+  };
+}
 const lab = {
   docName,
   condition,
@@ -172,9 +242,13 @@ const lab = {
   },
   hiddenCount: () => hiddenCount,
   /** The block at the top of the viewport: what scroll anchoring keeps in place (EB-7). */
-  topVisibleBlock: () => {
+  topVisibleBlock: (liveIds: readonly string[] = lab.allBlockIds()): string | null => {
+    const live = new Set(liveIds);
     for (const row of Array.from(surface.element.querySelectorAll("[data-nq-block]"))) {
-      if (row.getBoundingClientRect().bottom > 0) return row.getAttribute("data-nq-block");
+      const id = row.getAttribute("data-nq-block")!;
+      if (!live.has(id) || row.hasAttribute("data-nq-ph")) continue;
+      const rect = row.getBoundingClientRect();
+      if (rect.bottom > 0 && rect.top < window.innerHeight) return id;
     }
     return null;
   },
@@ -220,12 +294,30 @@ const lab = {
    *  applied through a shadow peer and merged as a REAL remote update —
    *  the production arrival path (non-local transaction), not editor.apply,
    *  which would look local to every observer. */
-  remote: (op: Op) => {
-    const peer = new Y.Doc();
-    Y.applyUpdate(peer, Y.encodeStateAsUpdate(editor.ydoc));
-    applyTransaction(peer, { id: newBlockId(), actor: remoteActor, lamport: ++remoteLamport + 1_000_000, causality: {}, intent: "lab-remote", ops: [op] });
-    const delta = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(editor.ydoc));
-    Y.applyUpdate(editor.ydoc, delta, "lab-remote-merge");
+  remote: (op: Op) => singleRemote(op).send(),
+  selectText: (block: BlockId, anchor: number, head: number) => {
+    const area = rowOf(block)?.querySelector<HTMLElement>('textarea, [contenteditable="true"]');
+    if (!area) throw new Error("Cannot select an unmounted text block");
+    area.focus({ preventScroll: true });
+    if (area instanceof HTMLTextAreaElement) area.setSelectionRange(Math.min(anchor, head), Math.max(anchor, head), anchor > head ? "backward" : "forward");
+    else {
+      const point = (offset: number): [Node, number] => {
+        const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT);
+        let node: Node | null;
+        while ((node = walker.nextNode())) { if (offset <= node.textContent!.length) return [node, offset]; offset -= node.textContent!.length; }
+        return [area, area.childNodes.length];
+      };
+      const [a, x] = point(anchor), [b, y] = point(head);
+      document.getSelection()!.setBaseAndExtent(a, x, b, y);
+    }
+  },
+  /** Initial native selection setup, independent of each backend's End-key semantics. */
+  placeCaretAtEnd: (block: BlockId) => {
+    const area = rowOf(block)?.querySelector<HTMLElement>('textarea, [contenteditable="true"]');
+    if (!area) throw new Error("Cannot place a caret in an unmounted text block");
+    area.focus({ preventScroll: true });
+    if (area instanceof HTMLTextAreaElement) area.setSelectionRange(area.value.length, area.value.length);
+    else { const range = document.createRange(); range.selectNodeContents(area); range.collapse(false); const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range); }
   },
   /** EB-4 sync storm: the peer edits blocks other than `exclude`, `perSecond` times a second, through the relay. */
   startStorm: (exclude: BlockId, perSecond = 50) => {
@@ -242,83 +334,169 @@ const lab = {
     if (storm) clearInterval(storm);
     storm = null;
   },
-  /**
-   * EB-7 in the page, so 10,000 transactions take minutes, not hours. The
-   * caret sits at the end of `caret`'s block; every remote transaction
-   * touches other blocks only. After each, the caret must still be in the
-   * same block at the same offsets, and the block at the top of the viewport
-   * must not have moved. After a focus violation the caret is put back, as
-   * the writer would, so the other checks keep running.
-   */
+  /** EB-7: check EACH delivered transaction, including both concurrent arrivals. */
   fuzzRemote: async (options: { seed: number; ops: number; caret: BlockId }) => {
+    let caret = options.caret;
     const rand = random(options.seed);
-    const input = () => rowOf(options.caret)?.querySelector<HTMLElement>('textarea, [contenteditable="true"]') ?? null;
-    const restore = () => {
-      const area = input();
-      area?.focus();
-      if (area instanceof HTMLTextAreaElement) area.setSelectionRange(area.value.length, area.value.length);
-      else if (area) { const range = document.createRange(); range.selectNodeContents(area); range.collapse(false); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range); }
-    };
-    const counts = { focus: 0, selection: 0, viewport: 0 };
-    const first: { op: number; kind: string; detail: string }[] = [];
+    const counts = { focus: 0, selection: 0, viewport: 0, convergence: 0 };
+    const viewportChecks = { anchored: 0, noVisibleOrigin: 0, noRenderedFallback: 0 };
+    const coverage = { insert: 0, edit: 0, caretInsert: 0, delete: 0, restore: 0, move: 0, marks: 0, caretMarks: 0, otherMarks: 0, concurrentMoves: 0, concurrentPairs: 0, aFirst: 0, bFirst: 0, charDelete: 0, deleteBefore: 0, deleteInside: 0, deleteCovered: 0, deleteOther: 0, caretMove: 0, caretDelete: 0, caretConcurrentPairs: 0, selectionForward: 0, selectionBackward: 0, selectionCollapsed: 0, emptyUpdates: 0 };
+    const first: { op: number; kind: keyof typeof counts; detail: string }[] = [];
+    const dead = new Set<BlockId>();
     const record = (op: number, kind: keyof typeof counts, detail: string) => {
       counts[kind]++;
-      if (first.length < 8) first.push({ op, kind, detail });
+      if (first.length < 8) { first.push({ op, kind, detail }); console.error(`[EB-7 ${textMode} seed ${options.seed}] ${JSON.stringify({ op, kind, detail })}`); }
     };
+    // This prefix makes every family and both delivery orders non-vacuous even in short probes.
+    const prefix = ["insert", "caretMarks", "otherMarks", "delete", "restore", "aFirst", "edit", "caretInsert", "move", "bFirst", "charDeleteBefore", "charDeleteInside", "caretInsert", "charDeleteOther", "caretMove", "caretConcurrent", "caretDelete", "caretInsert", "charDeleteCover"] as const;
+    const choices = ["insert", "delete", "delete", "delete", "restore", "restore", "move", "concurrent", "marks", "marks", "caretInsert", "edit", "charDeleteBefore", "charDeleteInside", "charDeleteCover", "charDeleteOther", "caretMove", "caretDelete", "caretConcurrent"] as const;
     const started = performance.now();
-    for (let i = 0; i < options.ops; i++) {
-      const active = document.activeElement as HTMLTextAreaElement | null;
-      const selection = textSelection(active);
-      if (!selection) throw new Error("Cannot measure EB-7 without a native text selection");
-      const anchor = lab.topVisibleBlock();
-      const anchorTop = anchor ? rowOf(anchor)!.getBoundingClientRect().top : null;
-      const order = lab.blockIds();
-      const others = order.filter((id) => id !== options.caret && id !== anchor);
+    let applied = 0, round = 0, anchorChanges = 0;
+    while (applied < options.ops) {
+      const order = lab.allBlockIds(), others = order.filter(id => id !== caret);
       const pick = () => others[Math.floor(rand() * others.length)]!;
-      const roll = rand();
+      const pickText = () => { const ids = others.filter(id => (editor.view.blocks[id]?.text?.s.length ?? 0) > 0); return ids[Math.floor(rand() * ids.length)] ?? caret; };
+      let kind: string = prefix[round] ?? choices[Math.floor(rand() * choices.length)]!;
+      if (others.length < 5) kind = "insert";
+      if (kind === "restore" && dead.size === 0) kind = "delete";
+      if ((kind === "concurrent" || kind === "caretConcurrent" || kind === "aFirst" || kind === "bFirst") && options.ops - applied < 2) kind = "move";
+      const size = editor.view.blocks[caret]!.text!.s.length;
+      if (size < 32) kind = "caretInsert";
+      const low = size > 5 ? 2 + Math.floor(rand() * (size - 5)) : 0;
+      const high = size > 5 ? Math.min(size, low + 3 + Math.floor(rand() * (size - low - 2))) : size;
+      const shape = kind.startsWith("charDelete") ? 1 + round % 2 : round % 3;
+      const requested = [shape === 2 ? high : low, shape === 1 ? high : low];
+      Y.applyUpdate(editor.ydoc, new Uint8Array([0, 0]), "lab-empty-remote"); coverage.emptyUpdates++;
+      lab.selectText(caret, requested[0]!, requested[1]!);
+      if (JSON.stringify(textSelection(document.activeElement)) !== JSON.stringify(requested)) throw new Error("Native selection setup did not land");
       let op: Op;
-      let expected: (number | null)[] | null = selection;
-      if (roll < 0.3 || others.length < 5) {
-        const s = `remote ${i}`;
+      let effect: { at: number; inserted: number; removed: number } | undefined;
+      let markCheck: { block: BlockId; from: number; length: number; marks: string[]; text: string } | undefined;
+      let finish: (() => boolean) | undefined;
+      let deliveries: Delivery[] | undefined;
+      let counter: "insert" | "edit" | "caretInsert" | "delete" | "restore" | "move" | "marks" | "concurrentMoves" | "charDelete" | "caretMove" | "caretDelete";
+      if (kind === "insert") {
+        const s = `remote ${round}`;
         op = { op: "insert", block: { id: newBlockId(), type: "nooq.paragraph/v1", fields: {}, text: unmarked(s), children: [], attribution: { created: { actor: remoteActor.actorId }, fields: {} } }, parent: null, index: Math.floor(rand() * (order.length + 1)) };
-      } else if (roll < 0.4) {
-        op = { op: "textEdit", block: pick(), changes: [{ insert: `e${i} ` }] }; // DM-4.3: single-splice remote edits
-      } else if (roll < 0.5 && selection && selection[0] === selection[1]) {
-        // Inside the caret's own block: the caret must stay on the same characters.
-        const length = editor.view.blocks[options.caret]?.text?.s.length ?? 0;
-        const caretAt = selection[0]!;
-        let at = Math.floor(rand() * (length + 1));
-        if (at === caretAt) at = caretAt === 0 ? 1 : caretAt - 1;
-        at = Math.min(at, length);
-        expected = at < caretAt ? [caretAt + 2, caretAt + 2] : [caretAt, caretAt];
-        op = { op: "textEdit", block: options.caret, changes: [...(at ? [{ retain: at }] : []), { insert: "··" }] };
-      } else if (roll < 0.8) {
-        op = { op: "delete", block: pick() };
+        counter = "insert";
+      } else if (kind === "delete") {
+        op = { op: "delete", block: pick() }; counter = "delete";
+      } else if (kind === "restore") {
+        const ids = [...dead];
+        op = { op: "restore", block: ids[Math.floor(rand() * ids.length)]!, parent: null, index: Math.floor(rand() * (order.length + 1)) }; counter = "restore";
+      } else if (kind === "caretDelete") {
+        op = { op: "delete", block: caret }; counter = "caretDelete";
+      } else if (kind === "caretMove") {
+        const index = (order.indexOf(caret) + 1 + Math.floor(rand() * (order.length - 1))) % order.length;
+        op = { op: "move", block: caret, newParent: null, index }; counter = "caretMove";
+      } else if (kind.startsWith("charDelete")) {
+        const block = kind === "charDeleteOther" ? pickText() : caret;
+        const length = editor.view.blocks[block]!.text!.s.length;
+        const selected = textSelection(document.activeElement)!;
+        const lo = Math.min(...selected), hi = Math.max(...selected);
+        const at = kind === "charDeleteBefore" ? 0 : kind === "charDeleteCover" ? Math.max(0, lo - 1) : kind === "charDeleteOther" ? Math.floor(rand() * length) : lo + 1;
+        const removed = kind === "charDeleteBefore" ? Math.max(1, lo) : kind === "charDeleteCover" ? Math.min(length, hi + 1) - at : 1;
+        op = { op: "textEdit", block, changes: [...(at ? [{ retain: at }] : []), { delete: removed }] };
+        if (block === caret) effect = { at, inserted: 0, removed };
+        coverage[kind === "charDeleteBefore" ? "deleteBefore" : kind === "charDeleteCover" ? "deleteCovered" : kind === "charDeleteOther" ? "deleteOther" : "deleteInside"]++;
+        counter = "charDelete";
+      } else if (kind === "move") {
+        op = { op: "move", block: pick(), newParent: null, index: Math.floor(rand() * order.length) }; counter = "move";
+      } else if (kind === "concurrent" || kind === "caretConcurrent" || kind === "aFirst" || kind === "bFirst") {
+        const block = kind === "caretConcurrent" ? caret : pick(), a = Math.floor(rand() * order.length);
+        let b = Math.floor(rand() * order.length); if (b === a) b = (a + 1) % order.length;
+        const reverse = kind === "bFirst" || (kind === "concurrent" || kind === "caretConcurrent") && rand() < 0.5;
+        const fork = concurrentRemote(block, a, b, reverse);
+        deliveries = fork.deliveries; finish = fork.finish;
+        coverage.concurrentPairs++; if (block === caret) coverage.caretConcurrentPairs++; coverage[reverse ? "bFirst" : "aFirst"]++;
+        counter = "concurrentMoves";
+        op = deliveries[0]!.op;
+      } else if (kind === "marks" || kind === "caretMarks" || kind === "otherMarks") {
+        const onCaret = kind === "caretMarks" || kind === "marks" && rand() < 0.5;
+        const block = onCaret ? caret : pickText(), text = editor.view.blocks[block]!.text!;
+        const from = Math.floor(rand() * text.s.length), length = 1 + Math.floor(rand() * (text.s.length - from));
+        const marks = text.marks[from]?.includes("strong") ? [] : ["strong"];
+        op = { op: "textEdit", block, changes: [...(from ? [{ retain: from }] : []), { retain: length, setMarks: marks.length ? marks : null }] };
+        markCheck = { block, from, length, marks, text: text.s };
+        coverage[onCaret ? "caretMarks" : "otherMarks"]++;
+        counter = "marks";
+      } else if (kind === "caretInsert") {
+        const selection = textSelection(document.activeElement);
+        if (!selection) throw new Error("Cannot measure EB-7 without a native text selection");
+        const length = editor.view.blocks[caret]!.text!.s.length;
+        const chance = rand(), lo = Math.min(...selection), hi = Math.max(...selection);
+        const at = chance < 0.25 ? lo : chance < 0.5 ? hi : Math.floor(rand() * (length + 1));
+        const inserted = length < 32 ? "repeated ·· text for native selection ".repeat(4) : "··";
+        op = { op: "textEdit", block: caret, changes: [...(at ? [{ retain: at }] : []), { insert: inserted }] };
+        effect = { at, inserted: inserted.length, removed: 0 }; counter = "caretInsert";
       } else {
-        op = { op: "move", block: pick(), newParent: null, index: Math.floor(rand() * order.length) };
+        op = { op: "textEdit", block: pick(), changes: [{ insert: `e${round} ` }] }; counter = "edit";
       }
-      lab.remote(op);
-      await rendered();
-
-      const now = document.activeElement as HTMLTextAreaElement | null;
-      const focusedBlock = now?.closest("[data-nq-block]")?.getAttribute("data-nq-block") ?? null;
-      if (focusedBlock !== options.caret) {
-        record(i, "focus", `${op.op}: focus moved from the caret's block to ${focusedBlock ?? "nothing"}`);
-        restore();
-        continue;
+      deliveries ??= [singleRemote(op)];
+      for (const delivery of deliveries) {
+        const selection = textSelection(document.activeElement);
+        if (!selection) throw new Error("Cannot measure EB-7 without a native text selection");
+        coverage[selection[0] === selection[1] ? "selectionCollapsed" : selection[0] < selection[1] ? "selectionForward" : "selectionBackward"]++;
+        const beforeOrder = lab.allBlockIds(), top = lab.topVisibleBlock(beforeOrder);
+        const changesTop = top !== null && "block" in delivery.op && delivery.op.block === top;
+        if (changesTop) anchorChanges++;
+        let anchor = top;
+        if (changesTop) {
+          const live = new Set(beforeOrder);
+          const mounted = Array.from(surface.element.querySelectorAll<HTMLElement>('[data-nq-block]:not([data-nq-ph])'))
+            .filter(row => live.has(row.dataset.nqBlock!) && row.getBoundingClientRect().bottom > 0);
+          const at = mounted.findIndex(row => row.dataset.nqBlock === top);
+          anchor = mounted.slice(at + 1).find(row => row.dataset.nqBlock !== top)?.dataset.nqBlock ?? null;
+        }
+        viewportChecks[top === null ? "noVisibleOrigin" : anchor === null ? "noRenderedFallback" : "anchored"]++;
+        const anchorTop = anchor ? rowOf(anchor)?.getBoundingClientRect().top ?? null : null;
+        const scrollBefore = window.scrollY;
+        let expected = effect ? selection.map(p => {
+          if (effect!.removed) return p <= effect!.at ? p : Math.max(effect!.at, p - effect!.removed);
+          const right = selection[0] !== selection[1] && p === Math.min(...selection);
+          return effect!.at < p || effect!.at === p && right ? p + effect!.inserted : p;
+        }) : selection;
+        if (delivery.op.op === "delete" && delivery.op.block === caret) {
+          const at = beforeOrder.indexOf(caret), next = beforeOrder[at + 1], previous = beforeOrder[at - 1];
+          caret = next ?? previous!;
+          const offset = next ? 0 : editor.view.blocks[caret]!.text!.s.length;
+          expected = [offset, offset];
+        }
+        delivery.send();
+        coverage[counter]++;
+        if (delivery.op.op === "delete") dead.add(delivery.op.block);
+        if (delivery.op.op === "restore") dead.delete(delivery.op.block);
+        await rendered();
+        const now = document.activeElement;
+        const focusedBlock = now?.closest("[data-nq-block]")?.getAttribute("data-nq-block") ?? null;
+        if (focusedBlock !== caret) {
+          record(applied, "focus", `${kind}: focus moved to ${focusedBlock ?? "nothing"}`);
+          lab.placeCaretAtEnd(caret);
+        } else {
+          const after = textSelection(now);
+          if (JSON.stringify(after) !== JSON.stringify(expected)) record(applied, "selection", `${kind}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(after)}`);
+        }
+        const anchorRow = anchor ? rowOf(anchor) : null;
+        if (top === null && surface.lastAnchor !== null) record(applied, "viewport", `${kind}: renderer selected an anchor without a visible origin`);
+        if (anchorTop !== null) {
+          if (!anchorRow) record(applied, "viewport", `${kind}: unchanged anchor ${anchor} disappeared`);
+          else {
+            const moved = anchorRow.getBoundingClientRect().top - anchorTop;
+            if (Math.abs(moved) >= 1) record(applied, "viewport", JSON.stringify({ remote: delivery.op, kind, top, anchor, beforeTop: anchorTop, afterTop: anchorRow.getBoundingClientRect().top, moved, scrollBefore, scrollAfter: window.scrollY, stats: lab.stats() }));
+          }
+        }
+        if (delivery.op.op === "restore" && !editor.view.roots.includes(delivery.op.block)) record(applied, "convergence", "Restore did not make its tombstone live");
+        if (markCheck) {
+          const text = editor.view.blocks[markCheck.block]!.text!;
+          if (text.s !== markCheck.text || text.marks.slice(markCheck.from, markCheck.from + markCheck.length).some(m => JSON.stringify(m) !== JSON.stringify(markCheck!.marks))) record(applied, "convergence", "Mark change was lost or changed characters");
+        }
+        applied++;
+        if (applied % 250 === 0) console.info(`[EB-7 ${textMode} seed ${options.seed}] ${applied}/${options.ops} remote transactions; violations ${Object.values(counts).reduce((a, b) => a + b, 0)}`);
       }
-      const after = textSelection(now);
-      if (JSON.stringify(after) !== JSON.stringify(expected)) {
-        const where = op.op === "textEdit" && op.block === options.caret ? " in the caret's block" : "";
-        record(i, "selection", `${op.op}${where}: expected selection ${JSON.stringify(expected)}, got ${JSON.stringify(after)}`);
-      }
-      const anchorRow = anchor ? rowOf(anchor) : null;
-      if (anchorRow && anchorTop !== null) {
-        const moved = anchorRow.getBoundingClientRect().top - anchorTop;
-        if (Math.abs(moved) >= 1) record(i, "viewport", `${op.op}: the block at the top of the viewport moved ${Math.round(moved)}px`);
-      }
+      if (finish && !finish()) record(applied - 1, "convergence", "Concurrent moves did not converge to one placement on both forked replicas and the editor");
+      round++;
     }
-    return { applied: options.ops, counts, first, seconds: Math.round((performance.now() - started) / 100) / 10, blocksAtEnd: lab.blockCount() };
+    return { applied, anchorChanges, viewportChecks, coverage, counts, first, seconds: Math.round((performance.now() - started) / 100) / 10, blocksAtEnd: lab.blockCount() };
   },
   /** Resolves after the editor has rendered and two frames have painted. */
   settle: () => new Promise<void>((resolve) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())), 0)),

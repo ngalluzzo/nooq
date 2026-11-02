@@ -251,6 +251,56 @@ A transaction from another actor MUST NOT change:
    itself changes, the nearest unchanged block below it becomes the
    anchor.
 
+**Fallback finding (2026-11-01):** pinning the original top row after a
+remote delete moved the next unchanged block by 60 CSS px in both plain
+and rich mode; inserting one newline into the top row moved it by 30 CSS
+px. Anchor selection MUST inspect the complete pending change batch
+before mutating the DOM, skipping changed and no-longer-live blocks even
+when a roots change requires a full render. The browser regression cases
+are kept in `lab/eb7-anchor.test.ts`; the random workload must also admit
+edits to the top block and check the unchanged fallback's position.
+
+The expanded fixed seed also found an edge case: at scroll offset 7, a
+30 px removal requires offset -23 to preserve the fallback. Browsers
+clamp that to zero. At either document edge, the surface MUST retain the
+missing extent as inert layout space rather than move unchanged content.
+That space is released when the writer deliberately scrolls or navigates;
+it is not document content and is never synchronized.
+
+**Coverage extension (2026-11-01):** the workload reports counts for
+restores, mark changes (including the caret's block), and concurrent
+same-block moves. Concurrent moves are authored on two replicas at the
+same causal frontier, then delivered in both orders. Each arrival is
+checked separately; both replicas and the editor must converge to one
+placement. A run counts delivered transactions, not fuzz iterations, and
+must exercise every operation family and both concurrent delivery orders.
+Results are kept separately for plain/rich presentation and Chrome/WebKit.
+WebKit runs the invariant without CDP CPU throttling; absolute timing
+budgets remain Chrome-only.
+Select these runs with `NQ_LAB_BACKEND=chrome|webkit` and
+`NQ_LAB_TEXT_MODE=plain|rich`. `NQ_LAB_EB7_FRESH_SEED` replays a reported
+fresh seed; leaving it unset draws a new one.
+
+The extended run also exposed a windowing leak: ten renders grew one gap
+placeholder into eleven. Gap nodes must persist across renders and track
+the current unmounted range. Accumulated old placeholders add phantom
+document height and make long viewport checks progressively slower.
+
+**Measured (2026-11-01, this rig):** the expanded workload passed in plain
+and rich mode on both Chromium (4x CPU profile) and native WebKit. Each
+profile delivered 10,000 transactions with fixed seed `3767` and 10,000
+with fresh seed `203227235`: 80,000 arrivals, zero focus, selection,
+viewport, or convergence violations. Across those runs: 12,016 restores,
+12,372 mark changes, and 6,160 concurrent move pairs, exercising both
+delivery orders. All 32 targeted anchor cases measured 0 CSS px drift.
+The local assessment and raw results are in
+`packages/editor/lab/results/eb7-matrix-2026-11-01/`.
+
+This measurement uses a collapsed caret in one live paragraph of
+`ref-small`. The caret's block is excluded from block deletion and moves;
+non-collapsed selections and character deletions remain outside this
+native fuzz workload.
+
 **Test:** property-based fuzzing, 10,000 random remote transactions per
 CI run from a fixed seed set, plus one fresh seed that is printed on
 failure. Transactions cover character and block inserts and deletes
@@ -261,6 +311,90 @@ the selection covers the same characters and that the anchor block's top
 edge moved by less than 1 CSS pixel. **Zero violations.** Every failure is
 shrunk to a minimal case and kept as a regression test. The fuzz runs on
 both `Bun.WebView` backends (EB-2.1): Chromium in CI, and WebKit on macOS.
+
+**Selection coverage extension (2026-11-01):** native checks also cover
+forward and backward ranges, character deletions before/inside/across a
+range, and movement/deletion of the selected block. Range boundaries keep
+the original characters: insertion at the lower boundary moves that
+boundary right; insertion at the upper boundary stays outside the range.
+An insertion exactly at a collapsed caret leaves it before the insertion.
+Deletions map each endpoint to the surviving splice position, preserving
+direction unless the range collapses. Moving the selected block preserves
+its identity, focus and range even across the mounted window. Deleting it
+collapses selection at the next surviving text block's start, or the
+previous text block's end when there is no next block; an empty document
+retains focus on the surface. This focus fallback must also preserve the
+unchanged viewport anchor. The prior workload did not exercise these
+cases; its collapsed-caret measurements above retain their original scope.
+Initial native probes found that plain mode included text inserted at a
+range's lower boundary, rich mode included text inserted at its upper
+boundary, and both modes lost focus on selected-block deletion. Remote
+selection anchors must therefore use CRDT character identities captured
+before the update, rather than infer identity from a string diff (which
+also cannot distinguish deletion among repeated characters).
+An empty remote update must release its capture immediately: it emits no
+document update and schedules no render, so retaining it would overwrite
+the writer's next selection when a later real update arrives. The native
+workload interleaves empty arrivals before deliberate range changes;
+these are reported separately from delivered nooq transactions.
+
+**Measured selection extension (2026-11-01):** workload v4 passed 20,000
+transactions per browser/presentation profile (fixed seed `3767`, fresh
+seed `2088873586`), 80,000 total, with zero focus, selection, viewport or
+convergence violations. It exercised 58,064 non-collapsed selections,
+13,916 character deletions, 3,544 selected-block deletions, 3,500 serial
+selected-block moves and 3,556 concurrent selected-block move pairs.
+Another 73,012 empty arrivals were interleaved without counting them as
+nooq transactions. All 100 native tests passed; the 92 focused cases
+measured 0 CSS px drift. The source hashes and assessment are retained in
+`packages/editor/lab/results/eb7-selections-2026-11-01/`. The full matrix
+pins the selection-fix revision to avoid concurrent shared-checkout
+edits; integration with the later away-marker work is measured separately.
+
+**Frozen away-marker rerun (2026-11-01):** snapshot `34c625d83c6a`
+includes the latest away-marker runtime, CSS, stories and tests. All four
+profiles ran afresh on the same 419 frozen inputs: 80,000 transactions,
+fixed seed `3767` plus fresh seed `1996805806`. The gate did **not** clear:
+Chromium/rich reported 119 viewport-check failures in the fresh seed;
+Chromium/plain and both WebKit modes reported zero. Focus, selection and
+convergence counts were zero throughout. All 92 focused cases still
+measured 0 CSS px drift; typecheck and 208 unit/scenario tests passed.
+The retained fuzz examples use below-viewport anchors. A separate native
+diagnostic reproduced both the probe and renderer accepting a row at
+1,448 px when no live block was visible in a 713 px viewport. This
+implicates anchor visibility handling; it does not establish that every
+report is visible-content drift or that away markers caused it. The
+frozen source remains unchanged. Assessment, logs, replay commands and
+the source archive are in
+`packages/editor/lab/results/eb7-away-frozen-2026-11-01/`.
+
+**Offscreen-anchor correction (2026-11-01):** the visible origin must
+intersect the viewport (`bottom > 0` and `top < innerHeight`) in the old
+DOM. Without that origin, neither the probe nor the renderer may invent
+an anchor from content below the screen. Once a visible origin changes
+or is deleted, its nearest unchanged rendered live row below may still
+be an offscreen fallback; applying the upper viewport bound to that
+fallback would lose the tall-block case. The chosen fallback must remain
+mounted through the render, and aggregate windowing placeholders are not
+individual block anchors. Native regressions cover a fully offscreen
+document and deletion of a tall visible origin with an offscreen fallback.
+
+**Frozen offscreen-fix rerun (2026-11-01):** snapshot `0b58909b2276`
+includes the away-marker work and the probe/renderer correction. The
+gate **cleared** in plain and rich modes on Chromium and native WebKit:
+108 native tests, 80,000 transactions, zero focus, selection, viewport,
+or convergence violations. All 100 focused cases measured 0 CSS px drift.
+Each profile ran fixed seed `3767` and newly drawn seed `188385966` for
+10,000 transactions apiece. A separate Chromium/rich replay of the
+previously failing seed `1996805806` also completed 10,000 transactions
+with zero violations. Typecheck and 208 editor/Yjs scenario tests passed.
+All 419 frozen inputs stayed byte-identical across the matrix. Workload
+v5 reports anchored arrivals, absent visible origins, and absent rendered
+fallbacks separately; an absent origin must not produce a renderer anchor.
+The corrected oracle makes this a new measurement, not a comparison using
+the old visibility check. Source archive, manifests, exact commands, raw
+logs, coverage and assessment are retained in
+`packages/editor/lab/results/eb7-offscreen-fix-2026-11-01/`.
 
 ## EB-8. Budget: font loading never moves the line being typed
 

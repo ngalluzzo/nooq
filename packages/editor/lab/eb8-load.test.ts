@@ -6,7 +6,7 @@
  * flat-in-document-size by construction.
  */
 import { describe, expect, test } from "bun:test";
-import { ENFORCE, LAB, labSession, labCapable } from "./session.ts";
+import { ENFORCE, LAB, labSession, labBudgetCapable as labCapable } from "./session.ts";
 
 const run = LAB && labCapable;
 
