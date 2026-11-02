@@ -12,8 +12,6 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
  * Unit tests run under `bun test`, not here.
  */
 export default defineConfig({
-  // Live-relay stories (Revocation) do real crypto and sync; CI runners need the room.
-  test: { testTimeout: 45_000 },
   // Editor-backed stories load these transitively; prebundle before either theme starts.
   optimizeDeps: { include: [
     "@nooq/plugin-agent > @nooq/editor > prosemirror-model",
@@ -21,6 +19,8 @@ export default defineConfig({
     "@nooq/plugin-agent > @nooq/editor > prosemirror-view",
   ] },
   test: {
+    // Live-relay stories (Revocation) do real crypto and sync; CI runners need the room.
+    testTimeout: 45_000,
     projects: (["light", "dark"] as const).map((theme) => ({
       extends: true,
       plugins: [storybookTest({ configDir: path.join(dirname, ".storybook"), initialGlobals: { theme } })],
