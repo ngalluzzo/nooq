@@ -140,6 +140,24 @@
    rule the width of a change bar. An empty children container draws nothing. */
 .nq-children { display: flex; flex-direction: column; gap: var(--nq-block-gap); margin: var(--nq-block-gap) 0 0; padding-inline-start: calc(var(--nq-gutter) - var(--nq-change-bar)); border-inline-start: var(--nq-change-bar) solid var(--nq-rule); }
 .nq-children:empty { display: none; }
+/* Multi-column layout (foundation P2). The columns view's OWN children
+   container is the grid — two equal tracks, the column-gap gutter between
+   them, block-gap between grid rows. The child combinator is the scope: a
+   column's own .nq-children, and every deeper one, keeps the plain flex
+   stacking above. Inside columns the nesting treatment resets — no gutter
+   indent, no rule border — because columns are parallel, not depth.
+   Narrow widths degrade to one track through a plain max-width media query,
+   NOT a container query: container queries need size/layout containment on
+   an ancestor, and the only classed ancestor is .nq-editor, which holds
+   fixed-position children (popovers carry viewport-computed --nq-x/--nq-y);
+   containment would re-anchor them to the editor box. The breakpoint is the
+   literal 724px tracking calc(measure + gutter) — media conditions cannot
+   substitute custom properties. Stacking is honest: one track, the same
+   tree order (reading order = column order = DOM order, foundation.md). */
+.nq-columns > .nq-children { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--nq-column-gap); row-gap: var(--nq-block-gap); margin: 0; padding-inline-start: 0; border-inline-start: 0; }
+@media (max-width: 724px) {
+  .nq-columns > .nq-children { grid-template-columns: minmax(0, 1fr); }
+}
 /* Windowed runs (EB-8): quiet skeletons that hold estimated height. A flat
    sunken ground; no shimmer, no animation (§3). */
 .nq-editor [data-nq-ph] { border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }

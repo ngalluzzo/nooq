@@ -1,8 +1,8 @@
 /** Explicit first-party features, implemented through the same API as third parties. */
-import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Proposal } from "@nooq/core";
+import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Block, type Proposal } from "@nooq/core";
 import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@nooq/plugins";
-import { defineDOMPlugin, defineTextPolicy, type BlockViewDefinition, type MarkRenderer } from "@nooq/plugins/dom";
-import { essentials, insertBlock, splitBlock, deleteBlock } from "@nooq/plugins/essentials";
+import { defineDOMPlugin, defineTextPolicy, type BlockViewContext, type BlockViewDefinition, type MarkRenderer, type SurfaceActionContext } from "@nooq/plugins/dom";
+import { essentials, insertBlock, splitBlock, deleteBlock, insertColumns } from "@nooq/plugins/essentials";
 import { blockRow, suggestionCard, tooltip, type DiffSegment, type SuggestionState } from "@nooq/design";
 import { callout, calloutMarkdown } from "@nooq/plugin-callouts";
 import { actorKindOf, type Editor, type JobBinding } from "./controller.ts";
@@ -36,42 +36,63 @@ export const writingTextPolicy = defineTextPolicy({
   marks: ["strong", "em", "code", "link"],
   renderMarks: { link: renderLinkMark },
 });
+/** The inline-text essentials blocks, in the order the reference kinds array below types them. */
+const textBlocks = essentials.contributes.blocks.filter(block => block.text === "inline");
 export const essentialsDOM = defineDOMPlugin({
   id: "nooq.essentials", forPlugin: essentials,
-  views: essentials.contributes.blocks.map((block, i) => ({ type: block.type, textPolicy: writingTextPolicy, mount(ctx) {
-    const text = ctx.mountTextEditor({ label: block.label });
-    // The bar opens this block's history. The host owns the history store and
-    // the popover, so onHistory only announces the request — one bubbling
-    // `nq:block-history` event, the same contract for every plugin's bars.
-    const element = blockRow({
-      content: [text.element, ctx.children.element],
-      // The title renders like every other document block — the doc-title
-      // style through the "title" kind, no special casing in the surface.
-      // One title per document is convention, not enforcement (§7).
-      kind: (["paragraph", "heading", "quote", "title"] as const)[i]!,
-      actor: "human",
-      onHistory: () => bar.dispatchEvent(new CustomEvent("nq:block-history", { bubbles: true })),
-    });
-    const bar = element.querySelector<HTMLElement>(".nq-bar")!;
-    let tip: ReturnType<typeof tooltip> | undefined, tipWriter: string | undefined;
-    return { element, update(block) {
-      // DM-14.2: every character keeps its author; AI text stays visibly AI after adoption.
-      const authors = ctx.authors(), names = authors.length ? authors.map(author => author.actorId) : [block.attribution.created.actor];
-      const kinds = authors.length ? authors.map(author => author.kind) : [actorKindOf(names[0]!)];
-      const actor = kinds.includes("ai") ? "ai" : kinds.every(kind => kind === "human") ? "human" : "system";
-      element.dataset.actor = actor;
-      bar.className = `nq-bar nq-bar-${actor === "human" ? "human" : actor === "ai" ? "ai" : "machine"} nq-bar-history`;
-      // The bar is a button now: named for what it opens, explained by the
-      // tooltip on hover AND focus — no title attribute to hide behind (§9).
-      const writer = names[names.length - 1] ?? names[0]!;
-      bar.setAttribute("aria-label", `Block history · last edited by ${writer}`);
-      if (writer !== tipWriter) {
-        tip?.destroy();
-        tip = tooltip({ anchor: bar, text: `Last edited by ${writer}` });
-        tipWriter = writer;
-      }
-    }, destroy: () => { tip?.destroy(); text.destroy(); } };
-  } })),
+  views: [
+    ...textBlocks.map((block, i) => ({ type: block.type, textPolicy: writingTextPolicy, mount(ctx: BlockViewContext) {
+      const text = ctx.mountTextEditor({ label: block.label });
+      // The bar opens this block's history. The host owns the history store and
+      // the popover, so onHistory only announces the request — one bubbling
+      // `nq:block-history` event, the same contract for every plugin's bars.
+      const element = blockRow({
+        content: [text.element, ctx.children.element],
+        // The title renders like every other document block — the doc-title
+        // style through the "title" kind, no special casing in the surface.
+        // One title per document is convention, not enforcement (§7).
+        kind: (["paragraph", "heading", "quote", "title"] as const)[i]!,
+        actor: "human",
+        onHistory: () => bar.dispatchEvent(new CustomEvent("nq:block-history", { bubbles: true })),
+      });
+      const bar = element.querySelector<HTMLElement>(".nq-bar")!;
+      let tip: ReturnType<typeof tooltip> | undefined, tipWriter: string | undefined;
+      return { element, update(block: Block) {
+        // DM-14.2: every character keeps its author; AI text stays visibly AI after adoption.
+        const authors = ctx.authors(), names = authors.length ? authors.map(author => author.actorId) : [block.attribution.created.actor];
+        const kinds = authors.length ? authors.map(author => author.kind) : [actorKindOf(names[0]!)];
+        const actor = kinds.includes("ai") ? "ai" : kinds.every(kind => kind === "human") ? "human" : "system";
+        element.dataset.actor = actor;
+        bar.className = `nq-bar nq-bar-${actor === "human" ? "human" : actor === "ai" ? "ai" : "machine"} nq-bar-history`;
+        // The bar is a button now: named for what it opens, explained by the
+        // tooltip on hover AND focus — no title attribute to hide behind (§9).
+        const writer = names[names.length - 1] ?? names[0]!;
+        bar.setAttribute("aria-label", `Block history · last edited by ${writer}`);
+        if (writer !== tipWriter) {
+          tip?.destroy();
+          tip = tooltip({ anchor: bar, text: `Last edited by ${writer}` });
+          tipWriter = writer;
+        }
+      }, destroy: () => { tip?.destroy(); text.destroy(); } };
+    } })),
+    // Multi-column layout (foundation P2): the plainest possible views — a
+    // shell carrying the class, the children container retained, nothing
+    // else. The surface's recursive walk does the nesting; the theme's grid
+    // does the layout. Columns are parallel, not depth, so they take no
+    // gutter and no bar of their own.
+    { type: "nooq.columns/v1", mount(ctx) {
+      const element = document.createElement("div");
+      element.className = "nq-columns";
+      element.append(ctx.children.element);
+      return { element, update() {} };
+    } },
+    { type: "nooq.column/v1", mount(ctx) {
+      const element = document.createElement("div");
+      element.className = "nq-column";
+      element.append(ctx.children.element);
+      return { element, update() {} };
+    } },
+  ],
   // Deleted essentials blocks stay reachable in the history layer, drawn as
   // the deleted BlockRow with Restore (DM-3.4) — the surface does the drawing.
   history: state => {
@@ -81,13 +102,25 @@ export const essentialsDOM = defineDOMPlugin({
     const own = new Set(essentials.contributes.blocks.map(block => block.type));
     return Object.values(state.blocks).filter(block => own.has(block.type) && !placed.has(block.id)).map(block => block.id);
   },
-  menus: essentials.contributes.blocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝", "H1"][i], command: insertBlock.id,
-    args(ctx) {
-      const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
-      const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
-      return { type: block.type, parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
+  menus: [
+    ...textBlocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝", "H1"][i], command: insertBlock.id,
+      args(ctx: SurfaceActionContext) {
+        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
+        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+        return { type: block.type, parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
+      },
+    })),
+    // Multi-column layout: one prepared command, one intent — five blocks and
+    // the consumed slash land in a single transaction. The glyph is the
+    // typographic pair the brand book asks for (no icon set, no emoji).
+    { id: "insert:nooq.columns/v1", label: "Two columns", glyph: "||", command: insertColumns.id,
+      args(ctx: SurfaceActionContext) {
+        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
+        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+        return { parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
+      },
     },
-  })),
+  ],
   keys: [
     { id: "split", key: "Enter", label: "Split block", command: splitBlock.id, args: ctx => ctx.selection },
     { id: "delete-empty", key: "Backspace", label: "Delete empty block", command: deleteBlock.id,

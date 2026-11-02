@@ -138,12 +138,26 @@ export const quoteFormatter: BlockFormatter = (block, { text, children }) =>
 /** The proposal wrapper is not content (DM-6): excluded — `undefined` — and counted pending by the engine. */
 export const suggestionFormatter: BlockFormatter = () => undefined;
 
+/**
+ * Layout passthrough (foundation P2): the columns block adds nothing of its
+ * own, so its children export in place — column 1 then column 2, the same
+ * tree order the surface lays them out in (reading order = column order =
+ * DOM order, foundation.md). A known layout block is known, never
+ * `skippedUnknown`.
+ */
+export const columnsFormatter: BlockFormatter = (_block, { children }) => children;
+
+/** One column, the same passthrough; the pair exports left-then-right in tree order. */
+export const columnFormatter: BlockFormatter = (_block, { children }) => children;
+
 /** The reference formatters, keyed by block type; the base every export starts from. */
 export const referenceFormatters: Readonly<Record<string, BlockFormatter>> = Object.freeze({
   "nooq.title/v1": titleFormatter,
   "nooq.heading/v1": headingFormatter,
   "nooq.paragraph/v1": paragraphFormatter,
   "nooq.quote/v1": quoteFormatter,
+  "nooq.columns/v1": columnsFormatter,
+  "nooq.column/v1": columnFormatter,
   [SUGGESTION_TYPE]: suggestionFormatter,
 });
 

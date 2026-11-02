@@ -182,9 +182,39 @@ test("quoteLines prefixes every line and keeps blank separators as bare >", () =
   expect(quoteLines("")).toBe("");
 });
 
+test("a two-column document exports left-then-right in tree order, no skips", () => {
+  const doc = new Builder();
+  doc.add(inline("t", "nooq.title/v1", rt([["Q3 plan", []]])));
+  const columns = doc.add(makeBlock({ id: "cols", type: "nooq.columns/v1" }, "writer"));
+  const left = doc.add(makeBlock({ id: "col-l", type: "nooq.column/v1" }, "writer"), columns.id);
+  doc.add(inline("l1", "nooq.paragraph/v1", rt([["left column first", []]])), left.id);
+  const right = doc.add(makeBlock({ id: "col-r", type: "nooq.column/v1" }, "writer"), columns.id);
+  doc.add(inline("r1", "nooq.paragraph/v1", rt([["right column second", []]])), right.id);
+  doc.add(inline("p", "nooq.paragraph/v1", rt([["after the columns", []]])));
+  const result = exportMarkdown(doc.state);
+  // Reading order is the rule (foundation.md): tree order = column order, so
+  // the left column's content precedes the right's, layout wrappers add
+  // nothing, and nothing counts as skipped or pending.
+  expect(result.markdown).toBe("# Q3 plan\n\nleft column first\n\nright column second\n\nafter the columns");
+  expect(result.pending).toBe(0);
+  expect(result.skippedUnknown).toBe(0);
+});
+
+test("an empty columns block contributes nothing and never counts", () => {
+  const doc = new Builder();
+  const columns = doc.add(makeBlock({ id: "cols", type: "nooq.columns/v1" }, "writer"));
+  const left = doc.add(makeBlock({ id: "col-l", type: "nooq.column/v1" }, "writer"), columns.id);
+  const right = doc.add(makeBlock({ id: "col-r", type: "nooq.column/v1" }, "writer"), columns.id);
+  doc.add(inline("only", "nooq.paragraph/v1", rt([["the one live child", []]])), left.id);
+  const result = exportMarkdown(doc.state);
+  expect(result.markdown).toBe("the one live child");
+  expect(result.pending).toBe(0);
+  expect(result.skippedUnknown).toBe(0);
+});
+
 test("reference formatters are keyed by the reference block types", () => {
   expect(Object.keys(referenceFormatters).sort()).toEqual([
-    "nooq.heading/v1", "nooq.paragraph/v1", "nooq.quote/v1", "nooq.suggestion/v1", "nooq.title/v1",
+    "nooq.column/v1", "nooq.columns/v1", "nooq.heading/v1", "nooq.paragraph/v1", "nooq.quote/v1", "nooq.suggestion/v1", "nooq.title/v1",
   ]);
   expect(Object.isFrozen(referenceFormatters)).toBe(true);
 });
