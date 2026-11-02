@@ -1,6 +1,7 @@
 # Proposal 0013: mark runs — the canonical form compacts
 
-**Status: DRAFT — not yet opened. Drafted: 2026-11-02.** Closes DM-10.2.
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Opened: 2026-11-02. Decision of record: issue #9.** Closes DM-10.2.
 A DM-3.3 amendment (canonical form only — the sequence CRDT, ops, and
 convergence are untouched) plus a `RenderedText` shape change across
 consumers. Measured before proposed; the numbers are the proposal.
