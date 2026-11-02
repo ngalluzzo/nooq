@@ -55,21 +55,28 @@ honesty matches the system's existing convergence story. A remains what
 you reach for when the question isn't "stop their pen" but "stop their
 eyes" — and the pitch should say so plainly.
 
-## 4. The product questions only you can answer
+## 4. Product decisions (1 and 2 answered 2026-11-02 by the owner)
 
-1. **Is eventual write-revocation acceptable?** (B admits a rogue's
-   writes until each peer syncs the epoch bump — typically seconds to
-   minutes online, unbounded offline.) If some customer needs *hard*
-   revocation, only A provides it, and B+A together is the answer.
-2. **What does the UI say when a revoked actor's stale-epoch write
-   lands?** Options: show it with provenance and an "admitted before
-   revocation arrived" notice (recommended — matches DM-4.9's
-   supersession tone), or surface it as a suggestion-style card instead
-   of applied text.
-3. **How often may an owner rotate?** Every epoch bump re-signs the
-   surviving grants; unbounded rotation is an owner-side cost knob.
-   Suggested default: no limit, but the UI shows the re-signing bill
-   before confirming.
+1. **Eventual write-revocation is accepted.** Epochs are the everyday
+   answer; fork stays the documented incident tool for "stop their eyes
+   too." The pitch states the honesty plainly: *revocation takes effect
+   per device at sync time* — the same register as "edits merge when
+   you reconnect."
+2. **Label the actor, never the mechanics** (the Slack/GitHub pattern;
+   the DM-4.9 register):
+   - a **"removed" badge** on the actor's identity everywhere it
+     appears — roster, hover card, provenance;
+   - **one event line in history**: "Maya was removed from this
+     document";
+   - no per-write labels. A write of hers surfacing after that line
+     needs no explanation — the owner connects it the way they connect
+     "X left the conversation" and a late message. The mechanics
+     sentence ("edit admitted after removal reached this device") lives
+     in the provenance detail pane and the spec, nowhere human-facing.
+3. **Rotation cost disclosure — OPEN.** Every epoch bump re-signs the
+   surviving grants; suggested default: no limit, but the owner sees
+   the re-signing bill before confirming (N devices, M surviving
+   grants).
 
 ## 5. What lands if you say go
 
