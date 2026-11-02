@@ -46,7 +46,9 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-Four of the seven are built; the links decision landed (0009) and leaves the formatting toolbar buildable. Still open: the toolbar's appearance policy, access, and the spec-blocked lost moves.
+Six of the seven are built. Still open: access (verdict below — buildable now
+for two of its three parts, waiting on the header's access popover) and the
+spec-blocked lost moves.
 
 Built:
 
@@ -55,11 +57,11 @@ Built:
 - **Presence roster.** Compact ink-dotted list beside the sync status; idle shows as a word. Idle is a local 5-minute recency heuristic — truthful idle wants a timestamp on the awareness wire, named below.
 - **Announcer.** One shared, persistent, rate-limited live region (750ms, latest-wins): "X joined.", "X left.", "Suggestion is now stale." Never per keystroke.
 - **Links and inline payloads (0009).** Marks are bases with tokens (`link:<id>`), payloads live in fields keyed by the full token, policies admit bases (reserved bare for nooq, namespaced for plugins, enforced at defineDOMPlugin), and views contribute renderers. Links are the dogfooded first consumer: `nooq.text.link` is one atomic transaction, anchors render in ink through the policy renderer, Mod-k opens the href popover on the selection, and foreign hosts preserve everything with the §8 dotted fallback. The mechanism is the plugin path — mentions, term definitions and comment anchors ship the same way.
+- **Formatting toolbar.** The appearance policy is decided and shipped: POINTER selection only (a primary-button mouseup completing a non-collapsed selection in a rich host — never typing, never keyboard-only selection), dismissing on Escape, collapse or leave, placed above the selection and never over the caret's line. Buttons are exactly what the block's policy admits — the toggle trio plus Link (the same flow Mod-k opens); the strip is never a focus stop (§3, §9).
 
 Still to decide or build:
 
-- **Formatting toolbar.** Links exist (0009); what remains is the selection-anchored toolbar's appearance policy — when it may show without violating §3 — over Toolbar and Popover.
-- **Access and signers.** Waiting on a home (the document header is P2) and on what peer-verification state the sync layer exposes (DM-12, DM-13).
+- **Access and signers.** Investigated — see `proposals/evidence/access-and-signers.md`. Roles and read-only-with-reason are buildable NOW on existing query surface (the roster is replicated state; deny/hold reasons are first-class); verified-signer is buildable only as "their edits arrived verified here" until the Editor wires the sync session's admission verdicts and the awareness wire grows role/verification fields. The home is the header's actions slot.
 - **Away markers and lost moves.** The change-bar variant needs seen-state semantics; the lost-move notice is blocked until DM-10 resolves what a lost move observably is.
 
 Named follow-ups from the landings: `Editor.close()` does not announce a local departure (only an explicit `setCursor(null)` does); the roster's self name falls back to the actor id until the Editor exposes a display name; true idle needs an awareness timestamp on the wire.
@@ -68,10 +70,16 @@ Named follow-ups from the landings: `Editor.close()` does not announce a local d
 
 ## P2: the reference app
 
+Landed from the first P2 pass:
+
+- **Document header** — `documentHeader()` chrome (title slot leading, sync status, roster, actions slot, one rule below) composed by `createDocumentHeader` from `@nooq/editor`, host-mounted above the surface; the title binds to the new `nooq.title/v1` block, which the surface renders in the doc-title style with no special casing.
+- **Shortcut sheet** — `shortcutSheet()` fed by `collectShortcuts(surface)`, which enumerates the LIVE resolved keymap, so the sheet cannot drift; "?" opens it (never while typing), Esc returns focus.
+
+Still to build:
+
 - **Dialog,** for destructive confirmation, sharing, connecting a model and export. Built on Popover's focus handling.
-- **Document header:** title, sync status, presence roster, share, history.
-- **Shortcut sheet,** generated from registered actions and keymaps so it can't drift.
-- **Export:** format choice and what to do with pending suggestions.
+- **Access popover** on the header's actions slot — buildable per the investigation above; the enabling editor wiring (admission verdicts, retryable notices, `myRole()`) is named there.
+- **Export:** format choice and what to do with pending suggestions. No export engine exists yet — premature until one does.
 - **Multi-column layout block,** promised in the README and not yet designed.
 - **Loading:** the logo loader only after 300ms, and the windowed skeleton.
 

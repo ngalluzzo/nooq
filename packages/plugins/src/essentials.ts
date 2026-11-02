@@ -8,6 +8,12 @@ const textBlock = (type: string, label: string) => defineBlock({ type, label, te
 export const paragraph = textBlock("nooq.paragraph/v1", "Text");
 export const heading = textBlock("nooq.heading/v1", "Heading");
 export const quote = textBlock("nooq.quote/v1", "Quote");
+/**
+ * The document's title (foundation P2): an ordinary inline-text block — the
+ * reference keeps one per document as convention, never as a rule the model
+ * enforces, so hosts and plugins treat it exactly like any other block (§7).
+ */
+export const title = textBlock("nooq.title/v1", "Title");
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
 
 export const insertBlock = defineCommand<{ type: string; parent: string | null; index?: number; clearBlock?: string }>({
@@ -80,5 +86,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, quote], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link] },
+  contributes: { blocks: [paragraph, heading, quote, title], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link] },
 });

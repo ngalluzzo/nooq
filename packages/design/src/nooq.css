@@ -213,6 +213,18 @@
 .nq-roster-peer[data-idle] .nq-roster-name { color: var(--nq-graphite-muted); }
 .nq-roster-idle { color: var(--nq-graphite-muted); }
 
+/* Document header (foundation P2): the chrome strip above the writing
+   surface — title leading, sync, roster and host actions trailing, wrapping
+   on narrow widths, one rule hairline underneath. Chrome, so the strip is
+   the Interface face: the title slot renders as given and is never doc-title
+   (the Document face belongs to the surface, where the title block is
+   edited). The title's trailing auto-margin keeps the meta group at the end
+   and lets it wrap to its own line when width runs out. Nothing animates. */
+.nq-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2) var(--nq-space-3); padding-bottom: var(--nq-space-3); border-bottom: 1px solid var(--nq-rule); color: var(--nq-graphite); font-family: var(--nq-font-sans); }
+.nq-header-title { min-width: 0; margin-inline-end: auto; overflow-wrap: anywhere; }
+.nq-header-title:empty { display: none; }
+.nq-header-side { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-2); min-width: 0; }
+
 
 /* Notice: a word, a glyph, an action — inline, never on the input path (§2, §3).
    A hold waits in graphite-muted; a denial states its reason in a rule-strong
@@ -279,6 +291,18 @@
 .nq-action-separator { flex: none; align-self: stretch; width: 1px; background: var(--nq-rule-strong); }
 .nq-action-separator:last-child { display: none; }
 
+/* Formatting toolbar (foundation P1): the pointer-selection strip of quiet
+   toggles plus Link. Position arrives as --nq-x/--nq-y from the popover's
+   collision math, translated into the surface root's space — above the
+   selection, flipping below, never covering the caret's line. It is pointer
+   affordance only: no tab stops, nothing animated (§3); the chords remain
+   the keyboard path. */
+.nq-format { position: absolute; left: var(--nq-x, 0px); top: var(--nq-y, 0px); z-index: var(--nq-layer-toolbar); display: flex; align-items: center; gap: var(--nq-space-1); padding: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); pointer-events: auto; }
+.nq-format[hidden] { display: none; }
+.nq-format .nq-btn { height: var(--nq-control-sm); padding: 0 var(--nq-space-2); }
+/* An active toggle is the accepted-state treatment: ink-soft ground, ink word (§9). */
+.nq-format .nq-btn[aria-pressed="true"] { background: var(--nq-ink-soft); color: var(--nq-ink); }
+
 /* Form controls. Errors are words: the border stays rule-strong and nothing
    turns red — stamp is reserved for structure that broke (§9). */
 .nq-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--nq-space-2); }
@@ -319,6 +343,18 @@
 .nq-check-box { flex: none; width: var(--nq-space-4); height: var(--nq-space-4); border: 1px solid var(--nq-rule-strong); border-radius: var(--nq-radius-xs); background: transparent; }
 .nq-check[aria-checked="true"] .nq-check-box { border-color: var(--nq-ink-fill); background: var(--nq-ink-fill); }
 .nq-check-word { color: var(--nq-graphite-muted); }
+
+/* Shortcut sheet (foundation P2): the keyboard reference, collected from the
+   surface's registered actions and keymaps so it cannot drift. Content only —
+   the editor wraps it in a popover; each row is an action's label with its
+   registered key strings as kbd chips, verbatim. Reference UI, never the
+   input path (§2, §3); nothing here animates. */
+.nq-shortcuts { display: flex; flex-direction: column; gap: var(--nq-space-4); max-width: var(--nq-measure); max-height: calc(100vh - var(--nq-space-8)); overflow-y: auto; }
+.nq-shortcuts-group { display: flex; flex-direction: column; gap: var(--nq-space-2); }
+.nq-shortcuts-title { color: var(--nq-graphite-muted); }
+.nq-shortcuts-list { display: flex; flex-direction: column; gap: var(--nq-space-1); margin: 0; padding: 0; list-style: none; }
+.nq-shortcuts-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--nq-space-2); }
+.nq-shortcuts-keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-1); }
 
 @media (prefers-reduced-motion: reduce) {
   .nq-caret { animation: none; }

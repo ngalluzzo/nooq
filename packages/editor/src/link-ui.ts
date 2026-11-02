@@ -28,6 +28,8 @@ export interface LinkHost {
 export interface LinkEditorUI {
   /** A keydown from a text host. True when the chord is consumed (the popover opened). */
   keyDown(id: string, event: KeyboardEvent): boolean;
+  /** The same popover flow for the block's selection, opened without the chord (the formatting toolbar's Link button). */
+  open(id: string): boolean;
   /** Forget the popover for a block whose row is going away; silent. */
   closeFor(id: string): void;
   destroy(): void;
@@ -105,15 +107,21 @@ export function createLinkUI(setup: {
     return true;
   }
 
+  // Admission is shared by both entrances: only a rich text host whose policy
+  // admits links; other hosts keep the chord for their own bindings.
+  const openFor = (id: string): boolean => {
+    const host = setup.host(id);
+    if (!host || !host.marks?.includes(LINK_BASE)) return false;
+    return openEditor(id, host);
+  };
+
   return {
     keyDown(id: string, event: KeyboardEvent): boolean {
       // The same Mod the surface's other chords use (rich-text.ts); Shift is not part of this chord.
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return false;
-      const host = setup.host(id);
-      // Only a rich text host whose policy admits links; other hosts keep the chord for their own bindings.
-      if (!host || !host.marks?.includes(LINK_BASE)) return false;
-      return openEditor(id, host);
+      return openFor(id);
     },
+    open: openFor,
     closeFor(id: string): void { if (open?.block === id) close(); },
     destroy(): void { close(); },
   };

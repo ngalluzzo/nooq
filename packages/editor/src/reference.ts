@@ -43,7 +43,10 @@ export const essentialsDOM = defineDOMPlugin({
     // `nq:block-history` event, the same contract for every plugin's bars.
     const element = blockRow({
       content: [text.element, ctx.children.element],
-      kind: (["paragraph", "heading", "quote"] as const)[i]!,
+      // The title renders like every other document block — the doc-title
+      // style through the "title" kind, no special casing in the surface.
+      // One title per document is convention, not enforcement (§7).
+      kind: (["paragraph", "heading", "quote", "title"] as const)[i]!,
       actor: "human",
       onHistory: () => bar.dispatchEvent(new CustomEvent("nq:block-history", { bubbles: true })),
     });
@@ -76,7 +79,7 @@ export const essentialsDOM = defineDOMPlugin({
     const own = new Set(essentials.contributes.blocks.map(block => block.type));
     return Object.values(state.blocks).filter(block => own.has(block.type) && !placed.has(block.id)).map(block => block.id);
   },
-  menus: essentials.contributes.blocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝"][i], command: insertBlock.id,
+  menus: essentials.contributes.blocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝", "H1"][i], command: insertBlock.id,
     args(ctx) {
       const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
       const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;

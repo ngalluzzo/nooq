@@ -9,14 +9,22 @@ import { createActions, mountActionToolbar } from "./actions.ts";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
 import { createLinkUI } from "./link-ui.ts";
+import { createFormatToolbar } from "./format-toolbar.ts";
+import { mountShortcutSheet } from "./shortcuts.ts";
 import { createDocumentSelection } from "./document-selection.ts";
 import { createPresence } from "./presence.ts";
 import { createSurfaceStatus } from "./status.ts";
 import type { CursorAnchor } from "@nooq/sync";
 
+/** One entry of the surface's resolved keymap: the registered action a key string dispatches to (task-16). */
+export type KeyBinding = NonNullable<DOMPlugin["keys"]>[number];
 export interface EditorSurface {
   element: HTMLElement;
   actions: SurfaceActions;
+  /** The resolved key bindings (key string → keyOrder-ordered entries) that keyDown dispatches through; the shortcut sheet reads this live map so it cannot drift (task-16). */
+  readonly keymap: ReadonlyMap<string, readonly KeyBinding[]>;
+  /** The text presentation override this surface was created with (task-16). */
+  readonly textMode: TextMode | undefined;
   /** Present only when selectionMode is document. */
   selection?: DocumentSelectionService;
   destroy(): void;
@@ -41,7 +49,7 @@ export interface SurfaceOptions {
   selectionMode?: "block" | "document";
 }
 /** Rich bindings carry the bases their policy admits for authoring (0009 §2); plain bindings carry none. */
-interface Binding { marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; destroy(): void }
+interface Binding { marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; /** The rich host's toggle path (Mod-b's), which the formatting toolbar reuses rather than inventing a second. */ toggleMark?(mark: TextMark): boolean; destroy(): void }
 type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy; /** View-level extra the raw definition carried (rendersHistory for tombstone-keeping views). */ rendersHistory?: boolean };
 const defaultTextPolicy = defineTextPolicy();
 interface Row {
@@ -127,6 +135,36 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (!binding || binding.marks === undefined || !binding.element.isConnected) return undefined;
     return { anchor: binding.element, selection: binding.selection, focus: binding.focus, marks: views.get(row.type)?.textPolicy?.marks };
   } });
+  // The formatting toolbar (foundation P1): the pointer-only selection strip.
+  // Toggles ride the binding's own mark path (the one Mod-b flows through),
+  // and Link opens the same flow Mod-k opens — one popover, one contract.
+  /** The block whose rich host wholly holds a non-collapsed document selection (the strip's pointer policy). */
+  const selectedRichBlock = (): string | undefined => {
+    const selection = root.ownerDocument.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return undefined;
+    for (const [id, row] of rows) {
+      const binding = row.bindings[0];
+      if (!binding || binding.marks === undefined || !binding.element.isConnected) continue;
+      if (binding.element.contains(selection.anchorNode) && binding.element.contains(selection.focusNode)) return id;
+    }
+    return undefined;
+  };
+  const formatToolbar = createFormatToolbar(editor, {
+    mount: root,
+    report: cause => fail(undefined, cause),
+    selectionBlock: selectedRichBlock,
+    host: id => {
+      const row = rows.get(id), binding = row?.bindings[0];
+      if (!binding || binding.marks === undefined || !binding.element.isConnected) return undefined;
+      return { anchor: binding.element, selection: binding.selection, toggleMark: mark => binding.toggleMark?.(mark) ?? false, marks: binding.marks };
+    },
+    policyBases: id => views.get(rows.get(id)?.type ?? "")?.textPolicy?.marks,
+    openLink: id => links.open(id),
+  });
+  // The shortcut sheet (foundation P2): "?" opens the keyboard reference in a
+  // popover anchored to the surface root; the collector reads the resolved
+  // key map above at open time, so the sheet cannot drift from keyDown.
+  const shortcuts = mountShortcutSheet({ element: root, keymap: keys, textMode, signal: surfaceAbort.signal });
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
@@ -180,8 +218,11 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (cursor && key !== published) { published = key; editor.setCursor(cursor); }
     });
   };
-  const selected = () => { refreshActions(); publishCursor(); };
+  const selected = () => { formatToolbar.reconcile(); refreshActions(); publishCursor(); };
   for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, selected, { signal: surfaceAbort.signal });
+  // The strip's pointer policy: only a primary-button mouseup that completes
+  // a selection can summon it — never typing, never keyboard-only selection.
+  root.addEventListener("mouseup", event => formatToolbar.pointerUp(event), { signal: surfaceAbort.signal });
   // The interactive change bar's contract: a view's blockRow dispatches one
   // bubbling `nq:block-history` event from the bar (via onHistory); the host
   // opens the popover, because only it sees the history store and the inks.
@@ -193,6 +234,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     void openBlockHistory(editor, bar, block, presence).catch(cause => editor.reportError({ phase: "view", cause }));
   }, { signal: surfaceAbort.signal });
   root.ownerDocument.addEventListener("selectionchange", () => {
+    formatToolbar.reconcile(); // the strip follows the selection even when focus left the surface
     if (root.contains(root.ownerDocument.activeElement)) selected();
   }, { signal: surfaceAbort.signal });
   const invoke = actions.invoke;
@@ -231,7 +273,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   }
   function keyDown(id: string, event: KeyboardEvent): boolean {
     if (typeof process !== "undefined" && process.env.NQ_DEBUG_KEYS) console.log("[keyDown]", id, event.key, "actions:", (keys.get([event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+")) ?? []).map((a) => a.id).join(","));
-    if (event.key === "Escape") { closeMenu(); return true; }
+    if (event.key === "Escape") { closeMenu(); formatToolbar.hide(); return true; }
     // Mod-k is the writer-facing link chord (0009 §5): one popover over the
     // selection, before any plugin key binding could claim the same chord.
     if (links.keyDown(id, event)) return true;
@@ -375,6 +417,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   function cleanup(row: Row) {
     jobs.unmount(row.id);
     links.closeFor(row.id); // an open link editor never outlives its block's row
+    formatToolbar.hideFor(row.id); // neither does the strip shown over its selection
     row.abort.abort();
     for (const binding of row.bindings.splice(0)) binding.destroy();
     for (const dispose of row.cleanups.splice(0).reverse()) try { dispose(); } catch (cause) { fail(undefined, cause); }
@@ -421,20 +464,36 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let mountedFocused = false;
   /** Lab/test observability: remote renders seen, pins applied (EB-7). */
   const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0, renderCounts: { targeted: 0, full: 0, presence: 0, windowed: 0 } };
+  // EB-7.2: a browser cannot scroll before zero or past its new document
+  // end. Preserve the missing extent locally until the writer navigates.
+  let leadingSpace = 0, trailingSpace = 0;
+  let pinnedScroll: number | undefined;
+  const releaseViewportSpace = () => {
+    if (!leadingSpace && !trailingSpace) return;
+    leadingSpace = trailingSpace = 0;
+    pinnedScroll = undefined;
+    body.style.paddingTop = ""; history.style.paddingBottom = "";
+  };
+  window.addEventListener("wheel", releaseViewportSpace, { passive: true, signal: surfaceAbort.signal });
+  window.addEventListener("touchmove", releaseViewportSpace, { passive: true, signal: surfaceAbort.signal });
+  root.addEventListener("keydown", event => {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"].includes(event.key)) releaseViewportSpace();
+  }, { signal: surfaceAbort.signal });
 
-  /** The anchor row keeping the viewport still across remote renders (EB-7):
-   *  the FIRST row overlapping the viewport top — the same block the lab's
-   *  checker holds still (bottom > top edge), not the first fully-visible
-   *  row, which is a different block whenever one straddles the edge. */
-  function pickAnchor(): { row: HTMLElement; top: number } | null {
+  /** EB-7.2: preserve the first unchanged live row at/below the viewport top.
+   *  Choose from the old DOM before rendering: a changed/deleted top block
+   *  yields to the nearest unchanged block below it, across the whole batch. */
+  function pickAnchor(changed: ReadonlySet<string>, alive: ReadonlySet<string>): { row: HTMLElement; top: number } | null {
     const scroller = document.scrollingElement;
     if (!scroller) return null;
     // Rects are viewport-relative: the visible top is 0. (The scroller's own
     // rect top is NOT a proxy — a scrolling <html> reports -scrollY, which
     // once admitted rows 800px above the viewport; measured, not assumed.)
-    // EXACTLY the checker's definition, in its iteration order: the first
-    // block row in DOM order whose bottom crosses the visible top.
-    for (const shell of Array.from(root.querySelectorAll<HTMLElement>("[data-nq-block]"))) {
+    for (const shell of Array.from(body.querySelectorAll<HTMLElement>("[data-nq-block]"))) {
+      const id = shell.dataset.nqBlock!;
+      // History rows and aggregate windowing placeholders are not live
+      // block anchors. Descendants of a deleted block are excluded by alive.
+      if (rows.get(id)?.shell !== shell || !alive.has(id) || changed.has(id)) continue;
       const rect = shell.getBoundingClientRect();
       if (rect.bottom > 0) return { row: shell, top: rect.top };
     }
@@ -446,7 +505,21 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (!scroller) return;
     const drift = anchor.row.getBoundingClientRect().top - anchor.top;
     stats.lastDrift = drift;
-    if (drift !== 0) { scroller.scrollTop += drift; stats.pins++; }
+    if (drift === 0) { pinnedScroll = scroller.scrollTop; return; }
+    const target = scroller.scrollTop + drift;
+    if (target < 0) {
+      leadingSpace -= target;
+      body.style.paddingTop = `${leadingSpace}px`;
+    } else {
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      if (target > max) {
+        trailingSpace += target - max;
+        history.style.paddingBottom = `${trailingSpace}px`;
+      }
+    }
+    scroller.scrollTop = Math.max(0, target);
+    pinnedScroll = scroller.scrollTop;
+    stats.pins++;
   }
 
   // ---- EB-8 windowing: mount only what the viewport needs -----------------
@@ -483,7 +556,11 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     return [top - 2 * vh, top + 2 * vh]; // two screens of overscan each way (EB-8)
   };
   function onScroll(): void {
-    if (scheduled || destroyed) return;
+    if (destroyed) return;
+    // Scrollbar/host navigation also releases retained space. Scroll events
+    // from our own pin land at pinnedScroll and keep the remote anchor intact.
+    if (!batchIsRemote && pinnedScroll !== undefined && Math.abs(window.scrollY - pinnedScroll) >= 1) releaseViewportSpace();
+    if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
@@ -506,6 +583,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     rendering = true;
     const batch = pendingBatch; const remote = batchIsRemote;
     pendingBatch = null; batchIsRemote = false;
+    // Keep every touched block even if roots/access below switches the
+    // renderer to a full walk. Later events can invalidate fallback rows too.
+    const touched = new Set(batch?.flatMap(event => event.blocks));
     // Which blocks earn expensive work? null = everything (initial/access/awareness-only).
     let changedIds: Set<string> | null = null;
     let structural = false;
@@ -519,14 +599,15 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }
     if (batch === null) stats.renderCounts.presence++; else if (changedIds === null) stats.renderCounts.full++; else stats.renderCounts.targeted++;
     if (remote) stats.remoteRenders++;
-    const anchor = remote ? pickAnchor() : null;
+    const state = editor.view, alive = liveTree(state).alive;
+    const anchor = remote ? pickAnchor(touched, alive) : null;
     stats.lastAnchor = anchor?.row.getAttribute("data-nq-block") ?? null;
     if (anchor) {
       stats.lastAnchorRect = { top: Math.round(anchor.row.getBoundingClientRect().top), bottom: Math.round(anchor.row.getBoundingClientRect().bottom) };
       stats.lastViewportTop = Math.round((document.scrollingElement as HTMLElement | null)?.getBoundingClientRect().top ?? 0);
     }
     try {
-    const state = editor.view, alive = liveTree(state).alive, wanted = new Set<string>();
+    const wanted = new Set<string>();
     renderState = state;
     const active = [...rows.values()].flatMap(row => row.bindings).find(binding => binding.element.contains(document.activeElement));
     const activeSelection = active?.selection();
@@ -551,7 +632,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     // next measurement corrects.
     if (changedIds !== null) for (const id of changedIds) invalidateSubtree(id);
     else if (structural) estMemo.clear(); // whole-document structure moved
-    let walkY = 0;
+    let walkY = leadingSpace;
     /**
      * Two reusable gap placeholders per container (EB-8): the window is
      * contiguous, so at most one gap above the mounted run and one below.
@@ -704,8 +785,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     notices.replaceChildren(notice({ kind: "error", word: `${who} failed in ${error.phase}: ${what}`, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
   });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
+  return { element: root, actions, keymap: keys, textMode, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
 }
