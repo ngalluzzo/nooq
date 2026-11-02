@@ -140,7 +140,7 @@ describe("the header's access popover", () => {
     const aiRow = popover.querySelector<HTMLElement>('.nq-access-row[data-nq-actor="ai:reference"]')!;
     expect(aiRow.querySelector(".nq-access-role")?.textContent).toBe("Suggester");
     expect(aiRow.querySelector(".nq-actor-kind")?.textContent).toBe("AI");
-    expect(popover.querySelector(".nq-access-note")?.textContent).toBe("Grants are permanent (DM-13); removal is not offered in v1.");
+    expect(popover.querySelector(".nq-access-note")?.textContent).toBe("Removing a writer takes effect per device at sync time (DM-13.6).");
 
     // The panel re-renders on an access change while open: the owner appends a grant.
     const priya = await createActorKey();

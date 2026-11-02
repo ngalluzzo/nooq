@@ -59,7 +59,7 @@ export const Static: Story = {
     await expect(root.querySelector(".nq-access-idle")?.textContent).toBe("idle");
     // The honest limitation: a grant that never arrived renders its bare actor id.
     await expect(root.querySelector('.nq-access-row[data-nq-actor="human:3d91f2ab"] .nq-actor-name')?.textContent).toBe("human:3d91f2ab");
-    await expect(root.querySelector(".nq-access-note")?.textContent).toBe("Grants are permanent (DM-13); removal is not offered in v1.");
+    await expect(root.querySelector(".nq-access-note")?.textContent).toBe("Removing a writer takes effect per device at sync time (DM-13.6).");
   },
 };
 
@@ -169,7 +169,7 @@ export const EditorBacked: Story = {
       return row!;
     }, { timeout: 5000 });
     await expect(popover.querySelector('.nq-access-row[data-nq-actor="ai:reference"] .nq-access-role')?.textContent).toBe("Suggester");
-    await expect(within(popover).queryByText("Grants are permanent (DM-13); removal is not offered in v1.")).not.toBeNull();
+    await expect(within(popover).queryByText("Removing a writer takes effect per device at sync time (DM-13.6).")).not.toBeNull();
 
     // Escape closes returning focus to the button (the popover's contract).
     await userEvent.keyboard("{Escape}");
