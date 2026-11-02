@@ -105,6 +105,17 @@
 .nq-history-layer { display: flex; flex-direction: column; gap: var(--nq-block-gap); }
 .nq-history-layer:not(:empty) { margin-top: var(--nq-block-gap); padding-top: var(--nq-block-gap); border-top: 1px solid var(--nq-rule); }
 
+/* Away markers (foundation P1): a remote change to a block this writer could
+   not see — windowed out; the surface's rows map is the truth — marks its
+   row shell (data-nq-away, set only by the surface). The bar keeps the
+   writer's ink and renders notched: one gap mid-bar, calc(var(--nq-change-bar) * 2)
+   wide, centered — dashed is the AI hand and dotted the machine's (Space and
+   layout), so away is a shape, not a pattern. The row's .nq-sr word says it
+   (§9); nothing here animates (§3). DM-5: AI and machine bars keep their
+   dashed/dotted attribution even while away — the notch never displaces the
+   writer's pattern; those rows carry the away word alone. */
+.nq-editor [data-nq-away] .nq-bar:not(.nq-bar-ai):not(.nq-bar-machine) { background: repeating-linear-gradient(180deg, var(--nq-peer, var(--nq-ink)) 0 calc(50% - var(--nq-change-bar)), transparent calc(50% - var(--nq-change-bar)) calc(50% + var(--nq-change-bar)), var(--nq-peer, var(--nq-ink)) calc(50% + var(--nq-change-bar))); }
+
 /* Block container: the frame plugin blocks sit in, built-in or third-party (§7).
  * Blocks are rectangles (radius-sm, never a colored left border); a tone shows
  * as a word in the header plus a ground, so nothing depends on color alone (§9). */

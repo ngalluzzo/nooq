@@ -46,7 +46,7 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-Six of the seven are built, including access in its v1 form. Still spec-blocked: lost moves.
+All seven are built except the half blocked on the spec: lost moves wait on DM-10.
 
 Built:
 
@@ -60,7 +60,8 @@ Built:
 
 Still to decide or build:
 
-- **Away markers and lost moves.** The change-bar variant needs seen-state semantics; the lost-move notice is blocked until DM-10 resolves what a lost move observably is.
+- **Away markers.** Built on the decided semantics: a remote change to a windowed-out block (the surface's rows map is the truth; detection arms after the first render, so opening a document marks nothing) notches its change bar — solid–gap–solid in the writer's own ink, never displacing the dashed AI or dotted machine pattern (DM-5) — with the screen-reader word "Changed while you were away". Exactly three clears: focus in the row, a local edit, opening the block's history. Session-local; scrolling never clears; deletion drops.
+- **Lost moves.** Blocked until DM-10 resolves what a lost move observably is.
 
 Named follow-ups from the landings: `Editor.close()` does not announce a local departure (only an explicit `setCursor(null)` does); the roster's self name falls back to the actor id until the Editor exposes a display name; true idle needs an awareness timestamp on the wire.
 

@@ -8,6 +8,7 @@ import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
+import { createAwayTracker, type AwayTracker } from "./away.ts";
 import { createLinkUI } from "./link-ui.ts";
 import { createFormatToolbar } from "./format-toolbar.ts";
 import { mountShortcutSheet } from "./shortcuts.ts";
@@ -37,6 +38,8 @@ export interface EditorSurface {
   readonly lastViewportTop: number;
   readonly renderCounts: { targeted: number; full: number; presence: number; windowed: number };
   readonly mountedRows: number;
+  /** Away-marker state (foundation P1): the surface wires detection and the three clears; `force` is the test/story seam for windowed-out truth. */
+  readonly away: AwayTracker;
   estimateTop(id: string): number;
 }
 export interface SurfaceOptions {
@@ -58,6 +61,8 @@ interface Row {
   id: string;
   shell: HTMLElement; children: HTMLElement; presence: HTMLElement; view: BlockView;
   abort: AbortController; bindings: Binding[]; cleanups: (() => void)[]; signature: string; type: string;
+  /** The sr word riding this row while it is marked away (§9); the tracker decides it, the surface owns it. */
+  awayWord?: HTMLElement;
 }
 
 export function createSurface(editor: Editor, options: SurfaceOptions = {}): EditorSurface {
@@ -134,6 +139,33 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const surfaceStatus = createSurfaceStatus(editor, presence);
   // The history layer (0005, DM-14.4): tombstoned blocks as deleted rows with Restore.
   const historyLayer = createHistoryLayer(editor, history, presence);
+  // Away markers (foundation P1): a remote change to a block this writer
+  // could not see — not in the rows map; windowed-out is truth — marks its
+  // row. The tracker owns every mark/clear/drop decision; this surface owns
+  // every DOM consequence: the data-nq-away attribute on its row shell (the
+  // bar stays the view's own, notched by [data-nq-away] CSS in the theme)
+  // and the .nq-sr word inside the shell (§9's word channel).
+  const away = createAwayTracker({
+    mountedIds: () => rows.keys(),
+    onFlip: id => { const row = rows.get(id); if (row) applyAway(row); },
+  });
+  const AWAY_WORD = "Changed while you were away";
+  /** Sync one row's shell with the tracker: the attribute drives the notched bar, the sr span says it in words. Idempotent — nothing happens per render while unchanged. */
+  function applyAway(row: Row): void {
+    if (away.isMarked(row.id)) {
+      if (row.awayWord === undefined) {
+        const word = document.createElement("span");
+        word.className = "nq-sr";
+        word.textContent = AWAY_WORD;
+        row.presence.before(word); // first in the shell: the state reads before the content
+        row.awayWord = word;
+      }
+      if (!("nqAway" in row.shell.dataset)) row.shell.dataset.nqAway = "true";
+    } else {
+      if (row.awayWord !== undefined) { row.awayWord.remove(); row.awayWord = undefined; }
+      if ("nqAway" in row.shell.dataset) delete row.shell.dataset.nqAway;
+    }
+  }
   let destroyed = false, scheduled = false, rendering = false, menu: HTMLElement | undefined, pendingSelection: SelectionRequest | undefined;
   let menuBlock: string | undefined;
   const actionRefreshers = new Set<() => void>();
@@ -232,6 +264,12 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   };
   const selected = () => { formatToolbar.reconcile(); refreshActions(); publishCursor(); };
   for (const type of ["select", "focusin", "keyup", "mouseup"]) root.addEventListener(type, selected, { signal: surfaceAbort.signal });
+  // Away clear #1: focus moves into the block's row — the writer is looking
+  // at it. Resolution mirrors localCursor: the row shell's data-nq-block.
+  root.addEventListener("focusin", (event) => {
+    const block = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock : undefined;
+    if (block !== undefined) away.clear(block); // a flip, if any, re-syncs the shell via onFlip — no render needed
+  }, { signal: surfaceAbort.signal });
   // The strip's pointer policy: only a primary-button mouseup that completes
   // a selection can summon it — never typing, never keyboard-only selection.
   root.addEventListener("mouseup", event => formatToolbar.pointerUp(event), { signal: surfaceAbort.signal });
@@ -243,6 +281,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (!(bar instanceof HTMLElement)) return;
     const block = bar.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock;
     if (block === undefined || !liveTree(editor.view).alive.has(block)) return;
+    away.clear(block); // away clear #3: opening the block's history is seeing its past
     void openBlockHistory(editor, bar, block, presence).catch(cause => editor.reportError({ phase: "view", cause }));
   }, { signal: surfaceAbort.signal });
   root.ownerDocument.addEventListener("selectionchange", () => {
@@ -718,6 +757,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         row.presence.replaceChildren(...chips);
         if (parent.children[at] !== row.shell) parent.insertBefore(row.shell, parent.children[at] ?? null);
         jobs.mount(row.shell, id); // every render re-placed: active job surfaces re-attach with their block
+        applyAway(row); // away marks ride the walk: a marked block mounts notched — mounting itself never clears
         at++; walkY += estimateOf(id, block); walk(block.children, row.children);
       }
     };
@@ -738,7 +778,11 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       historyLayer.update(dead.filter(id => !viewKeepsHistory(views.get(state.blocks[id]?.type ?? ""))));
     }
     for (const [id, row] of rows) if (!wanted.has(id)) { cleanup(row); row.shell.remove(); rows.delete(id); }
+    away.prune(alive); // deletion ends a block's marks (session-local); unmounting alone never does — windowed-out rows keep theirs
     for (const [parent, pair] of gaps) {
+      if (!root.contains(parent)) {
+        pair.top?.remove(); pair.bottom?.remove(); gaps.delete(parent); continue;
+      }
       for (const which of ["top", "bottom"] as const) {
         const el = pair[which];
         if (!el) continue;
@@ -752,7 +796,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }
     stats.renderCounts.windowed = rows.size;
     presence.update(state, peers);
-    if (rows.size) measureMounted();
+    if (rows.size) { measureMounted(); away.arm(); } // detection arms with the first content render: the open state is not away, so a remote bootstrap marks nothing
     // EB-5: editable in the frame the surface becomes visible — no clicking.
     if (!mountedFocused && root.isConnected) {
       mountedFocused = true;
@@ -787,6 +831,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   let batchIsRemote = false;
   const offEvents = editor.onEvents((events) => {
     pendingBatch = pendingBatch === null ? [...events] : [...pendingBatch, ...events];
+    for (const event of events) away.observe(event); // away: remote+unmounted marks; a local edit is a visit and clears (away clear #2)
     if (events.some((event) => event.origin === "remote")) batchIsRemote = true;
   });
   const documentSelection = options.selectionMode === "document" ? createDocumentSelection(editor, root, () => new Map(
@@ -825,8 +870,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const markReady = () => { readyForContent = true; settleLoading(); };
   void editor.ready.then(markReady, markReady);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, keymap: keys, textMode, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
+  return { element: root, actions, keymap: keys, textMode, away, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
 }
