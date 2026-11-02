@@ -46,7 +46,7 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-All seven are built except the half blocked on the spec: lost moves wait on DM-10.
+All seven P1 areas are built, and the spec-blocked eighth is in: lost moves are built per DM-4.9.
 
 Built:
 
@@ -58,10 +58,7 @@ Built:
 - **Formatting toolbar.** The appearance policy is decided and shipped: POINTER selection only (a primary-button mouseup completing a non-collapsed selection in a rich host — never typing, never keyboard-only selection), dismissing on Escape, collapse or leave, placed above the selection and never over the caret's line. Buttons are exactly what the block's policy admits — the toggle trio plus Link (the same flow Mod-k opens); the strip is never a focus stop (§3, §9).
 - **Access and signers, v1.** The header's Access button opens the access panel: roles from the replicated access header (self first, owner, grants — names joined from awareness, bare actorIds never invented), the verified glyph as "Their edits arrived verified here" (the honest weak form), and the permanent-grants footnote. The enabling wiring landed with it: `Editor.onAdmission` (mirrors the session's verdict payload verbatim — it carries no actor, a named sync-layer gap), `myRole()`/`accessState()`/`arrivedVerified()`, and denial/hold notices that preserve `retryable` with reasons verbatim; the local writer's remotely-refused envelope surfaces through the session's wire-error channel (`SessionError`, code `envelope-denied`). The stronger form — per-actor verdicts, held-envelope visibility, awareness-wire roles — is catalogued in `proposals/evidence/access-and-signers.md` as sync-layer work.
 - **Away markers.** Built on the decided semantics: a remote change to a windowed-out block (the surface's rows map is the truth; detection arms after the first render, so opening a document marks nothing) notches its change bar — solid–gap–solid in the writer's own ink, never displacing the dashed AI or dotted machine pattern (DM-5) — with the screen-reader word "Changed while you were away". Exactly three clears: focus in the row, a local edit, opening the block's history. Session-local; scrolling never clears; deletion drops.
-
-Still blocked on the spec:
-
-- **Lost moves.** Until DM-10 resolves what a lost move observably is.
+- **Lost moves (supersession, DM-4.9).** Built per the landed spec: `createSupersededDetector` rides the remote-transaction feed (ops + causality, post-merge) and reads the placement register through the yjs adapter's public `layout()` seam — no wire, engine, or digest change. The loser's surface names the winner plainly through the notice channel's new `superseded` kind (the history clock, no fill escalation: history, not harm) and offers "Move it anyway" — one fresh move transaction, causally now, winning through DM-4.7's ordinary resolution; a move that raced a delete gets the DM-4.8 deletion wording with no reassert action. Same destination is agreement and stays silent; detection arms after the first settled state, so replayed history fires nothing.
 
 Named follow-ups from the landings: `Editor.close()` does not announce a local departure (only an explicit `setCursor(null)` does); the roster's self name falls back to the actor id until the Editor exposes a display name; true idle needs an awareness timestamp on the wire.
 

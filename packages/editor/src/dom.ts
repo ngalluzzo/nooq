@@ -1,16 +1,17 @@
 /** Plugin-driven surface: views own their content; the host owns text and children. */
-import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
+import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type Op, type TextChange } from "@nooq/core";
 import * as Y from "yjs";
 import { layout } from "@nooq/yjs";
 import { freezeInPlace, freezeSnapshot, textBlockOrder, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
-import { loading, notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
+import { loading, notice, presenceCaret, slashMenu, syncStatus, type NoticeAction } from "@nooq/design";
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
 import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
 import { createAwayTracker, type AwayTracker } from "./away.ts";
+import { createSupersededDetector, type SupersededDetector, type SupersededEvent } from "./superseded.ts";
 import { createLinkUI } from "./link-ui.ts";
 import { createFormatToolbar } from "./format-toolbar.ts";
 import { mountShortcutSheet } from "./shortcuts.ts";
@@ -42,6 +43,8 @@ export interface EditorSurface {
   readonly mountedRows: number;
   /** Away-marker state (foundation P1): the surface wires detection and the three clears; `force` is the test/story seam for windowed-out truth. */
   readonly away: AwayTracker;
+  /** DM-4.9 supersession state: the surface wires detection into the notice channel; `force` is the test/story seam for a race that cannot be timed in a harness. */
+  readonly superseded: SupersededDetector;
   estimateTop(id: string): number;
 }
 export interface SurfaceOptions {
@@ -849,7 +852,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }
     stats.renderCounts.windowed = rows.size;
     presence.update(state, peers);
-    if (rows.size) { measureMounted(); away.arm(); } // detection arms with the first content render: the open state is not away, so a remote bootstrap marks nothing
+    if (rows.size) { measureMounted(); away.arm(); superseded.arm(); } // both detectors arm with the first content render: the open state is neither away nor raced — replayed history fires nothing
     // EB-5: editable in the frame the surface becomes visible — no clicking.
     if (!mountedFocused && root.isConnected) {
       mountedFocused = true;
@@ -905,9 +908,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // §2a: authorization facts read as what they are — a denial (kind
   // "denial") or a retryable hold (kind "hold"), word = the reason verbatim.
   // The generic error notice stays for real errors.
-  const showNotice = (kind: "error" | "hold" | "denial", word: string) => {
+  const showNotice = (kind: "error" | "hold" | "denial" | "superseded", word: string, action: NoticeAction = { label: "Dismiss", onClick: () => notices.replaceChildren() }) => {
     if (surfaceAbort.signal.aborted) return;
-    notices.replaceChildren(notice({ kind, word, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
+    notices.replaceChildren(notice({ kind, word, action }));
   };
   const offErrors = editor.onError(error => {
     const cause = error.cause;
@@ -924,14 +927,44 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (verdict === "allow") return;
     showNotice(verdict === "hold" ? "hold" : "denial", reason ?? (verdict === "hold" ? "held" : "denied"));
   });
+  // DM-4.9: supersession notices ride the same channel (one notice at a
+  // time, latest wins) as the new kind — a peer's move winning the register
+  // is a fact about history, not a failure, so it gets no fill escalation.
+  // The winner is named from awareness (name ?? actorId, the roster's rule).
+  // "Move it anyway" is the one fresh move DM-4.9 allows — causally now, so
+  // it wins through DM-4.7's ordinary resolution — and clicking it is also
+  // the notice's dismissal; a delete that won the register gets DM-4.8's
+  // wording and only Dismiss (reasserting into a tombstone is not offered).
+  const superseded = createSupersededDetector(editor);
+  const reassert = (event: SupersededEvent): void => {
+    const move = event.losing.ops.find((op): op is Extract<Op, { op: "move" }> => op.op === "move" && op.block === event.block);
+    if (!move) return;
+    try {
+      // One fresh move transaction to the losing move's original placement,
+      // through the same authorized path every surface move takes.
+      editor.applyOps([{ op: "move", block: event.block, newParent: move.newParent, ...(move.index !== undefined ? { index: move.index } : {}) }], "reassert-move");
+    } catch (cause) {
+      fail(undefined, cause); // a denial replaces this notice through the same channel (§2a)
+      return;
+    }
+    notices.replaceChildren(); // one fresh move, the notice has said its piece
+  };
+  const offSuperseded = superseded.onEvent((event) => {
+    const name = editor.awareness.get(event.winningActor)?.name ?? event.winningActor;
+    if (event.deleted) {
+      showNotice("superseded", `${name} deleted this block while you moved it.`);
+      return;
+    }
+    showNotice("superseded", `${name} moved this block at the same time you did. Their move won.`, { label: "Move it anyway", onClick: () => reassert(event) });
+  });
   // Signing readiness is the open state's other half (a rejected ready already
   // closes the editor and destroys the surface; clearing here keeps the two
   // paths from racing the host's teardown).
   const markReady = () => { readyForContent = true; settleLoading(); };
   void editor.ready.then(markReady, markReady);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); editor.ydoc.off("beforeTransaction", captureRemoteSelection); editor.ydoc.off("afterTransaction", releaseEmptySelection); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); superseded.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); editor.ydoc.off("beforeTransaction", captureRemoteSelection); editor.ydoc.off("afterTransaction", releaseEmptySelection); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offSuperseded(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
-  return { element: root, actions, keymap: keys, textMode, away, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
+  return { element: root, actions, keymap: keys, textMode, away, superseded, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
 }

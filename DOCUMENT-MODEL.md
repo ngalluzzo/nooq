@@ -196,6 +196,36 @@ independent: a concurrently edited-and-deleted block stays removed, keeps
 every edit in its tombstone, and is restorable with DM-4.6. UI SHOULD
 surface "deleted with later edits."
 
+**Concurrent moves and supersession (DM-4.9).** When two concurrent
+transactions each write the placement register for the same block, DM-4.7
+keeps exactly one winner. The losing transaction is **superseded**: it
+remains in history with full provenance, but the projection ignores it.
+Two transactions are concurrent for this purpose when neither's causality
+vector includes the other (DM-2); a move made *after* observing another
+move is a later edit, not a race, and is never supersession.
+
+A race whose writes place the block at the **same destination** is
+agreement, not loss: the register keeps one writer's identity but the
+outcome matches both intents, and no supersession occurred. A move racing
+a delete is the same mechanism with the register keeping the tombstone;
+the mover's surface reports it as deletion, not displacement (DM-4.8
+applies to the wording).
+
+**Observability.** Supersession is decidable per peer with no
+coordination and no wire change: when a merged transaction's causality
+does not include a prior local move on the same block and the register's
+surviving write descends from the merged transaction, the local move was
+superseded. Surfaces SHOULD detect their own supersessions this way.
+
+**UX contract.** A surface showing a supersession names the actor plainly
+("Maya moved this block at the same time you did. Their move won.") and
+MAY offer reassertion — **a fresh move transaction, causally after
+everything**, which wins through DM-4.7's ordinary resolution. A surface
+MUST NOT retry a superseded move automatically, unwind the winner, or
+merge both intents. History keeps both transactions; export and digests
+are unaffected (placement is the only authority).
+*(Proposed in 0010; DM-10.1 closed by it.)*
+
 ## DM-5. Provenance
 
 Attribution is part of document state (PHILOSOPHY §5), not merely the log.
@@ -354,8 +384,8 @@ The proposal payload:
 
 ## DM-10. Open problems (tracked honestly)
 
-1. **Move under concurrent moves to the same parent** — DM-4.7 resolves
-   deterministically, but the UX of "lost" moves needs study.
+1. **Move under concurrent moves to the same parent** — resolved by
+   DM-4.7; supersession detection and UX by DM-4.9 (closed by 0010).
 2. **Mark churn** under heavy concurrent formatting; per-character marks
    may bloat; may need mark-run compaction (does not change semantics).
 3. **Very large documents** — explicit rebase bounds live state (DM-16);

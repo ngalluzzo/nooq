@@ -73,6 +73,18 @@ export type AdmissionVerdict = "allow" | "hold" | "deny";
  */
 export type AdmissionListener = (verdict: AdmissionVerdict, reason?: string) => void;
 
+/**
+ * DM-4.9: a remote transaction exactly as its envelope carried it — ops and
+ * causality intact — once it has MERGED. The session admits an envelope's
+ * update before this fires, so the placement register (DM-4.7) is already
+ * settled when a listener reads it. This is the supersession detector's
+ * feed; ChangeEvent.transaction cannot serve there: it is the exact LOCAL
+ * transaction by contract, and remote transactions only become known with
+ * their envelope, after the update applied. Repeats (bootstrap log and
+ * rebroadcast) are the listener's to dedupe, by transaction id.
+ */
+export type RemoteTransactionListener = (tx: Transaction) => void;
+
 export interface EditorOptions {
   docId: string;
   /** The local writer. */
@@ -189,6 +201,10 @@ export class Editor {
   readonly errors: PluginError[] = [];
   /** SW-2: listeners for the session's envelope verdicts (§2a access wiring). */
   private readonly admissionListeners = new Set<AdmissionListener>();
+  /** DM-4.9: listeners for merged remote transactions (the supersession feed). */
+  private readonly remoteListeners = new Set<RemoteTransactionListener>();
+  /** DM-2: the version vector of transactions this editor has seen — every local commit and admitted envelope. The next local transaction's causality carries it. */
+  private readonly seen: Record<string, number> = {};
   /** §2a: actorIds whose envelopes reached onEnvelope with origin "remote". */
   private readonly verifiedArrivals = new Set<string>();
   private readonly identities = new Map<string, { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }>();
@@ -251,6 +267,7 @@ export class Editor {
           ...(options.outbox ? { outbox: options.outbox } : {}),
           onEnvelope: (envelope, update) => {
             this.record(envelope.tx);
+            this.notifyRemoteTransaction(envelope.tx); // DM-4.9: post-merge, history already holds it
             this.verifiedArrivals.add(envelope.signer); // §2a: verified arrival, remote origin only
             this.notifyEnvelope({ envelope, update, origin: "remote" });
           },
@@ -341,6 +358,15 @@ export class Editor {
   onAdmission(listener: AdmissionListener): () => void { this.admissionListeners.add(listener); return () => this.admissionListeners.delete(listener); }
   private notifyAdmission(verdict: AdmissionVerdict, reason?: string): void {
     for (const listener of [...this.admissionListeners]) try { listener(verdict, reason); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+  }
+  /**
+   * DM-4.9: each remote transaction this editor admitted (ops + causality),
+   * in admission order, after its update merged. The same registry pattern
+   * as onAdmission; a throwing listener lands in the error channel.
+   */
+  onRemoteTransaction(listener: RemoteTransactionListener): () => void { this.remoteListeners.add(listener); return () => this.remoteListeners.delete(listener); }
+  private notifyRemoteTransaction(tx: Transaction): void {
+    for (const listener of [...this.remoteListeners]) try { listener(tx); } catch (cause) { this.reportError({ phase: "observer", cause }); }
   }
   onClose(listener: () => void): () => void { if (this.closed) { listener(); return () => {}; } this.closeListeners.add(listener); return () => this.closeListeners.delete(listener); }
   onSelection(listener: (selection: SelectionRequest) => void): () => void { this.selectionListeners.add(listener); return () => this.selectionListeners.delete(listener); }
@@ -557,6 +583,15 @@ export class Editor {
   private record(tx: Transaction, notify = true): void {
     if (this.recorded.has(tx.id)) return;
     this.recorded.add(tx.id);
+    // DM-2: fold this transaction into the version vector everything this
+    // editor has seen — its own event, plus whatever its causality already
+    // covered. The next locally authored transaction carries the result,
+    // which is what makes DM-4.9's "concurrent, not later" test decidable.
+    const observe = (actor: string, lamport: number): void => {
+      if ((this.seen[actor] ?? 0) < lamport) this.seen[actor] = lamport;
+    };
+    observe(tx.actor.actorId, tx.lamport);
+    for (const [actor, lamport] of Object.entries(tx.causality)) observe(actor, lamport);
     const entry = freezeInPlace(structuredClone(tx)) as unknown as Transaction;
     this.historyEntries.push(entry);
     if (notify && this.options.onHistory) try { this.options.onHistory(entry); } catch (cause) { this.reportError({ phase: "observer", cause }); }
@@ -626,7 +661,7 @@ export class Editor {
       id: newBlockId(),
       actor: this.localActor(),
       lamport: ++this.lamport,
-      causality: {},
+      causality: { ...this.seen }, // DM-2: what this editor had seen when authoring — the snapshot is taken before this transaction records itself
       ...(intent !== undefined ? { intent } : {}),
       ops,
     };
@@ -819,7 +854,7 @@ export class Editor {
     this.closed = true;
     this.runtime.dispose();
     for (const listener of this.closeListeners) try { listener(); } catch (cause) { this.reportError({ phase: "cleanup", cause }); }
-    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear(); this.jobListeners.clear(); this.admissionListeners.clear();
+    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear(); this.jobListeners.clear(); this.admissionListeners.clear(); this.remoteListeners.clear();
     this.session?.close();
     this.ydoc.destroy();
   }

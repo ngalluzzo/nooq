@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { notice, type NoticeKind } from "../src/index.ts";
 
 const KINDS: readonly NoticeKind[] = ["error", "hold", "denial", "model"];
-const GLYPH: Record<NoticeKind, string> = { error: "warning", hold: "access", denial: "stop", model: "model" };
+const GLYPH: Record<NoticeKind, string> = { error: "warning", hold: "access", denial: "stop", model: "model", superseded: "history" };
 
 describe("notice", () => {
   test.each(KINDS.map((k) => [k]))(
@@ -51,5 +51,15 @@ describe("notice", () => {
 
   test("the word sets in the interface body face", () => {
     expect(notice({ word: "x" }).querySelector(".nq-notice-word")?.classList.contains("nq-ui-body")).toBe(true);
+  });
+
+  // DM-4.9: a superseded move — its glyph is the history clock (a fact of
+  // history, not an undo promise), and it never borrows the error channel.
+  test("superseded names the history glyph and escalates nothing", () => {
+    const n = notice({ kind: "superseded", word: "Maya moved this block at the same time you did. Their move won." });
+    expect(n.getAttribute("data-kind")).toBe("superseded");
+    expect(n.querySelector("svg[data-glyph='history']")).not.toBeNull();
+    expect(n.classList.contains("nq-notice-superseded")).toBe(true);
+    expect(n.className).not.toMatch(/nq-notice-(error|hold|denial|model)\b/); // no other kind's treatment rides along
   });
 });

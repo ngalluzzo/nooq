@@ -11,8 +11,13 @@ import { glyph, type GlyphName } from "../glyphs.ts";
  * - `denial` — an authorization refusal. The reason, plainly, in a
  *   rule-strong outline. Never `stamp`: stamp is for structure that broke.
  * - `model` — a model job failed. Names the model (§5).
+ * - `superseded` — a concurrent peer's move won the placement register
+ *   (DM-4.9). History, not harm: both transactions persist and the document
+ *   is correct, so the kind carries no fill escalation — the base treatment
+ *   (graphite on transparent) lets the word and the clock glyph state the
+ *   fact without borrowing the error channel's gravity.
  */
-export type NoticeKind = "error" | "hold" | "denial" | "model";
+export type NoticeKind = "error" | "hold" | "denial" | "model" | "superseded";
 
 export interface NoticeAction {
   /** A short verb naming the outcome: "Retry", "Restore". No "please". */
@@ -32,7 +37,13 @@ export interface NoticeProps {
   action?: NoticeAction;
 }
 
-const GLYPHS: Record<NoticeKind, GlyphName> = { error: "warning", hold: "access", denial: "stop", model: "model" };
+/**
+ * The superseded glyph is the history clock, not undo: the race is a fact of
+ * the document's history that both transactions persist (an undo arrow would
+ * promise reversal the notice must not), and `more` would shrug at what the
+ * word states plainly.
+ */
+const GLYPHS: Record<NoticeKind, GlyphName> = { error: "warning", hold: "access", denial: "stop", model: "model", superseded: "history" };
 
 /**
  * An inline, non-blocking notice: a word, a glyph, an optional action. A live

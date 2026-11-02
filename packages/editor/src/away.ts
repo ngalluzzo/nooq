@@ -1,7 +1,6 @@
 /**
  * Away markers (foundation P1 "Away markers and lost moves" — the away half;
- * the lost-move notice stays parked until DM-10 resolves what a lost move
- * observably is).
+ * the lost-move half landed as DM-4.9's supersession notices, superseded.ts).
  *
  * A mark says: while this block was outside your window, someone changed it.
  *
