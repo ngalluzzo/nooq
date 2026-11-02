@@ -292,8 +292,14 @@ function splicesInScope(base: { s: string }, changes: readonly import("./text.ts
 /** Freeze a graph in place — no clone (EB-6). For THROWAWAY or
  *  build-time values only; caller-owned graphs use the host's clone path. */
 export function freezeInPlace<T>(value: T): T {
+  // DM-10.2: shared references (readText's run-shared marks arrays) freeze
+  // once and are skipped on revisit — O(distinct objects), not O(characters);
+  // a 10k-char block with 10 runs paid a full 10k-array walk before.
+  const seen = new WeakSet<object>();
   function freeze(item: unknown): void {
     if (item && typeof item === "object" && !Object.isFrozen(item)) {
+      if (seen.has(item)) return;
+      seen.add(item);
       Object.freeze(item);
       for (const child of Object.values(item)) freeze(child);
     }

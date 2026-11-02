@@ -386,8 +386,13 @@ The proposal payload:
 
 1. **Move under concurrent moves to the same parent** — resolved by
    DM-4.7; supersession detection and UX by DM-4.9 (closed by 0010).
-2. **Mark churn** under heavy concurrent formatting; per-character marks
-   may bloat; may need mark-run compaction (does not change semantics).
+2. **Mark churn** — measured 2026-11-02 (packages/core/test/mark-churn):
+   per-character marks cost ~10 canonical bytes per character regardless
+   of run structure (93KB for 10k formatted chars; the runs' information
+   content is ~150 bytes). Memory is NOT the cost — readText run-shares
+   arrays and structuredClone preserves sharing. The fix is a canonical
+   run form (proposals/0013, drafted): `{s, runs: [{marks, from, to}]}`,
+   identity re-derived once, before deployment.
 3. **Very large documents** — explicit rebase bounds live state (DM-16);
    lazily materialized subtrees remain open, and v1 assumes
    whole-document residency.
