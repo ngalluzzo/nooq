@@ -607,6 +607,11 @@ export async function admitEnvelope(
       if (verdict !== "allow") {
         return { verdict, reason: verdict === "hold" ? "unresolved or ungranted" : "rules", touched: inspected.touched };
       }
+    } else if ((access.revoked ?? []).includes(envelope.signer)) {
+      // DM-13.6 (proposals/0012): the revoked roll denies at the admission
+      // boundary — they were granted, and are no longer. No key needed: deny
+      // is the safe direction, and spoofing a revoked actorId gains nothing.
+      return { verdict: "deny", reason: "revoked", touched: inspected.touched };
     } else {
       // Unknown signer: cannot verify against a grant — hold, never deny on
       // a partial view (a later grant may name them).
@@ -632,10 +637,13 @@ export async function admitEnvelope(
 
 function keyFor(access: Access, actorId: string): Uint8Array | undefined {
   if (access.owner.actorId === actorId) return fromB64(access.owner.key);
-  for (const grant of access.grants) {
-    if (grant.actorId === actorId) return fromB64(grant.key);
-  }
-  return undefined;
+  // DM-13.6: a current-epoch grant verifies; a stale one still verifies the
+  // signature — authorize then denies it (the key is for verification, not
+  // authorization).
+  const currentEpoch = access.epoch ?? 0;
+  const current = access.grants.find(g => g.actorId === actorId && (g.epoch ?? 0) === currentEpoch)
+    ?? access.grants.find(g => g.actorId === actorId);
+  return current && fromB64(current.key);
 }
 
 function toB64(bytes: Uint8Array): string {

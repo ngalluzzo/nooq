@@ -357,6 +357,7 @@
 .nq-access-you { color: var(--nq-graphite-muted); white-space: nowrap; }
 .nq-access-verified { display: inline-flex; align-items: center; color: var(--nq-graphite-muted); }
 .nq-access-idle { color: var(--nq-graphite-muted); white-space: nowrap; }
+.nq-access-removed { color: var(--nq-graphite-muted); white-space: nowrap; text-transform: none; }
 .nq-access-note { margin: 0; padding-top: var(--nq-space-2); border-top: 1px solid var(--nq-rule); color: var(--nq-graphite-muted); }
 
 /* Form controls. Errors are words: the border stays rule-strong and nothing
@@ -432,3 +433,5 @@
 }
 
 }
+
+.nq-history-event { color: var(--nq-graphite-muted); list-style: none; padding-left: 0; margin: 0 0 0.25rem; }

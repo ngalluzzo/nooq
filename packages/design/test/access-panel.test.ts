@@ -80,11 +80,11 @@ describe("accessPanel", () => {
     expect(ai.querySelector(".nq-actor-kind")?.textContent).toBe("AI");
   });
 
-  test("the footnote states the v1 limit plainly, in ui-caption", () => {
+  test("the footnote states the revocation timing plainly, in ui-caption (DM-13.6)", () => {
     const root = panel();
     const note = root.querySelector<HTMLElement>(".nq-access-note")!;
     expect(note.classList.contains("nq-ui-caption")).toBe(true);
-    expect(note.textContent).toBe("Grants are permanent (DM-13); removal is not offered in v1.");
+    expect(note.textContent).toBe("Removing a writer takes effect per device at sync time (DM-13.6).");
   });
 
   test("inline styles are token references only: a peer chip carries its derived ink, the self chip the local ink", () => {

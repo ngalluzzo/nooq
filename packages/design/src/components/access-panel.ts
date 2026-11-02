@@ -36,13 +36,18 @@ interface AccessRow {
   verified?: boolean;
   /** The caller's judgement the writer has gone quiet. Carries the word "idle" (§9). */
   idle?: boolean;
+  /** DM-13.6 (proposals/0012): the revoked roll says this actor was removed.
+   *  Carries the badge "removed" (the owner's product answer: label the
+   *  actor, never the mechanics) and drops the role word — they have none. */
+  removed?: boolean;
   /** The derived peer ink for a human row; the caller omits the row until it resolves, never a borrowed color. */
   ink?: Ink;
 }
 
 export interface AccessPanelEntry extends AccessRow {
-  /** The party's role as the access header states it. */
-  role: Role;
+  /** The party's role as the access header states it. Required unless the
+   *  actor is removed (DM-13.6): a removed actor has no role word. */
+  role?: Role;
 }
 
 export interface AccessPanelProps {
@@ -60,9 +65,9 @@ export interface AccessPanelProps {
  * body of the header's access popover. Roles read from replicated state;
  * names join from awareness by actor ID, and a grant whose actor never
  * arrived renders its bare actor ID — an honest limitation, not a fallback
- * name. "Verified" is only ever "their edits arrived verified here". The
- * footnote states the v1 limit plainly: grants are append-only, so removal
- * is not offered.
+ * name. "Verified" is only ever "their edits arrived verified here". A
+ * removed actor (the revoked roll, DM-13.6) carries the badge "removed"
+ * and no role word: label the actor, never the mechanics.
  *
  * Usage: the consumer owns the join (awareness by actor ID) and idle (the
  * roster's local 5-minute judgement); a human row appears once its derived
@@ -79,7 +84,7 @@ export function accessPanel({ self, entries }: AccessPanelProps): HTMLDivElement
       row({ actorId: self.actorId, name: self.name, kind: self.kind, role: self.role, ink: "self" }, true),
       entries.map(entry => row(entry, false)),
     ),
-    el("p", { class: "nq-access-note nq-ui-caption" }, "Grants are permanent (DM-13); removal is not offered in v1."),
+    el("p", { class: "nq-access-note nq-ui-caption" }, "Removing a writer takes effect per device at sync time (DM-13.6)."),
   );
 }
 
@@ -93,6 +98,7 @@ function row(entry: AccessRow, selfRow: boolean): HTMLLIElement {
       ...(entry.owner ? { "data-owner": "" } : {}),
       ...(entry.verified ? { "data-verified": "" } : {}),
       ...(entry.idle ? { "data-idle": "" } : {}),
+      ...(entry.removed ? { "data-removed": "" } : {}),
     },
     actorChip({
       kind: entry.kind ?? "human",
@@ -106,8 +112,9 @@ function row(entry: AccessRow, selfRow: boolean): HTMLLIElement {
       glyph("verified"),
       el("span", { class: "nq-sr" }, "verified"),
     ),
-    entry.idle && el("span", { class: "nq-access-idle nq-ui-caption" }, "idle"),
-    el("span", { class: "nq-access-role nq-ui-caption" }, role),
+    entry.idle && !entry.removed && el("span", { class: "nq-access-idle nq-ui-caption" }, "idle"),
+    entry.removed && el("span", { class: "nq-access-removed nq-ui-caption" }, "removed"),
+    el("span", { class: "nq-access-role nq-ui-caption" }, entry.removed ? "" : role),
     selfRow && el("span", { class: "nq-access-you nq-ui-caption" }, "you"),
   );
 }

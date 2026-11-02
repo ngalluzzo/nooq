@@ -8,6 +8,7 @@
 
 export { ANNOUNCE_QUIET, announcer, type Announcer, type AnnouncerTiming } from "./components/announcer.ts";
 export { actorChip, inkVar, KIND_LABEL, type ActorChipProps, type Ink } from "./components/actor-chip.ts";
+export { historyEvent } from "./components/history-event.ts";
 export { accessPanel, ROLE_WORDS, type AccessPanelEntry, type AccessPanelProps } from "./components/access-panel.ts";
 export { blockContainer, CONTAINER_TONES, setBlockContainerTone, type BlockContainerProps, type ContainerTone } from "./components/block-container.ts";
 export { blockHistoryPanel, type BlockHistoryEntry, type BlockHistoryPanelProps } from "./components/block-history.ts";
