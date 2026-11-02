@@ -68,17 +68,18 @@ Named follow-ups from the landings: `Editor.close()` does not announce a local d
 
 ## P2: the reference app
 
-Landed from the first P2 pass:
+Landed from the P2 passes:
 
 - **Document header** — `documentHeader()` chrome (title slot leading, sync status, roster, actions slot, one rule below) composed by `createDocumentHeader` from `@nooq/editor`, host-mounted above the surface; the title binds to the new `nooq.title/v1` block, which the surface renders in the doc-title style with no special casing.
 - **Shortcut sheet** — `shortcutSheet()` fed by `collectShortcuts(surface)`, which enumerates the LIVE resolved keymap, so the sheet cannot drift; "?" opens it (never while typing), Esc returns focus.
+- **Dialog** — `dialog()` on the popover's focus discipline: viewport-centered, aria-modal, Tab trap, Esc and outside press are cancel semantics (a destructive action never fires implicitly), actions right-aligned with the primary last, destructive confirmations on the danger variant with verb labels. No backdrop in v1 (no scrim token); stories are the consumer of record until sharing/export arrive.
+- **Loading** — `loading()`: nothing before 300ms (fast opens show nothing — that is the point), then the wordmark at loader timing looping while shown, at rest under reduced motion, `aria-busy` with the word. Wired into `createSurface` until first render + `editor.ready`; local documents are instant, so only remote bootstrap ever shows it. The windowed skeleton exists since the block-content work.
 
 Still to build:
 
-- **Dialog,** for destructive confirmation, sharing, connecting a model and export. Built on Popover's focus handling.
 - **Export:** format choice and what to do with pending suggestions. No export engine exists yet — premature until one does.
 - **Multi-column layout block,** promised in the README and not yet designed.
-- **Loading:** the logo loader only after 300ms, and the windowed skeleton.
+- **Dialog consumers** when sharing, model connection and export arrive — the primitive is ready and story-covered.
 
 ---
 

@@ -270,6 +270,17 @@
 .nq-logo-caret { fill: var(--nq-caret); }
 .nq-logo-mono .nq-logo-letter, .nq-logo-mono .nq-logo-piece { stroke: currentColor; }
 
+/* Loading (foundation P2): the open state before the first render. Nothing
+   until the delay has elapsed — fast loads show nothing — then the wordmark
+   at loader timing, centered on paper. The host sits above content at the
+   overlay layer, below dialogs, and never takes the pointer. Loading is a
+   brand surface, the one place the logo animation may run in the product;
+   the theme only places and grounds it. Nothing animates here but the logo
+   itself (§3). */
+.nq-loading { position: absolute; inset: 0; z-index: var(--nq-layer-overlay); display: grid; place-items: center; background: var(--nq-paper); pointer-events: none; }
+/* The wordmark at the brand minimum width (brand book: 64px). */
+.nq-loading .nq-logo { width: calc(var(--nq-space-8) * 2); }
+
 /* Cross-block selection paints text only; plugin controls remain interactive. */
 .nq-document-selection [data-nq-block] { user-select: none; }
 .nq-document-selection .nq-rich-text { user-select: text; }
@@ -372,10 +383,23 @@
 .nq-shortcuts-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--nq-space-2); }
 .nq-shortcuts-keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-1); }
 
+/* Dialog (foundation P2): the modal confirmation — destructive confirmations,
+   sharing, connecting a model, export. Viewport-centered on layer-dialog,
+   paper-raised with rule + radius-md + shadow-pop. Actions right-align with
+   the primary rightmost; a destructive action is the danger variant. v1 has
+   no backdrop (no scrim token exists): the dialog floats over a still-legible
+   page above every popover, and a press outside stands in for a backdrop
+   click by cancelling. The long body scrolls inside, never the page. */
+.nq-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: var(--nq-layer-dialog); display: flex; flex-direction: column; gap: var(--nq-space-3); box-sizing: border-box; max-width: min(calc(100vw - var(--nq-space-8)), var(--nq-measure)); max-height: calc(100vh - var(--nq-space-8)); padding: var(--nq-space-4); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-md); background: var(--nq-paper-raised); box-shadow: var(--nq-shadow-pop); color: var(--nq-graphite); animation: nq-fade var(--nq-fade) ease-out; }
+.nq-dialog:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring), var(--nq-shadow-pop); }
+.nq-dialog-body { min-width: 0; min-height: 0; overflow-y: auto; }
+.nq-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--nq-space-2); }
+
 @media (prefers-reduced-motion: reduce) {
   .nq-caret { animation: none; }
   .nq-menu { animation: none; }
   .nq-popover { animation: none; }
+  .nq-dialog { animation: none; }
 }
 
 }

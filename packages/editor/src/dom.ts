@@ -2,7 +2,7 @@
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type TextChange } from "@nooq/core";
 import { freezeInPlace, freezeSnapshot, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
-import { notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
+import { loading, notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
 import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
@@ -47,6 +47,8 @@ export interface SurfaceOptions {
   textMode?: TextMode;
   /** Opt in to cross-block rich-text selection; requires textMode: rich and nooq.text.edit. */
   selectionMode?: "block" | "document";
+  /** The open state's quiet window before the loading wordmark shows, in ms. Default 300; tests pass 0 to observe it. */
+  loadingDelay?: number;
 }
 /** Rich bindings carry the bases their policy admits for authoring (0009 §2); plain bindings carry none. */
 interface Binding { marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; /** The rich host's toggle path (Mod-b's), which the formatting toolbar reuses rather than inventing a second. */ toggleMark?(mark: TextMark): boolean; destroy(): void }
@@ -113,6 +115,16 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const root = document.createElement("div"), status = document.createElement("div"), notices = document.createElement("div"), body = document.createElement("div"), history = document.createElement("div");
   const surfaceAbort = new AbortController();
   root.className = "nq-editor"; root.append(status, notices, body, history);
+  // The open state (foundation P2, brand book Motion): a loading host above
+  // the content at the overlay layer, pointer-transparent, shown only when the
+  // load outlives the delay. It leaves when the FIRST render has run AND the
+  // editor is ready — a local doc settles both inside one microtask and never
+  // shows anything; a remote bootstrap keeps the wordmark until then. It
+  // exists only until that point and never touches the input path (§3).
+  const loadHost = loading(options.loadingDelay === undefined ? {} : { delay: options.loadingDelay });
+  root.append(loadHost.element);
+  let firstRenderDone = false, readyForContent = false, loadingSettled = false;
+  const settleLoading = () => { if (!loadingSettled && firstRenderDone && readyForContent) { loadingSettled = true; loadHost.done(); } };
   const rows = new Map<string, Row>();
   // A freshly derived ink re-renders rows too: their chips wait for the ink
   // rather than show a peer in a borrowed color, same as the overlay.
@@ -763,7 +775,12 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (alive.has(menuBlock) && state.blocks[menuBlock]?.text?.s === "/") openMenu(menuBlock);
       else closeMenu();
     }
-    } finally { rendering = false; renderState = undefined; documentSelection?.afterRender(); }
+    } finally {
+      rendering = false; renderState = undefined; documentSelection?.afterRender();
+      // The open state ends with the first render, whatever it drew — the
+      // loader must never outlive content (or the error that replaced it).
+      if (!firstRenderDone) { firstRenderDone = true; settleLoading(); }
+    }
   }
   // EB-6: render only what the transactions touched; a null set means all.
   let pendingBatch: import("@nooq/plugins").ChangeEvent[] | null = null;
@@ -802,8 +819,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     if (verdict === "allow") return;
     showNotice(verdict === "hold" ? "hold" : "denial", reason ?? (verdict === "hold" ? "held" : "denied"));
   });
+  // Signing readiness is the open state's other half (a rejected ready already
+  // closes the editor and destroys the surface; clearing here keeps the two
+  // paths from racing the host's teardown).
+  const markReady = () => { readyForContent = true; settleLoading(); };
+  void editor.ready.then(markReady, markReady);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, keymap: keys, textMode, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
