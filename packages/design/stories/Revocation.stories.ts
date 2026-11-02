@@ -139,7 +139,7 @@ export const RotationDialog: Story = {
     note.className = "nq-ui-caption";
     note.textContent = "History keeps the removal: \"Tomás was removed from this document.\"";
     body.append(note);
-    void dialog({
+    const handle = dialog({
       title: "Remove Tomás from this document?",
       body,
       actions: [
@@ -147,6 +147,7 @@ export const RotationDialog: Story = {
         { label: "Remove", variant: "danger", onClick: () => renderPanel(true) },
       ],
     });
+    document.body.append(handle.element); // the dialog's own contract: the caller mounts it
     return wrap;
   },
   play: async ({ canvasElement }) => {

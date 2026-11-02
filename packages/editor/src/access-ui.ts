@@ -152,7 +152,7 @@ export function createAccessUI(editor: AccessSource, options: AccessUIOptions = 
     const survivors = rotation.grants.filter(g => (g.epoch ?? 0) === (rotation.epoch ?? 1)).length;
     const devices = editor.awareness.size + 1; // present peers plus this writer
     const sentence = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-    void dialog({
+    const handle = dialog({
       title: `Remove ${name} from this document?`,
       body: (() => {
         const body = document.createElement("div");
@@ -173,6 +173,7 @@ export function createAccessUI(editor: AccessSource, options: AccessUIOptions = 
         { label: "Remove", variant: "danger" as never, onClick: () => { editor.revokeActor?.(entry.actorId); } },
       ],
     });
+    document.body.append(handle.element); // the dialog mounts where overlays mount (its own contract)
   }
 
   /** The panel for right now; also the re-render path while the popover is open. */
