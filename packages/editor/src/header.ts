@@ -7,11 +7,16 @@
  * region, never mounts a second one), and the sync line reads the editor
  * exactly as the surface reads it. The title slot is the host's to bind;
  * until then it renders nothing. The actions slot carries the Access button
- * (access-ui.ts) on secured documents, with the host's own actions after it.
+ * (access-ui.ts) on secured documents and — when `export` is configured —
+ * the Export entry point (export-ui.ts) beside it (open documents included:
+ * export is not access-gated), with the host's own actions after them. The
+ * reference composition (reference.ts) turns export on and composes the
+ * callout formatter into its engine options.
  */
 import { documentHeader, peerInk, syncStatus, type DocumentHeaderProps, type PeerInk } from "@nooq/design";
 import { createAccessUI } from "./access-ui.ts";
 import type { Editor } from "./controller.ts";
+import { createExportUI, type ExportUIOptions } from "./export-ui.ts";
 import { createSurfaceStatus } from "./status.ts";
 
 export interface DocumentHeaderOptions {
@@ -23,11 +28,20 @@ export interface DocumentHeaderOptions {
   /** The local writer's display name; the editor exposes only its actor ID. */
   selfName?: string;
   /**
-   * The host's own actions, composed into the trailing slot after the access
-   * button (which renders only on a secured document — open documents have
-   * no access header, so no button). Default: no host actions.
+   * The host's own actions, composed into the trailing slot after the
+   * access button (which renders only on a secured document — open documents
+   * have no access header, so no button) and the Export button. Default: no
+   * host actions.
    */
   actions?: DocumentHeaderProps["actions"];
+  /**
+   * Turns the Export entry point on with these options (export-ui.ts; the
+   * engine's options — the reference composes block formatters here — plus
+   * injectable copy/download sinks). Default: off, so a header that never
+   * asked for export shows none; export is not access-gated, so when it is
+   * on, open documents get it too.
+   */
+  export?: ExportUIOptions;
 }
 
 export interface DocumentHeader {
@@ -54,7 +68,10 @@ export function createDocumentHeader(editor: Editor, options: DocumentHeaderOpti
   // The access entry point (foundation P1): mounts only when the document
   // carries an access header — open documents show no button at all.
   const access = createAccessUI(editor, { selfName: options.selfName });
-  const element = documentHeader({ title: options.title, status: sync, roster: status.element, actions: [access.element, options.actions] });
+  // The export entry point (foundation P2): beside Access when configured —
+  // and on open documents too, because export is not access-gated.
+  const exportUI = options.export !== undefined ? createExportUI(editor, options.export) : undefined;
+  const element = documentHeader({ title: options.title, status: sync, roster: status.element, actions: [access.element, exportUI?.element, options.actions] });
   let destroyed = false;
   /** The same line the surface draws: DM-8 as a neutral fact, offline first (§2). */
   const refresh = () => {
@@ -66,7 +83,7 @@ export function createDocumentHeader(editor: Editor, options: DocumentHeaderOpti
   // the editor funnels them all through its change listeners.
   const offChange = editor.onChange(refresh);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offClose(); status.destroy(); access.destroy(); element.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offClose(); status.destroy(); access.destroy(); exportUI?.destroy(); element.remove(); };
   offClose = editor.onClose(destroy);
   refresh();
   return { element, destroy };

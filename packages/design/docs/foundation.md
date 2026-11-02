@@ -28,7 +28,7 @@ protocol to be visible to writers. P2 completes the reference app.
 | Surface styles | `.nq-editor`, presence overlay with remote-selection highlights, document selection, generic fallback block, text hosts (plain and rich, pixel-identical apart from marks), block content (nesting, placeholders, windowed skeletons, list/code/divider), the block toolbar's visual contract |
 | Protocol-visible UI | Job working state + draft preview (published → SuggestionCard), block history on an interactive change bar (lamport-exact, deleted-with-later-edits + Restore), presence roster, the shared announcer (joined/left/stale) |
 | Plugin API surface | `blockContainer` re-exported from `@nooq/plugins/dom`; plugin-agent conformance fails a plugin that sets styles or colors directly |
-| Glyphs | The state glyphs, the drag handle, the AI mark, and the chrome set (close, more, chevron, undo, redo, history, access, verified, model, warning, stop) |
+| Glyphs | The state glyphs, the drag handle, the AI mark, and the chrome set (close, more, chevron, undo, redo, history, access, verified, model, warning, stop, export) |
 | Guarantees | Contrast promises tested in both themes; every story an axe and keyboard test in both themes; generated files checked in sync |
 
 ---
@@ -75,12 +75,11 @@ Landed from the P2 passes:
 - **Shortcut sheet** — `shortcutSheet()` fed by `collectShortcuts(surface)`, which enumerates the LIVE resolved keymap, so the sheet cannot drift; "?" opens it (never while typing), Esc returns focus.
 - **Dialog** — `dialog()` on the popover's focus discipline: viewport-centered, aria-modal, Tab trap, Esc and outside press are cancel semantics (a destructive action never fires implicitly), actions right-aligned with the primary last, destructive confirmations on the danger variant with verb labels. No backdrop in v1 (no scrim token); stories are the consumer of record until sharing/export arrive.
 - **Loading** — `loading()`: nothing before 300ms (fast opens show nothing — that is the point), then the wordmark at loader timing looping while shown, at rest under reduced motion, `aria-busy` with the word. Wired into `createSurface` until first render + `editor.ready`; local documents are instant, so only remote bootstrap ever shows it. The windowed skeleton exists since the block-content work.
+- **Export** — `exportMarkdown()` in `@nooq/plugins`: a pure function of document state, reference formatters for title/heading/paragraph/quote, marks nesting to markdown (links round-trip as `[text](href)` from 0009 payloads), suggestions excluded and counted pending, tombstones excluded, unknown inline-text blocks never silently dropped (§8). Plugin blocks export their own form through the formatters map — Callouts ships GitHub-alert syntax (`[!NOTE]`/`[!WARNING]`/`[!TIP]`). The UI: the header's opt-in Export button (the reference composition enables it; `createExportUI` is never access-gated) opens the dialog — format line, the pending count stated exactly and pluralized, Copy Markdown primary with the digest's graceful-refusal clipboard, Download as a feature-detected quiet action. Dialog's first real consumer.
 
 Still to build:
 
-- **Export:** format choice and what to do with pending suggestions. No export engine exists yet — premature until one does.
 - **Multi-column layout block,** promised in the README and not yet designed.
-- **Dialog consumers** when sharing, model connection and export arrive — the primitive is ready and story-covered.
 
 ---
 

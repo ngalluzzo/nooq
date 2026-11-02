@@ -6,4 +6,5 @@ export * from "./runtime.ts";
 export * from "./recipes.ts";
 export * from "./selection.ts";
 export * from "./merge.ts";
+export * from "./export.ts";
 export type { ActorDescriptor, Block, DocState, JsonValue, Op, RenderedText, TextChange, Transaction } from "@nooq/core";

@@ -31,5 +31,11 @@ fields and marks survive unchanged. Peers without this plugin see the generic
 fallback and retain identical document data. See the
 [API guide](../plugins/README.md) for a runnable integration example.
 
+`calloutMarkdown` (from the headless entry point) exports a callout as a
+GitHub alert — `info` → `[!NOTE]`, `warning` → `[!WARNING]`,
+`success` → `[!TIP]`, any other stored tone → `[!NOTE]` — with the block's
+text as the body and children after a blank quoted line. Pass it to
+`exportMarkdown` under `formatters: { "nooq.callout/v1": calloutMarkdown }`.
+
 This demonstrates the runtime boundary. Full seed-plugin release criteria,
 including format-specific export mappings, remain tracked in proposal 0002.

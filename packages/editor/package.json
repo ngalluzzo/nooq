@@ -16,6 +16,7 @@
   "dependencies": {
     "@nooq/core": "workspace:*",
     "@nooq/design": "workspace:*",
+    "@nooq/plugin-callouts": "workspace:*",
     "@nooq/plugins": "workspace:*",
     "@nooq/sync": "workspace:*",
     "@nooq/yjs": "workspace:*",
@@ -27,7 +28,6 @@
     "yjs": "13.6.33"
   },
   "devDependencies": {
-    "@nooq/plugin-callouts": "workspace:*",
     "@happy-dom/global-registrator": "21.0.4"
   }
 }

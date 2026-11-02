@@ -326,6 +326,41 @@ replace a legacy contribution when migrating that action. The public action list
 contains shared definitions only. Custom palettes can consume this list; a
 built-in palette and portable formatting actions are later work.
 
+## Export to markdown
+
+`exportMarkdown(state, options?)` is a pure `DocState` → markdown projection:
+no DOM, no editor, no registry. It walks the live tree in order (roots, then
+children recursively), renders each block through a formatter, and joins
+block outputs with blank lines. Tombstoned blocks are absent from parents'
+children (DM-3.4), so they never export and never count. It returns
+`{ markdown, pending, skippedUnknown }`: live `nooq.suggestion/v1` blocks are
+excluded (proposals are not content) and counted in `pending`, and unknown
+`text:"none"` types are skipped and counted in `skippedUnknown` — their known
+children still export in place. Unknown inline-text types are never dropped
+(§8): they degrade to the plain paragraph form.
+
+```ts
+import { exportMarkdown } from "@nooq/plugins";
+import { calloutMarkdown } from "@nooq/plugin-callouts";
+
+const { markdown, pending, skippedUnknown } = exportMarkdown(state, {
+  formatters: { "nooq.callout/v1": calloutMarkdown },
+});
+```
+
+A `BlockFormatter` receives the immutable block plus a context — `text()`
+renders the block's `RenderedText` with every mark (`**`, `*`, `` ` ``,
+links as `[text](href)` resolved from fields by the full token, combinations
+nested, unknown marks and payloadless links degraded to plain text) and
+`children` is the already-exported subtree joined with blank lines. It
+returns the block's markdown, or `undefined` to exclude the block and its
+subtree. Pass formatters under `options.formatters` keyed by block type; they
+take precedence per type over the exported `referenceFormatters` (title `# `,
+heading `##` per `fields.level` with the h2 default, paragraph, quote `> `
+per line, suggestion excluded). `markdownText(text, fields?)` and
+`quoteLines(content)` are exported for formatter authors; the same state
+always exports the same markdown.
+
 ## Jobs and proposals
 
 Use `defineJob<Args, Result>({ id, label, validateArgs, publishes, run })`.
@@ -380,9 +415,10 @@ The legacy application-level `propose()` and `aiKey` configuration remain for
 compatibility. New publishing plugins use job bindings and captures. Neither
 legacy API is passed to plugin contexts.
 
-Native snapshots retain unknown data. Format-specific export adapters,
-migrations, undo, attribute-bearing inline marks, dynamic plugin installation,
-virtualization, document-wide rich-text plugin composition, and distributed suggestion settlement remain
+Native snapshots retain unknown data. Format-specific export adapters beyond
+the markdown engine, migrations, undo, attribute-bearing inline marks, dynamic
+plugin installation, virtualization, document-wide rich-text plugin
+composition, and distributed suggestion settlement remain
 separate work. This implementation does not claim production performance at
 all document sizes; the repository's browser lab records those budgets.
 

@@ -4,7 +4,9 @@ import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@n
 import { defineDOMPlugin, defineTextPolicy, type BlockViewDefinition, type MarkRenderer } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock, deleteBlock } from "@nooq/plugins/essentials";
 import { blockRow, suggestionCard, tooltip, type DiffSegment, type SuggestionState } from "@nooq/design";
-import { actorKindOf, type JobBinding } from "./controller.ts";
+import { callout, calloutMarkdown } from "@nooq/plugin-callouts";
+import { actorKindOf, type Editor, type JobBinding } from "./controller.ts";
+import { createDocumentHeader, type DocumentHeader, type DocumentHeaderOptions } from "./header.ts";
 import { announce } from "./status.ts";
 
 export { essentials } from "@nooq/plugins/essentials";
@@ -181,4 +183,19 @@ export const referencePlugins = [essentials, review, simulatedRewrite.plugin] as
 export const referenceDOM = [essentialsDOM, reviewDOM, simulatedRewrite.dom] as const;
 export function referenceJobBindings(signer?: ActorKey): JobBinding[] {
   return [{ job: simulatedRewrite.job, actor: { actorId: "ai:reference", kind: "ai", model: "simulated/1" }, signer }];
+}
+/**
+ * The reference document header: `createDocumentHeader` with the Export
+ * entry point on — open documents included, because export is not
+ * access-gated — and the callout block composed into the export engine's
+ * formatters, so callouts export in GitHub-alert form. Everything else the
+ * header takes (title, selfName, host actions) passes through untouched,
+ * and a host's own `export` formatters compose beside the callout's.
+ */
+export function referenceDocumentHeader(editor: Editor, options: DocumentHeaderOptions = {}): DocumentHeader {
+  const composed = options.export ?? {};
+  return createDocumentHeader(editor, {
+    ...options,
+    export: { ...composed, formatters: { [callout.type]: calloutMarkdown, ...composed.formatters } },
+  });
 }

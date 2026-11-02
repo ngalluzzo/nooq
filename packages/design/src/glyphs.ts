@@ -3,16 +3,16 @@
  *
  * Two vocabularies, one grid: the suggestion states (DM-6.2, with their
  * fills) and the chrome glyphs (close, more, chevron, undo, redo, history,
- * access, verified, model, warning, stop) that the toolbar, notice, popover
- * and form controls are drawn from. All geometric; a state glyph never
- * doubles as a chrome glyph and vice versa, so a shape keeps its meaning.
+ * access, verified, model, warning, stop, export) that the toolbar, notice,
+ * popover and form controls are drawn from. All geometric; a state glyph
+ * never doubles as a chrome glyph and vice versa, so a shape keeps its meaning.
  */
 
 import { svg } from "./dom.ts";
 
 export type GlyphName =
   | "fresh" | "stale" | "conflicted" | "accepted" | "rejected" | "local" | "offline" | "grip"
-  | "close" | "more" | "chevron" | "undo" | "redo" | "history" | "access" | "verified" | "model" | "warning" | "stop";
+  | "close" | "more" | "chevron" | "undo" | "redo" | "history" | "access" | "verified" | "model" | "warning" | "stop" | "export";
 
 const stroke = { stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none" };
 const ring = { cx: "6", cy: "6", r: "3.25", fill: "none", stroke: "currentColor", "stroke-width": "1.5" };
@@ -38,6 +38,8 @@ const SHAPES: Record<Exclude<GlyphName, "grip">, () => SVGElement[]> = {
   model: () => [svg("rect", { x: "2.25", y: "2.25", width: "7.5", height: "7.5", ...stroke }), svg("path", { d: "M2.75 9.25L9.25 2.75", ...stroke })],
   warning: () => [svg("path", { d: "M6 1.75L11 10H1z", ...stroke }), svg("path", { d: "M6 5v2.4", ...stroke }), svg("circle", { cx: "6", cy: "9", r: "0.35", fill: "currentColor", stroke: "none" })],
   stop: () => [svg("rect", { x: "3", y: "3", width: "6", height: "6", fill: "currentColor" })],
+  // Export: one arrow leaving the document into a tray — the header's quiet verb beside Access.
+  export: () => [svg("path", { d: "M6 1.75v6", ...stroke }), svg("path", { d: "M3.4 5.4L6 8l2.6-2.6", ...stroke }), svg("path", { d: "M2.25 10.25h7.5", ...stroke })],
 };
 
 export function glyph(name: GlyphName): SVGElement {
