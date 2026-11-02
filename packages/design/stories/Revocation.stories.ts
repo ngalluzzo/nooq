@@ -93,7 +93,31 @@ export const LiveRotation: Story = {
   },
 };
 
-async function buildLive(mount: HTMLElement, history: HTMLElement): Promise<void> {
+/** The rotation dialog: the re-signing bill before the epoch advances. */
+export const RotationDialog: Story = {
+  render: () => {
+    const wrap = document.createElement("div");
+    wrap.style.display = "grid";
+    wrap.style.gap = "1rem";
+    void buildLive(wrap, document.createElement("ul"), { withDialog: true });
+    return wrap;
+  },
+  play: async ({ canvasElement }) => {
+    // The dialog opens with the bill; the words are the product answers.
+    await waitFor(() => expect(canvasElement.querySelector(".nq-dialog-title")?.textContent).toBe("Remove Tomás from this document?"), { timeout: 15_000 });
+    const bill = canvasElement.querySelectorAll(".nq-rotation-bill li");
+    await expect(bill.length).toBe(3);
+    await expect(bill[0]?.textContent).toBe("Tomás can no longer edit this document.");
+    await expect(bill[1]?.textContent).toContain("keep access — their grants re-sign in this one transaction.");
+    await expect(bill[2]?.textContent).toContain("see the change; other devices get it when they sync.");
+    // Confirm: the epoch advances, the badge and the sentence land.
+    const remove = Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent === "Remove");
+    remove?.click();
+    await waitFor(() => expect(canvasElement.querySelector(".nq-access-removed")?.textContent).toBe("removed"), { timeout: 10_000 });
+  },
+};
+
+async function buildLive(mount: HTMLElement, history: HTMLElement, options: { withDialog?: boolean } = {}): Promise<void> {
   const mayaKey = await createActorKey(), tomasKey = await createActorKey();
   const ownerParty = { actorId: "human:maya", key: toBase64(mayaKey.publicBytes), kind: "human" as const };
   const { docId, nonce } = await createSecuredDocument(ownerParty);
@@ -138,8 +162,46 @@ async function buildLive(mount: HTMLElement, history: HTMLElement): Promise<void
   await settled();
   render(readState(doc).access!, false);
 
-  // Rotate: Tomás removed. The badge and the sentence appear when it lands.
+  // Rotate: Tomás removed. With withDialog, the owner confirms the bill
+  // first (the same buildRotation the commit uses — what they see is what ships).
   const before = readState(doc).access!;
+  if (options.withDialog) {
+    const { buildRotation } = await import("../../editor/src/index.ts");
+    const { dialog } = await import("../src/index.ts");
+    const preview = buildRotation(structuredClone(before) as Access, ["human:tomas"]);
+    const keepers = preview.grants.filter(g => (g.epoch ?? 0) === (preview.epoch ?? 1)).length;
+    const devices: number = 2; // Maya + Priya's session in this story's world
+    const ul = document.createElement("ul");
+    const li = (text: string) => { const item = document.createElement("li"); item.textContent = text; return item; };
+    ul.append(
+      li("Tomás can no longer edit this document."),
+      li(`${keepers === 1 ? "1 writer and reader" : keepers + " writers and readers"} keep access — their grants re-sign in this one transaction.`),
+      li(`${devices === 1 ? "1 connected device sees" : devices + " connected devices see"} the change; other devices get it when they sync.`),
+    );
+    const body = document.createElement("div");
+    body.className = "nq-rotation-bill";
+    body.append(ul);
+    const note = document.createElement("p");
+    note.className = "nq-ui-caption";
+    note.textContent = "History keeps the removal: \"Maya was removed from this document.\"";
+    body.append(note);
+    const commitRotation = async (): Promise<void> => {
+      const access2 = buildRotation(structuredClone(readState(doc).access!) as Access, ["human:tomas"]);
+      const rotation = await commitSigned(doc, tx([{ op: "setAccess" as never, access: access2 } as never]), mayaKey, "human:maya");
+      session.sendUpdate(rotation.update, rotation.envelope);
+      await settled();
+      render(readState(doc).access!, true);
+    };
+    void dialog({
+      title: "Remove Tomás from this document?",
+      body,
+      actions: [
+        { label: "Cancel" },
+        { label: "Remove", variant: "danger", onClick: () => { void commitRotation(); } },
+      ],
+    });
+    return;
+  }
   const survivors = before.grants.filter(g => g.actorId !== "human:tomas").map(g => ({ ...g, epoch: 1 }));
   const access2: Access = { ...before, epoch: 1, grants: survivors, revoked: ["human:tomas"] };
   const rotation = await commitSigned(doc, tx([{ op: "setAccess" as never, access: access2 } as never]), mayaKey, "human:maya");

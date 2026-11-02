@@ -179,6 +179,22 @@ export function actorKindOf(actorId: string): "human" | "ai" | "system" {
   return "system"; // importers, migrations, and anything else (DM-5 kinds)
 }
 
+/**
+ * DM-13.6 (proposals/0012): the rotation an owner's revocation builds —
+ * epoch +1, kept grants re-stamped unchanged, the omitted on the roll.
+ * Pure; the dialog previews the bill from it, the commit ships it, and
+ * both therefore agree by construction.
+ */
+export function buildRotation(current: import("@nooq/core").Access, revoke: readonly string[]): import("@nooq/core").Access {
+  const epoch = (current.epoch ?? 0) + 1;
+  const currentEpoch = current.epoch ?? 0;
+  const survivors = current.grants
+    .filter(g => (g.epoch ?? 0) === currentEpoch && !revoke.includes(g.actorId))
+    .map(g => ({ ...g, epoch }));
+  const revoked = [...(current.revoked ?? []), ...revoke.filter(id => !(current.revoked ?? []).includes(id) && id !== current.owner.actorId)];
+  return { ...current, epoch, grants: survivors, revoked };
+}
+
 export class Editor {
   readonly ydoc: Y.Doc;
   /** Latest awareness per remote actor (SW-7); never document state. */
@@ -724,6 +740,20 @@ export class Editor {
   /** DM-13: install the access header (owner-signed; the op validates shape). */
   setAccess(access: import("@nooq/core").Access): void {
     this.apply(this.tx([{ op: "setAccess", access }], "set-access"));
+  }
+
+  /**
+   * DM-13.6 (proposals/0012): revocation by rotation, one owner-signed
+   * transaction — the epoch advances, kept grants re-stamp, omitted actors
+   * join the append-only roll. The dialog's re-signing bill derives from the
+   * SAME rotation the commit builds, so what the owner confirms is what ships.
+   */
+  revokeActor(actorId: string): void {
+    const access = this.accessState();
+    if (!access) throw new Error("Revocation needs an access-controlled document");
+    if (access.owner.actorId !== this.actorId) throw new Error("Only the owner rotates access (DM-13)");
+    if (access.owner.actorId === actorId) throw new Error("The owner is never revoked");
+    this.setAccess(buildRotation(structuredClone(access) as import("@nooq/core").Access, [actorId]));
   }
 
   /** Async identity verification is completed before the synchronous genesis commit. */

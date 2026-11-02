@@ -14,7 +14,7 @@
  * anchored to the button; Esc closes returning focus (the popover's
  * contract); the panel re-renders on access or awareness change while open.
  */
-import { accessPanel, button, glyph, peerInk, popover, type AccessPanelEntry, type PeerInk, type PopoverHandle } from "@nooq/design";
+import { accessPanel, button, dialog, glyph, peerInk, popover, type AccessPanelEntry, type PeerInk, type PopoverHandle } from "@nooq/design";
 import type { ActorKind, Role } from "@nooq/core";
 import type { AwarenessEntry } from "@nooq/sync";
 
@@ -34,12 +34,18 @@ export interface AccessSource {
   accessState(): AccessView | undefined;
   /** Actors whose edits arrived verified here (the weak, transitive verdict). */
   arrivedVerified(): ReadonlySet<string>;
+  /** DM-13.6: owner-signed revocation by rotation. Present on the real Editor;
+   *  absent on partial sources, which then render no Remove affordance. */
+  revokeActor?(actorId: string): void;
 }
 
 /** The access shape as this module reads it; accepts a frozen or mutable `Access` alike. */
 export interface AccessView {
   owner: { actorId: string; kind: ActorKind };
-  grants: readonly { actorId: string; kind: ActorKind; role: Role }[];
+  grants: readonly { actorId: string; kind: ActorKind; role: Role; epoch?: number }[];
+  /** DM-13.6: the rotation epoch and the revoked roll. */
+  epoch?: number;
+  revoked?: readonly string[];
 }
 
 /**
@@ -61,6 +67,8 @@ export interface AccessUI {
   element: HTMLElement;
   destroy(): void;
 }
+
+import { buildRotation } from "./controller.ts";
 
 export function createAccessUI(editor: AccessSource, options: AccessUIOptions = {}): AccessUI {
   const now = options.now ?? (() => Date.now());
@@ -118,10 +126,53 @@ export function createAccessUI(editor: AccessSource, options: AccessUIOptions = 
         ...(present && nowMs - (lastSeen.get(party.actorId) ?? nowMs) > IDLE_AFTER ? { idle: true } : {}),
       };
     };
+    const isOwner = access.owner.actorId === editor.actorId;
+    const grantRows = access.grants.map(grant => {
+      const entry = row(grant, grant.role, false);
+      return entry && isOwner && editor.revokeActor && !access.revoked?.includes?.(grant.actorId)
+        ? { ...entry, onRemove: () => confirmRevocation(entry, access) }
+        : entry;
+    });
     return [
       row(access.owner, "writer", true), // partyOf: the owner writes (access.ts)
-      ...access.grants.map(grant => row(grant, grant.role, false)),
+      ...grantRows,
     ].filter((entry): entry is AccessPanelEntry => entry !== undefined);
+  }
+
+  /**
+   * DM-13.6 (proposals/0012): the rotation dialog. The re-signing bill derives
+   * from the SAME rotation the commit builds (buildRotation is shared), so what
+   * the owner confirms is what ships. The wording follows the owner's product
+   * answers: eventual timing stated, the actor named, mechanics absent.
+   */
+  function confirmRevocation(entry: AccessPanelEntry, access: AccessView): void {
+    const name = entry.name ?? entry.actorId;
+    const mutable = structuredClone({ ...access, grants: [...access.grants], revoked: [...(access.revoked ?? [])] }) as unknown as import("@nooq/core").Access;
+    const rotation = buildRotation(mutable, [entry.actorId]);
+    const survivors = rotation.grants.filter(g => (g.epoch ?? 0) === (rotation.epoch ?? 1)).length;
+    const devices = editor.awareness.size + 1; // present peers plus this writer
+    const sentence = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    void dialog({
+      title: `Remove ${name} from this document?`,
+      body: (() => {
+        const body = document.createElement("div");
+        body.className = "nq-rotation-bill";
+        const ul = document.createElement("ul");
+        const li = (text: string) => { const item = document.createElement("li"); item.textContent = text; return item; };
+        ul.append(
+          li(`${name} can no longer edit this document.`),
+          li(`${sentence(survivors, "writer and reader")} keep access — their grants re-sign in this one transaction.`),
+          li(`${sentence(devices, "connected device")} see${devices === 1 ? "s" : ""} the change; other devices get it when they sync.`),
+        );
+        body.append(ul);
+        body.append(Object.assign(document.createElement("p"), { className: "nq-ui-caption", textContent: "History keeps the removal: \"Maya was removed from this document.\"" }));
+        return body;
+      })(),
+      actions: [
+        { label: "Cancel" },
+        { label: "Remove", variant: "danger" as never, onClick: () => { editor.revokeActor?.(entry.actorId); } },
+      ],
+    });
   }
 
   /** The panel for right now; also the re-render path while the popover is open. */

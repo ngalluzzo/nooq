@@ -40,6 +40,9 @@ interface AccessRow {
    *  Carries the badge "removed" (the owner's product answer: label the
    *  actor, never the mechanics) and drops the role word — they have none. */
   removed?: boolean;
+  /** The owner's Remove affordance on this row (DM-13.6): rendered only when
+   *  present — the panel stays presentational; the caller owns the dialog. */
+  onRemove?: () => void;
   /** The derived peer ink for a human row; the caller omits the row until it resolves, never a borrowed color. */
   ink?: Ink;
 }
@@ -115,6 +118,11 @@ function row(entry: AccessRow, selfRow: boolean): HTMLLIElement {
     entry.idle && !entry.removed && el("span", { class: "nq-access-idle nq-ui-caption" }, "idle"),
     entry.removed && el("span", { class: "nq-access-removed nq-ui-caption" }, "removed"),
     el("span", { class: "nq-access-role nq-ui-caption" }, entry.removed ? "" : role),
+    entry.onRemove && !entry.removed && el(
+      "button",
+      { class: "nq-access-remove nq-ui-caption", type: "button", onclick: entry.onRemove },
+      "Remove…",
+    ),
     selfRow && el("span", { class: "nq-access-you nq-ui-caption" }, "you"),
   );
 }
