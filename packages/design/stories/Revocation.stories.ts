@@ -2,8 +2,9 @@ import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Role, type Transaction } from "@nooq/core";
 import { commitSigned, newDocument, readState } from "../../yjs/src/index.ts";
+import { buildRotation } from "../../editor/src/controller.ts";
 import { NooqRelay, settled, SyncSession } from "../../sync/src/index.ts";
-import { accessPanel, historyEvent, type AccessPanelEntry } from "../src/index.ts";
+import { accessPanel, dialog, historyEvent, type AccessPanelEntry } from "../src/index.ts";
 
 /**
  * Revocation (DM-13.6, proposals/0012): the owner rotates, the removed
@@ -98,58 +99,54 @@ export const LiveRotation: Story = {
  *  realistic access shape; the wire itself is LiveRotation's to prove. */
 export const RotationDialog: Story = {
   render: () => {
+    const access = {
+      owner: { actorId: "human:maya", key: "k-owner", kind: "human" },
+      grants: [
+        { actorId: "human:tomas", key: "k-tomas", kind: "human", role: "writer", epoch: 0 },
+        { actorId: "human:priya", key: "k-priya", kind: "human", role: "reader", epoch: 0 },
+      ],
+      nonce: "n",
+      epoch: 0,
+    } as never;
+    const preview = buildRotation(structuredClone(access), ["human:tomas"]);
+    const keepers = preview.grants.filter(g => (g.epoch ?? 0) === (preview.epoch ?? 1)).length;
+    const devices = 3;
     const wrap = document.createElement("div");
     wrap.style.display = "grid";
     wrap.style.gap = "1rem";
     const panelMount = document.createElement("div");
     wrap.append(panelMount);
-    void (async () => {
-      const { buildRotation } = await import("../../editor/src/index.ts");
-      const { dialog, accessPanel } = await import("../src/index.ts");
-      const access = {
-        owner: { actorId: "human:maya", key: "k-owner", kind: "human" },
-        grants: [
-          { actorId: "human:tomas", key: "k-tomas", kind: "human", role: "writer", epoch: 0 },
-          { actorId: "human:priya", key: "k-priya", kind: "human", role: "reader", epoch: 0 },
-        ],
-        nonce: "n",
-        epoch: 0,
-      };
-      const renderPanel = (removed: boolean) => panelMount.replaceChildren(accessPanel({
-        self: { actorId: "human:maya", name: "Maya", role: "writer" },
-        entries: [
-          { actorId: "human:tomas", name: "Tomás", ink: "teal", role: "writer", ...(removed ? { removed: true } : {}) },
-          { actorId: "human:priya", name: "Priya", ink: "violet", role: "reader" },
-        ],
-      }));
-      renderPanel(false);
-      // The SAME rotation the commit builds previews the bill (0012 Q3).
-      const preview = buildRotation(structuredClone(access) as never, ["human:tomas"]);
-      const keepers = preview.grants.filter(g => (g.epoch ?? 0) === (preview.epoch ?? 1)).length;
-      const devices = 3;
-      const ul = document.createElement("ul");
-      const li = (text: string) => { const item = document.createElement("li"); item.textContent = text; return item; };
-      ul.append(
-        li("Tomás can no longer edit this document."),
-        li(`${keepers === 1 ? "1 writer and reader" : keepers + " writers and readers"} keep access — their grants re-sign in this one transaction.`),
-        li(`${devices} connected devices see the change; other devices get it when they sync.`),
-      );
-      const body = document.createElement("div");
-      body.className = "nq-rotation-bill";
-      body.append(ul);
-      const note = document.createElement("p");
-      note.className = "nq-ui-caption";
-      note.textContent = "History keeps the removal: \"Tomás was removed from this document.\"";
-      body.append(note);
-      void dialog({
-        title: "Remove Tomás from this document?",
-        body,
-        actions: [
-          { label: "Cancel" },
-          { label: "Remove", variant: "danger", onClick: () => renderPanel(true) },
-        ],
-      });
-    })();
+    const renderPanel = (removed: boolean) => panelMount.replaceChildren(accessPanel({
+      self: { actorId: "human:maya", name: "Maya", role: "writer" },
+      entries: [
+        { actorId: "human:tomas", name: "Tomás", ink: "teal", role: "writer", ...(removed ? { removed: true } : {}) },
+        { actorId: "human:priya", name: "Priya", ink: "violet", role: "reader" },
+      ],
+    }));
+    renderPanel(false);
+    // The SAME rotation the commit builds previews the bill (0012 Q3).
+    const ul = document.createElement("ul");
+    const li = (text: string) => { const item = document.createElement("li"); item.textContent = text; return item; };
+    ul.append(
+      li("Tomás can no longer edit this document."),
+      li(`${keepers === 1 ? "1 writer and reader" : keepers + " writers and readers"} keep access — their grants re-sign in this one transaction.`),
+      li(`${devices} connected devices see the change; other devices get it when they sync.`),
+    );
+    const body = document.createElement("div");
+    body.className = "nq-rotation-bill";
+    body.append(ul);
+    const note = document.createElement("p");
+    note.className = "nq-ui-caption";
+    note.textContent = "History keeps the removal: \"Tomás was removed from this document.\"";
+    body.append(note);
+    void dialog({
+      title: "Remove Tomás from this document?",
+      body,
+      actions: [
+        { label: "Cancel" },
+        { label: "Remove", variant: "danger", onClick: () => renderPanel(true) },
+      ],
+    });
     return wrap;
   },
   play: async ({ canvasElement }) => {
