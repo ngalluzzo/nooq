@@ -75,7 +75,6 @@ export const Static: Story = {
 
 /** The live one: a real rotation through a real relay, rendered as it lands. */
 export const LiveRotation: Story = {
-  parameters: { testTimeout: 30_000 }, // live relay setup is slower on CI runners
   render: () => {
     const wrap = document.createElement("div");
     wrap.style.display = "grid";
@@ -96,7 +95,6 @@ export const LiveRotation: Story = {
 
 /** The rotation dialog: the re-signing bill before the epoch advances. */
 export const RotationDialog: Story = {
-  parameters: { testTimeout: 45_000 }, // a live relay + rotation + settle: slower on CI runners
   render: () => {
     const wrap = document.createElement("div");
     wrap.style.display = "grid";

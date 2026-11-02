@@ -12,6 +12,8 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
  * Unit tests run under `bun test`, not here.
  */
 export default defineConfig({
+  // Live-relay stories (Revocation) do real crypto and sync; CI runners need the room.
+  test: { testTimeout: 45_000 },
   // Editor-backed stories load these transitively; prebundle before either theme starts.
   optimizeDeps: { include: [
     "@nooq/plugin-agent > @nooq/editor > prosemirror-model",
