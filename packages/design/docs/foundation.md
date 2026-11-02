@@ -46,9 +46,7 @@ All nine P0 areas from the first draft are built. What remains of them:
 
 ## P1: the protocol, visible to writers
 
-Six of the seven are built. Still open: access (verdict below — buildable now
-for two of its three parts, waiting on the header's access popover) and the
-spec-blocked lost moves.
+Six of the seven are built, including access in its v1 form. Still spec-blocked: lost moves.
 
 Built:
 
@@ -58,10 +56,10 @@ Built:
 - **Announcer.** One shared, persistent, rate-limited live region (750ms, latest-wins): "X joined.", "X left.", "Suggestion is now stale." Never per keystroke.
 - **Links and inline payloads (0009).** Marks are bases with tokens (`link:<id>`), payloads live in fields keyed by the full token, policies admit bases (reserved bare for nooq, namespaced for plugins, enforced at defineDOMPlugin), and views contribute renderers. Links are the dogfooded first consumer: `nooq.text.link` is one atomic transaction, anchors render in ink through the policy renderer, Mod-k opens the href popover on the selection, and foreign hosts preserve everything with the §8 dotted fallback. The mechanism is the plugin path — mentions, term definitions and comment anchors ship the same way.
 - **Formatting toolbar.** The appearance policy is decided and shipped: POINTER selection only (a primary-button mouseup completing a non-collapsed selection in a rich host — never typing, never keyboard-only selection), dismissing on Escape, collapse or leave, placed above the selection and never over the caret's line. Buttons are exactly what the block's policy admits — the toggle trio plus Link (the same flow Mod-k opens); the strip is never a focus stop (§3, §9).
+- **Access and signers, v1.** The header's Access button opens the access panel: roles from the replicated access header (self first, owner, grants — names joined from awareness, bare actorIds never invented), the verified glyph as "Their edits arrived verified here" (the honest weak form), and the permanent-grants footnote. The enabling wiring landed with it: `Editor.onAdmission` (mirrors the session's verdict payload verbatim — it carries no actor, a named sync-layer gap), `myRole()`/`accessState()`/`arrivedVerified()`, and denial/hold notices that preserve `retryable` with reasons verbatim; the local writer's remotely-refused envelope surfaces through the session's wire-error channel (`SessionError`, code `envelope-denied`). The stronger form — per-actor verdicts, held-envelope visibility, awareness-wire roles — is catalogued in `proposals/evidence/access-and-signers.md` as sync-layer work.
 
 Still to decide or build:
 
-- **Access and signers.** Investigated — see `proposals/evidence/access-and-signers.md`. Roles and read-only-with-reason are buildable NOW on existing query surface (the roster is replicated state; deny/hold reasons are first-class); verified-signer is buildable only as "their edits arrived verified here" until the Editor wires the sync session's admission verdicts and the awareness wire grows role/verification fields. The home is the header's actions slot.
 - **Away markers and lost moves.** The change-bar variant needs seen-state semantics; the lost-move notice is blocked until DM-10 resolves what a lost move observably is.
 
 Named follow-ups from the landings: `Editor.close()` does not announce a local departure (only an explicit `setCursor(null)` does); the roster's self name falls back to the actor id until the Editor exposes a display name; true idle needs an awareness timestamp on the wire.
@@ -78,7 +76,6 @@ Landed from the first P2 pass:
 Still to build:
 
 - **Dialog,** for destructive confirmation, sharing, connecting a model and export. Built on Popover's focus handling.
-- **Access popover** on the header's actions slot — buildable per the investigation above; the enabling editor wiring (admission verdicts, retryable notices, `myRole()`) is named there.
 - **Export:** format choice and what to do with pending suggestions. No export engine exists yet — premature until one does.
 - **Multi-column layout block,** promised in the README and not yet designed.
 - **Loading:** the logo loader only after 300ms, and the windowed skeleton.

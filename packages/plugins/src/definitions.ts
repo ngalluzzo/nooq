@@ -52,7 +52,7 @@ export interface Plugin {
   contributes: { blocks?: readonly BlockDefinition[]; commands?: readonly Command<any>[]; jobs?: readonly Job<any, any>[] };
   setup?(context: PluginScope): void | (() => void);
 }
-export interface PluginError { plugin?: string; phase: "setup" | "command" | "observer" | "cleanup" | "view" | "job" | "signing"; cause: unknown }
+export interface PluginError { plugin?: string; phase: "setup" | "command" | "observer" | "cleanup" | "view" | "job" | "signing" | "sync"; cause: unknown }
 export interface ChangeEvent {
   revision: number;
   origin: "local" | "remote";

@@ -6,9 +6,11 @@
  * (status.ts owns the singleton: a second instance re-homes the same live
  * region, never mounts a second one), and the sync line reads the editor
  * exactly as the surface reads it. The title slot is the host's to bind;
- * until then it renders nothing.
+ * until then it renders nothing. The actions slot carries the Access button
+ * (access-ui.ts) on secured documents, with the host's own actions after it.
  */
 import { documentHeader, peerInk, syncStatus, type DocumentHeaderProps, type PeerInk } from "@nooq/design";
+import { createAccessUI } from "./access-ui.ts";
 import type { Editor } from "./controller.ts";
 import { createSurfaceStatus } from "./status.ts";
 
@@ -20,6 +22,12 @@ export interface DocumentHeaderOptions {
   title?: DocumentHeaderProps["title"];
   /** The local writer's display name; the editor exposes only its actor ID. */
   selfName?: string;
+  /**
+   * The host's own actions, composed into the trailing slot after the access
+   * button (which renders only on a secured document — open documents have
+   * no access header, so no button). Default: no host actions.
+   */
+  actions?: DocumentHeaderProps["actions"];
 }
 
 export interface DocumentHeader {
@@ -43,7 +51,10 @@ export function createDocumentHeader(editor: Editor, options: DocumentHeaderOpti
   };
   const sync = document.createElement("span");
   const status = createSurfaceStatus(editor, { inkOf }, { selfName: options.selfName });
-  const element = documentHeader({ title: options.title, status: sync, roster: status.element });
+  // The access entry point (foundation P1): mounts only when the document
+  // carries an access header — open documents show no button at all.
+  const access = createAccessUI(editor, { selfName: options.selfName });
+  const element = documentHeader({ title: options.title, status: sync, roster: status.element, actions: [access.element, options.actions] });
   let destroyed = false;
   /** The same line the surface draws: DM-8 as a neutral fact, offline first (§2). */
   const refresh = () => {
@@ -55,7 +66,7 @@ export function createDocumentHeader(editor: Editor, options: DocumentHeaderOpti
   // the editor funnels them all through its change listeners.
   const offChange = editor.onChange(refresh);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offClose(); status.destroy(); element.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; offChange(); offClose(); status.destroy(); access.destroy(); element.remove(); };
   offClose = editor.onClose(destroy);
   refresh();
   return { element, destroy };

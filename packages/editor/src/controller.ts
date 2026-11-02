@@ -27,7 +27,9 @@ import {
   makeSuggestionBlock,
   newBlockId,
   rejectTransaction,
+  roleOf,
   rootDigest,
+  type Access,
   type ActorDescriptor,
   type BlockId,
   type DocState,
@@ -36,6 +38,7 @@ import {
   type Op,
   type Proposal,
   type RenderedText,
+  type Role,
   type TextChange,
   type Transaction,
 } from "@nooq/core";
@@ -44,13 +47,31 @@ import { MaintainedProjection } from "@nooq/yjs";
 import { applyCaptured, applyTransaction as applyToDoc, newDocument, readState, sealEnvelope, storeDocument, textAuthors, type Captured, type StoredDocument } from "@nooq/yjs";
 import type { TextAuthor } from "@nooq/plugins/dom";
 import { SyncSession, type AwarenessEntry, type Cursor, type OutboxEntry, type SyncTransport } from "@nooq/sync";
-import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type JobStart, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
+import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Immutable, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type JobStart, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
 
 export interface JobBinding { job: Job<any, any> | string; actor: ActorDescriptor; signer?: import("@nooq/core").ActorKey }
 export class AuthorizationError extends Error {
   constructor(readonly reason: string, readonly retryable: boolean) { super(reason); this.name = "AuthorizationError"; }
 }
+
+/**
+ * An error off the sync wire (SW-2), exactly as SyncSession reports it:
+ * a code and an optional message. `code: "envelope-denied"` is the relay
+ * refusing THIS session's own envelope — the local writer's remote denial.
+ */
+export class SessionError extends Error {
+  constructor(readonly code: string, message?: string) { super(message ?? code); this.name = "SessionError"; }
+}
+
+/** SW-2 envelope verdicts, exactly as SyncSession's onAdmission reports them. */
+export type AdmissionVerdict = "allow" | "hold" | "deny";
+/**
+ * The session's admission payload, mirrored verbatim: the verdict and its
+ * reason. The session names no actor or envelope on this channel — identity
+ * travels on onEnvelope, not on the verdict.
+ */
+export type AdmissionListener = (verdict: AdmissionVerdict, reason?: string) => void;
 
 export interface EditorOptions {
   docId: string;
@@ -166,6 +187,10 @@ export class Editor {
   private readonly closeListeners = new Set<() => void>();
   private readonly errorListeners = new Set<(error: PluginError) => void>();
   readonly errors: PluginError[] = [];
+  /** SW-2: listeners for the session's envelope verdicts (§2a access wiring). */
+  private readonly admissionListeners = new Set<AdmissionListener>();
+  /** §2a: actorIds whose envelopes reached onEnvelope with origin "remote". */
+  private readonly verifiedArrivals = new Set<string>();
   private readonly identities = new Map<string, { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }>();
   private readonly selectionListeners = new Set<(selection: SelectionRequest) => void>();
   private readonly jobListeners = new Set<(start: JobStart) => void>();
@@ -226,8 +251,11 @@ export class Editor {
           ...(options.outbox ? { outbox: options.outbox } : {}),
           onEnvelope: (envelope, update) => {
             this.record(envelope.tx);
+            this.verifiedArrivals.add(envelope.signer); // §2a: verified arrival, remote origin only
             this.notifyEnvelope({ envelope, update, origin: "remote" });
           },
+          onAdmission: (verdict, reason) => this.notifyAdmission(verdict, reason),
+          onError: (error) => this.reportError({ phase: "sync", cause: new SessionError(error.code, error.message) }),
           onAwareness: (entry) => {
             this.awareness.set(entry.actor, entry);
             this.scheduleNotify();
@@ -305,6 +333,15 @@ export class Editor {
     this.errors.push(error);
     for (const listener of [this.options.onError, ...this.errorListeners]) if (listener) try { listener(error); } catch (cause) { console.error("nooq error handler failed", cause); }
   }
+  /**
+   * SW-2 (§2a): every envelope verdict this session reaches — allow, hold or
+   * deny with its reason — exactly as the session reports it. The payload
+   * names no actor or envelope; see AdmissionListener.
+   */
+  onAdmission(listener: AdmissionListener): () => void { this.admissionListeners.add(listener); return () => this.admissionListeners.delete(listener); }
+  private notifyAdmission(verdict: AdmissionVerdict, reason?: string): void {
+    for (const listener of [...this.admissionListeners]) try { listener(verdict, reason); } catch (cause) { this.reportError({ phase: "observer", cause }); }
+  }
   onClose(listener: () => void): () => void { if (this.closed) { listener(); return () => {}; } this.closeListeners.add(listener); return () => this.closeListeners.delete(listener); }
   onSelection(listener: (selection: SelectionRequest) => void): () => void { this.selectionListeners.add(listener); return () => this.selectionListeners.delete(listener); }
   /**
@@ -328,6 +365,35 @@ export class Editor {
 
   get synced(): boolean {
     return this.session?.synced ?? false;
+  }
+
+  /**
+   * §2a: the local writer's role. `undefined` on an open document (no access
+   * header) and when this actor is not granted with THIS editor's key — the
+   * editor knows its own key from options, so this is a key-verified answer
+   * (roleOf) without guessing. The owner is implicitly a writer.
+   */
+  myRole(): Role | undefined {
+    const access = this.view.access;
+    if (!access) return undefined;
+    const role = roleOf(access, this.options.actor.actorId, this.identities.get("local")!.publicKey);
+    return role === "none" ? undefined : role;
+  }
+
+  /** §2a: the replicated access header (editor.view.access), or undefined on an open document. */
+  accessState(): Immutable<Access> | undefined {
+    return this.view.access;
+  }
+
+  /**
+   * §2a: actorIds whose envelopes reached onEnvelope with origin "remote" —
+   * each passed admitEnvelope's verify→authorize here, or rode a verified
+   * bootstrap log. The transitive form of "verified" (access memo §2a):
+   * no per-actor state exists beyond arrival, and held or denied peers are
+   * invisible. Never contains the local writer ("local" origin).
+   */
+  arrivedVerified(): ReadonlySet<string> {
+    return this.verifiedArrivals;
   }
 
   /** The projection IS the engine view (DM-9): every core function works on it. */
@@ -753,7 +819,7 @@ export class Editor {
     this.closed = true;
     this.runtime.dispose();
     for (const listener of this.closeListeners) try { listener(); } catch (cause) { this.reportError({ phase: "cleanup", cause }); }
-    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear(); this.jobListeners.clear();
+    this.closeListeners.clear(); this.selectionListeners.clear(); this.listeners.clear(); this.jobListeners.clear(); this.admissionListeners.clear();
     this.session?.close();
     this.ydoc.destroy();
   }

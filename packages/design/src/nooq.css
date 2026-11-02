@@ -303,6 +303,22 @@
 /* An active toggle is the accepted-state treatment: ink-soft ground, ink word (§9). */
 .nq-format .nq-btn[aria-pressed="true"] { background: var(--nq-ink-soft); color: var(--nq-ink); }
 
+/* Access panel (foundation P1, DM-12/13): who can edit this document, in
+   which role — the body of the header's access popover. Rows are ActorChips
+   with their role word trailing; "verified" is the weak verdict (their edits
+   arrived verified here) and idle carries its word, so no state rides color
+   alone (§9). The footnote states the v1 limit plainly: grants are
+   append-only. Nothing animates; the popover owns the fade. */
+.nq-access { display: flex; flex-direction: column; gap: var(--nq-space-3); min-width: 0; }
+.nq-access-rows { display: flex; flex-direction: column; gap: var(--nq-space-2); margin: 0; padding: 0; list-style: none; }
+.nq-access-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nq-space-1); min-width: 0; }
+.nq-access-row .nq-actor-name { overflow-wrap: anywhere; }
+.nq-access-role { margin-inline-start: auto; padding-inline-start: var(--nq-space-2); color: var(--nq-graphite-muted); white-space: nowrap; }
+.nq-access-you { color: var(--nq-graphite-muted); white-space: nowrap; }
+.nq-access-verified { display: inline-flex; align-items: center; color: var(--nq-graphite-muted); }
+.nq-access-idle { color: var(--nq-graphite-muted); white-space: nowrap; }
+.nq-access-note { margin: 0; padding-top: var(--nq-space-2); border-top: 1px solid var(--nq-rule); color: var(--nq-graphite-muted); }
+
 /* Form controls. Errors are words: the border stays rule-strong and nothing
    turns red — stamp is reserved for structure that broke (§9). */
 .nq-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--nq-space-2); }

@@ -3,7 +3,7 @@ import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState,
 import { freezeInPlace, freezeSnapshot, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { notice, presenceCaret, slashMenu, syncStatus } from "@nooq/design";
-import type { Editor } from "./controller.ts";
+import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
 import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { createJobsUI } from "./jobs-ui.ts";
@@ -265,7 +265,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (editor.registry.command("nooq.text.edit")) {
         const result = editor.commands.run("nooq.text.edit", { block: id, changes });
         if (result.status === "failed") throw result.error;
-        if (result.status === "denied") throw new Error(result.reason);
+        // §2a: the structured denial carries retryable through to the notice
+        // layer — a hold is a hold, not a flattened Error(reason).
+        if (result.status === "denied") throw new AuthorizationError(result.reason, result.retryable);
         return result.status === "applied";
       }
       editor.applyTextChanges(id, changes); return true;
@@ -384,7 +386,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       const current = selection(id);
       const result = editor.commands.run(policy.enter.command, current, { selection: current });
       if (result.status === "failed") fail(undefined, result.error);
-      else if (result.status === "denied") fail(undefined, new Error(result.reason));
+      else if (result.status === "denied") fail(undefined, new AuthorizationError(result.reason, result.retryable)); // §2a: retryable survives to the notice layer
       // A declined/denied split is consumed. Falling back to a newline would be a different edit.
     };
     const input = {
@@ -778,14 +780,30 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // The error channel made visible (foundation: Notice) — one non-blocking
   // notice above the document naming the actor and the phase; a newer error
   // replaces it, Dismiss clears it, and it never sits on the input path.
-  const offErrors = editor.onError(error => {
+  // §2a: authorization facts read as what they are — a denial (kind
+  // "denial") or a retryable hold (kind "hold"), word = the reason verbatim.
+  // The generic error notice stays for real errors.
+  const showNotice = (kind: "error" | "hold" | "denial", word: string) => {
     if (surfaceAbort.signal.aborted) return;
+    notices.replaceChildren(notice({ kind, word, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
+  };
+  const offErrors = editor.onError(error => {
+    const cause = error.cause;
+    if (cause instanceof AuthorizationError) { showNotice(cause.retryable ? "hold" : "denial", cause.reason); return; }
+    if (cause instanceof SessionError && cause.code === "envelope-denied") { showNotice("denial", cause.message); return; } // the local writer's envelope, refused by the relay
     const who = error.plugin ?? "The editor";
-    const what = error.cause instanceof Error ? error.cause.message : String(error.cause);
-    notices.replaceChildren(notice({ kind: "error", word: `${who} failed in ${error.phase}: ${what}`, action: { label: "Dismiss", onClick: () => notices.replaceChildren() } }));
+    const what = cause instanceof Error ? cause.message : String(cause);
+    showNotice("error", `${who} failed in ${error.phase}: ${what}`);
+  });
+  // §2a: session admission verdicts — a denied or held envelope says so in
+  // its own words. An allow is the silent majority. Same notice channel as
+  // errors: one notice at a time, latest wins.
+  const offAdmissions = editor.onAdmission((verdict, reason) => {
+    if (verdict === "allow") return;
+    showNotice(verdict === "hold" ? "hold" : "denial", reason ?? (verdict === "hold" ? "held" : "denied"));
   });
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offClose(); closeMenu(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, keymap: keys, textMode, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };
