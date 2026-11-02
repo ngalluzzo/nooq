@@ -397,9 +397,9 @@ The proposal payload:
    `stale` from `conflicted`; whether writers care is an open question.
 6. **Grant revocation and key rotation** — grants are append-only in v1
    (DM-13); removing an actor means forking to a new secured document.
-7. **Bounded holds** — an envelope held for an ungranted signer or an
-   unresolved base (DM-12) may wait indefinitely; peers need an eviction
-   policy that does not change any verdict.
+7. **Bounded holds** — resolved by SYNC Draft 3.3 (SW-6, proposals/0011):
+   holds are bounded by age and count; eviction changes no verdict and is
+   observable; a re-offer reaches the verdict the state then supports.
 
 ## DM-11. What this spec is for
 

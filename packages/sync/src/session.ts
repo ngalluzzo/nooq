@@ -72,7 +72,11 @@ export class SyncSession {
   private syncedFlag = false;
   private closed = false;
   /** DM-13: envelopes held pending grants; retried after every admission. */
-  private readonly pending: Array<{ envelope: Envelope; update: Uint8Array }> = [];
+  private readonly pending: Array<{ envelope: Envelope; update: Uint8Array; heldAt: number }> = [];
+  /** SYNC Draft 3.3 (SW-6, proposals/0011): holds are bounded by age and
+   *  count; eviction changes no verdict and is counted, never silent. */
+  private readonly holdBounds = { maxAgeMs: 10 * 60_000, maxCount: 1_024 };
+  readonly evictions = { age: 0, count: 0 };
   /** SW-4: sent envelopes awaiting confirmation; resent after every handshake. */
   private readonly outboxEntries: OutboxEntry[];
   /** Inbound document messages are handled in arrival order (a relayed burst admits in sequence). */
@@ -245,7 +249,9 @@ export class SyncSession {
       this.options.onAdmission?.(admission.verdict, admission.reason);
       if (admission.verdict === "deny") return; // never applied (DM-13)
       if (admission.verdict === "hold") {
-        this.pending.push({ envelope, update });
+        this.pending.push({ envelope, update, heldAt: Date.now() });
+        this.evictAged();
+        while (this.pending.length > this.holdBounds.maxCount) { this.pending.shift(); this.evictions.count++; }
         return;
       }
       this.options.onEnvelope?.(envelope, update);
@@ -260,11 +266,21 @@ export class SyncSession {
     Y.applyUpdate(this.options.doc, update, REMOTE_ORIGIN);
   }
 
+  /** Draft 3.3: age-bounded eviction — no verdict change, observable. */
+  private evictAged(): void {
+    const now = Date.now();
+    while (this.pending.length > 0 && now - this.pending[0]!.heldAt > this.holdBounds.maxAgeMs) {
+      this.pending.shift();
+      this.evictions.age++;
+    }
+  }
+
   /** Retry held envelopes until none admits: one release can unblock the next. */
   private async retryPending(): Promise<void> {
+    this.evictAged();
     for (let progress = true; progress && this.pending.length > 0;) {
       progress = false;
-      const remaining: Array<{ envelope: Envelope; update: Uint8Array }> = [];
+      const remaining: Array<{ envelope: Envelope; update: Uint8Array; heldAt: number }> = [];
       for (const item of this.pending) {
         const admission = await admitEnvelope(this.options.doc, item.envelope, item.update);
         if (admission.verdict === "hold") remaining.push(item);
@@ -274,7 +290,7 @@ export class SyncSession {
         }
       }
       this.pending.length = 0;
-      this.pending.push(...remaining);
+      this.pending.push(...remaining); // heldAt preserved: still holds from its original arrival
     }
   }
 

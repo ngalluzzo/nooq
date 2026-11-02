@@ -1,6 +1,6 @@
 # nooq Sync Wire Specification
 
-**Status: Draft 3.3 — pre-implementation.** Implements DM-8 of
+**Status: Draft 3.3 — bounded holds (SW-6, proposals/0011); pre-implementation for that clause.** Implements DM-8 of
 [`DOCUMENT-MODEL.md`](DOCUMENT-MODEL.md). Sections are citable as SW-n.
 Semantics live in DM-8; this document pins the envelope, the handshake,
 bootstrap, verification, and the server contract.
@@ -195,6 +195,18 @@ A hosted nooq sync service is a peer that:
   with no later admission to wake it would never be relayed. *(Draft 3.2:
   the reference relay retried once, so envelopes arriving in reverse order
   stayed held.)*
+- MUST bound every hold, by age and by count (DM-10.7 closed by
+  proposals/0011). Defaults: a hold older than **10 minutes**, or the
+  oldest holds beyond **1,024 per document**, are **evicted**. Eviction
+  changes no verdict — an evicted envelope is neither admitted nor
+  denied; it is released from memory, and its sender MAY re-offer (the
+  handshake's full-state exchange re-ships anything still missing). A
+  re-offer re-enters the ordinary path and reaches the verdict the state
+  then supports, identical to any other offer of the same bytes.
+  Eviction MUST be observable — a counter or notice, never silent memory
+  pressure. *(Draft 3.3: bounded holds. Before it, one actor could wedge
+  a peer's memory with holds that never resolve, and an honest envelope
+  waited forever on a late grant.)*
 - MAY evict, rate-limit, or require transport-level authentication —
   these are operational policies on the *connection*, never on
   *document content*. A policy that distinguishes between documents'

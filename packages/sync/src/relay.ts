@@ -59,6 +59,7 @@ interface HeldEnvelope {
   envelope: Envelope;
   update: Uint8Array;
   raw: string;
+  heldAt: number;
 }
 
 export class NooqRelay {
@@ -95,6 +96,28 @@ export class NooqRelay {
   /** The relay's persisted view, for tests. */
   stored(docId: string): Y.Doc | undefined {
     return this.docs.get(docId);
+  }
+
+  /** Draft 3.3 observability (SW-6, proposals/0011): holds and evictions are countable, never silent. */
+  heldCount(docId: string): number { return this.held.get(docId)?.length ?? 0; }
+  evictionCounters(): { age: number; count: number } { return { ...this.evictions }; }
+
+  /** @internal test seam: evict holds older than `maxAgeMs` (default: the SW-6 bound). */
+  evictAllAged(docId: string, maxAgeMs = 10 * 60_000): void {
+    const held = this.held.get(docId);
+    if (held) { this.evictAged(docId, held); this.evictOlderThan(held, maxAgeMs); }
+  }
+  private evictOlderThan(held: HeldEnvelope[], maxAgeMs: number): void {
+    const now = Date.now();
+    while (held.length > 0 && now - held[0]!.heldAt > maxAgeMs) { held.shift(); this.evictions.age++; }
+  }
+
+  /** @internal test seam: stress the count bound directly. */
+  floodHolds(docId: string, n: number): void {
+    let held = this.held.get(docId);
+    if (!held) { held = []; this.held.set(docId, held); }
+    for (let i = 0; i < n; i++) held.push({ envelope: { updateDigest: `flood-${docId}-${i}` } as Envelope, update: new Uint8Array(), raw: "", heldAt: Date.now() });
+    while (held.length > 1_024) { held.shift(); this.evictions.count++; }
   }
 
   envelopesOf(docId: string): Array<{ envelope: Envelope; update: Uint8Array }> {
@@ -143,17 +166,35 @@ export class NooqRelay {
     }
     if (admission.verdict === "hold") {
       const held = this.held.get(docId)!;
-      if (!held.some((item) => item.envelope.updateDigest === envelope.updateDigest)) held.push({ envelope, update, raw });
+      if (!held.some((item) => item.envelope.updateDigest === envelope.updateDigest)) {
+        held.push({ envelope, update, raw, heldAt: Date.now() });
+        // SYNC Draft 3.3 (SW-6, proposals/0011): holds bounded by age and
+        // count; eviction changes no verdict and is counted, never silent.
+        this.evictAged(docId, held);
+        while (held.length > 1_024) { held.shift(); this.evictions.count++; }
+      }
       return "hold";
     }
     return "deny";
   }
+
+  /** Draft 3.3: age-bounded eviction per document. */
+  private evictAged(docId: string, held: HeldEnvelope[]): void {
+    const now = Date.now();
+    while (held.length > 0 && now - held[0]!.heldAt > 10 * 60_000) {
+      held.shift();
+      this.evictions.age++;
+    }
+  }
+
+  readonly evictions = { age: 0, count: 0 };
 
   /** Re-evaluate held envelopes after any admission (grants or predecessors may have arrived), until none admits. */
   private async releaseHeld(docId: string, server: SyncTransport): Promise<void> {
     for (let progress = true; progress;) {
       progress = false;
       const queue = this.held.get(docId) ?? [];
+      this.evictAged(docId, queue);
       const remaining: HeldEnvelope[] = [];
       for (const item of queue) {
         const verdict = await this.verifyAndAdmit(docId, item.envelope, item.update, item.raw);
