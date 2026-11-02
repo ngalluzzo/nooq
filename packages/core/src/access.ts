@@ -11,7 +11,7 @@
 import type { Envelope } from "./actor.ts";
 import { canonicalJson } from "./canonical.ts";
 import { fingerprint } from "./digest.ts";
-import type { Access, ActorKind, Grant, Role } from "./model.ts";
+import type { Access, ActorId, ActorKind, Grant, Role } from "./model.ts";
 import { registrationMatches } from "./registry.ts";
 
 export const SUGGESTION_TYPE = "nooq.suggestion/v1";
@@ -54,21 +54,45 @@ export function wellFormedAccess(value: unknown): value is Access {
     const pin = value as { docId?: unknown; checkpoint?: unknown } | null;
     return value === undefined || (!!pin && typeof pin.docId === "string" && pin.docId !== "" && (pin.checkpoint === null || typeof pin.checkpoint === "string"));
   };
+  const epochOf = (value: { epoch?: number }) => value.epoch === undefined || (Number.isInteger(value.epoch) && value.epoch >= 0);
+  const revokedOk = (a: Access) => a.revoked === undefined || (Array.isArray(a.revoked) && a.revoked.every((id) => typeof id === "string" && id !== "" && id !== a.owner.actorId) && new Set(a.revoked).size === a.revoked.length);
   return !!access && party(access.owner) && typeof access.nonce === "string" && access.nonce !== "" && Array.isArray(access.grants)
-    && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role)) && lineage(access.rebasedFrom);
+    && epochOf(access) && revokedOk(access) && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role) && epochOf(grant) && (grant.epoch ?? 0) <= (access.epoch ?? 0))
+    && lineage(access.rebasedFrom);
 }
 
-/** The owner or grant naming this actor, if any (owner first). */
-function partyOf(access: Access, actorId: string): (Pick<Grant, "actorId" | "key" | "kind"> & { role: Role; owner: boolean }) | undefined {
+/** DM-13.6: absent epoch means 0 — pre-epoch documents read identically. */
+const epoch = (value: { epoch?: number }): number => value.epoch ?? 0;
+
+/** The owner or grant naming this actor, if any (owner first) — ANY epoch,
+ *  for impersonation checks: an actorId listed with a different key is an
+ *  impersonation attempt whether or not their grant still authorizes. */
+function anyPartyOf(access: Access, actorId: string): (Pick<Grant, "actorId" | "key" | "kind"> & { role: Role; owner: boolean }) | undefined {
   if (access.owner.actorId === actorId) return { ...access.owner, role: "writer", owner: true };
   const grant = access.grants.find((candidate) => candidate.actorId === actorId);
   return grant ? { ...grant, owner: false } : undefined;
 }
 
+/** The party that authorizes NOW: the owner, or a grant at the current epoch
+ *  (DM-13.6). A grant left behind by rotation no longer admits its actor. */
+export function partyOf(access: Access, actorId: string): (Pick<Grant, "actorId" | "key" | "kind"> & { role: Role; epoch?: number; owner: boolean; stale?: boolean }) | undefined {
+  if (access.owner.actorId === actorId) return { ...access.owner, role: "writer", owner: true };
+  const current = epoch(access);
+  const grant = access.grants.find((candidate) => candidate.actorId === actorId);
+  if (!grant) return undefined;
+  return epoch(grant) === current ? { ...grant, owner: false } : { ...grant, owner: false, stale: true };
+}
+
+/** DM-13.6: the revoked roll — for the removed surface ("removed" badge,
+ *  history event line) and nothing else. */
+export function removedActors(_previous: Access, current: Access): ActorId[] {
+  return current.revoked ?? [];
+}
+
 export function roleOf(access: Access | undefined, actorId: string, key: string | undefined): Role | "none" {
   if (!access) return "writer"; // open document: no rules but the CRDT's
   const party = partyOf(access, actorId);
-  return party && key !== undefined && party.key === key ? party.role : "none";
+  return party && !party.stale && key !== undefined && party.key === key ? party.role : "none";
 }
 
 /**
@@ -78,7 +102,7 @@ export function roleOf(access: Access | undefined, actorId: string, key: string 
  */
 export function keyMismatch(access: Access | undefined, actorId: string, key: string | undefined): boolean {
   if (!access || key === undefined) return false;
-  const party = partyOf(access, actorId);
+  const party = anyPartyOf(access, actorId);
   return party !== undefined && party.key !== key;
 }
 
@@ -87,10 +111,42 @@ export function accessExtends(current: Access, next: unknown): boolean {
   if (!wellFormedAccess(next)) return false;
   if (canonicalJson(next.owner) !== canonicalJson(current.owner) || next.nonce !== current.nonce) return false;
   if (canonicalJson(next.rebasedFrom ?? null) !== canonicalJson(current.rebasedFrom ?? null)) return false;
-  if (next.grants.length < current.grants.length) return false;
-  if (canonicalJson(next.grants.slice(0, current.grants.length)) !== canonicalJson(current.grants)) return false;
-  const ids = new Set([current.owner.actorId]);
-  return next.grants.every((grant) => !ids.has(grant.actorId) && ids.add(grant.actorId));
+  const currentEpoch = epoch(current), nextEpoch = epoch(next);
+  if (nextEpoch === currentEpoch) {
+    // Same epoch: grants only grow, prefix-preserved, no duplicates (DM-13).
+    if (next.grants.length < current.grants.length) return false;
+    if (canonicalJson(next.grants.slice(0, current.grants.length)) !== canonicalJson(current.grants)) return false;
+    const ids = new Set([current.owner.actorId]);
+    const rollStable = canonicalJson(next.revoked ?? []) === canonicalJson(current.revoked ?? []);
+    return next.grants.every((grant) => !ids.has(grant.actorId) && ids.add(grant.actorId)) && rollStable;
+  }
+  if (nextEpoch === currentEpoch + 1) {
+    // DM-13.6 (proposals/0012): ROTATION. Every surviving current-epoch grant
+    // is re-stamped at the next epoch — same actor, key, kind, role; omitted
+    // actors are revoked. New actors may join at the new epoch. No duplicates.
+    // Every kept actor keeps their identity, key, kind and role — re-stamped
+    // at the next epoch; omitted actors are revoked (the owner MAY omit any
+    // current grant). New actors may join. No silent rewrites, no duplicates,
+    // the owner is never a grant.
+    const before = new Map(current.grants.filter(g => epoch(g) === currentEpoch).map(g => [g.actorId, g]));
+    const nextIds = new Set(next.grants.map(g => g.actorId));
+    if (nextIds.has(next.owner.actorId)) return false;
+    const keptHonest = next.grants.every(n => {
+      if (epoch(n) !== nextEpoch) return false;
+      const prior = before.get(n.actorId);
+      return prior === undefined || (prior.key === n.key && prior.kind === n.kind && prior.role === n.role);
+    });
+    const unique = nextIds.size === next.grants.length;
+    // The revoked roll is append-only and grows by exactly the omitted
+    // current-epoch actors (DM-13.6).
+    const omitted = [...before.keys()].filter(id => !nextIds.has(id));
+    const priorRoll = current.revoked ?? [];
+    const rollExact = (next.revoked ?? []).length === priorRoll.length + omitted.length
+      && omitted.every(id => (next.revoked ?? []).includes(id))
+      && priorRoll.every(id => (next.revoked ?? []).includes(id));
+    return keptHonest && unique && rollExact;
+  }
+  return false; // epochs advance one at a time; they never go backward
 }
 
 /**
@@ -116,6 +172,11 @@ export function authorize(
 
   if (keyMismatch(access, signer, signerKey)) return "deny";
   const party = partyOf(access, signer);
+  // DM-13.6 (proposals/0012): REVOKED — a grant left behind by rotation, or
+  // an actor on the revoked roll — denies, never holds. They were granted,
+  // and are no longer. (A peer that has not synced the rotation still sees
+  // the old epoch and admits: eventual, per device at sync time.)
+  if (party?.stale || (!party && (access.revoked ?? []).includes(signer))) return "deny";
   if (!party || signerKey === undefined) return "hold"; // validly signed, not granted yet
 
   // DM-13: kinds are granted, not claimed.

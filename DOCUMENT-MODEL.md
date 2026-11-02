@@ -1,6 +1,6 @@
 # nooq Document Model & Transaction Protocol
 
-**Status: Draft 1.10 — pre-implementation.** This spec converts
+**Status: Draft 1.11 — grant epochs and revocation (DM-13.6, proposals/0012).** This spec converts
 [`PHILOSOPHY.md`](PHILOSOPHY.md) into semantics. It is expected to be
 revised by contact with reality, in public, under governance. Sections are
 citable by number ("DM-3 forbids that").
@@ -395,8 +395,10 @@ The proposal payload:
    (per-run) evidence would reduce false staleness.
 5. **Suggestion UX for structural conflicts** — the data model distinguishes
    `stale` from `conflicted`; whether writers care is an open question.
-6. **Grant revocation and key rotation** — grants are append-only in v1
-   (DM-13); removing an actor means forking to a new secured document.
+6. **Grant revocation and key rotation** — resolved by DM-13.6
+   (proposals/0012): epoch rotation revokes writes eventually and
+   observably; fork remains the tool for revoking reads; no design
+   un-gives knowledge, and the pitch says so.
 7. **Bounded holds** — resolved by SYNC Draft 3.3 (SW-6, proposals/0011):
    holds are bounded by age and count; eviction changes no verdict and is
    observable; a re-offer reaches the verdict the state then supports.
@@ -506,10 +508,25 @@ The document header gains an optional `access` value:
   secured document. Absence of `access` therefore never turns a secured
   document open, and no arrival order decides who owns a document.
 - `access` is written only by owner-signed envelopes (DM-12). The owner,
-  nonce and lineage pin (`rebasedFrom`, DM-16) never change, and each
-  write's grants MUST extend the current grants unchanged (append-only in v1; revocation means forking,
-  DM-10.6). Deleting or rewriting `access` any other way is an access
-  write and is denied.
+  nonce and lineage pin (`rebasedFrom`, DM-16) never change. Deleting or
+  rewriting `access` any other way is an access write and is denied.
+- **Grant epochs and revocation (DM-13.6, Draft 1.11,
+  proposals/0012).** `access` carries an `epoch` counter (absent = 0)
+  and each grant cites the epoch it authorizes at. Within one epoch
+  grants are append-only. **Revocation is rotation**: an owner-signed
+  access write advances the epoch by exactly one, re-stamps every kept
+  grant at the new epoch with its actor, key, kind and role unchanged,
+  may add new actors, and MUST list every omitted actor on the
+  append-only `revoked` roll. A signer on the roll — or holding a grant
+  left behind by rotation — is **denied**, never held: they were
+  granted, and are no longer. Re-granting at a later epoch un-revokes
+  (the current grant wins over the roll). Revocation takes effect per
+  device at sync time — eventual, like every merge; a write admitted by
+  a not-yet-synced peer lands with provenance and is never rolled back.
+  For stopping a removed actor's *reads* too, fork remains the
+  documented incident tool (DM-10.6 closed by this section). The UI
+  labels the actor ("removed" badge, one history event line), never the
+  mechanics — per the owner's recorded product decisions.
 - **Kinds are granted.** Each grant (and the owner) binds a `kind`. An
   envelope's `tx.actor.kind` MUST equal its signer's granted kind; in an
   adoption, the proposer's kind MUST equal the proposer's grant when one

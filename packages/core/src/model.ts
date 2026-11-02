@@ -69,14 +69,29 @@ export interface Grant {
   /** The kind this actor's transactions must claim (DM-13, Draft 1.7). */
   kind: ActorKind;
   role: Role;
+  /** DM-13.6 (proposals/0012): the epoch this grant authorizes at. A grant
+   *  admits only while it matches `access.epoch`; absent = 0 (pre-epoch
+   *  documents). Revocation is rotation: the next epoch's grant list simply
+   *  omits the actor. */
+  epoch?: number;
 }
 
 export interface Access {
   owner: { actorId: ActorId; key: string; kind: ActorKind };
-  /** Append-only in v1 (DM-13); revocation is a fork (DM-10.6). */
+  /** Append-only within an epoch; revocation is epoch rotation (DM-13.6,
+   *  proposals/0012 — DM-10.6 closed by it). Absent epoch = 0. */
   grants: Grant[];
   /** With `owner`, fingerprints into a secured document's ID (DM-13). */
   nonce: string;
+  /** DM-13.6 (proposals/0012): rotations advance this counter; grants cite
+   *  the epoch they authorize at. Revocation takes effect per device at
+   *  sync time — eventual, like every merge. */
+  epoch?: number;
+  /** DM-13.6: actors dropped by a rotation. Append-only across rotations —
+   *  un-revoking is a fresh grant at a later epoch (the current grant wins).
+   *  A revoked signer with no current grant is DENIED, never held: they were
+   *  granted, and are no longer. */
+  revoked?: ActorId[];
   /** DM-16: the lineage this one was rebased from. Set at genesis, never changed. */
   rebasedFrom?: { docId: string; checkpoint: string | null };
 }
