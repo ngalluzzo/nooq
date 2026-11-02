@@ -93,27 +93,77 @@ export const LiveRotation: Story = {
   },
 };
 
-/** The rotation dialog: the re-signing bill before the epoch advances. */
+/** The rotation dialog: the re-signing bill before the epoch advances.
+ *  Deterministic — the bill derives from the real buildRotation over a
+ *  realistic access shape; the wire itself is LiveRotation's to prove. */
 export const RotationDialog: Story = {
   render: () => {
     const wrap = document.createElement("div");
     wrap.style.display = "grid";
     wrap.style.gap = "1rem";
-    void buildLive(wrap, document.createElement("ul"), { withDialog: true });
+    const panelMount = document.createElement("div");
+    wrap.append(panelMount);
+    void (async () => {
+      const { buildRotation } = await import("../../editor/src/index.ts");
+      const { dialog, accessPanel } = await import("../src/index.ts");
+      const access = {
+        owner: { actorId: "human:maya", key: "k-owner", kind: "human" },
+        grants: [
+          { actorId: "human:tomas", key: "k-tomas", kind: "human", role: "writer", epoch: 0 },
+          { actorId: "human:priya", key: "k-priya", kind: "human", role: "reader", epoch: 0 },
+        ],
+        nonce: "n",
+        epoch: 0,
+      };
+      const renderPanel = (removed: boolean) => panelMount.replaceChildren(accessPanel({
+        self: { actorId: "human:maya", name: "Maya", role: "writer" },
+        entries: [
+          { actorId: "human:tomas", name: "Tomás", ink: "teal", role: "writer", ...(removed ? { removed: true } : {}) },
+          { actorId: "human:priya", name: "Priya", ink: "violet", role: "reader" },
+        ],
+      }));
+      renderPanel(false);
+      // The SAME rotation the commit builds previews the bill (0012 Q3).
+      const preview = buildRotation(structuredClone(access) as never, ["human:tomas"]);
+      const keepers = preview.grants.filter(g => (g.epoch ?? 0) === (preview.epoch ?? 1)).length;
+      const devices = 3;
+      const ul = document.createElement("ul");
+      const li = (text: string) => { const item = document.createElement("li"); item.textContent = text; return item; };
+      ul.append(
+        li("Tomás can no longer edit this document."),
+        li(`${keepers === 1 ? "1 writer and reader" : keepers + " writers and readers"} keep access — their grants re-sign in this one transaction.`),
+        li(`${devices} connected devices see the change; other devices get it when they sync.`),
+      );
+      const body = document.createElement("div");
+      body.className = "nq-rotation-bill";
+      body.append(ul);
+      const note = document.createElement("p");
+      note.className = "nq-ui-caption";
+      note.textContent = "History keeps the removal: \"Tomás was removed from this document.\"";
+      body.append(note);
+      void dialog({
+        title: "Remove Tomás from this document?",
+        body,
+        actions: [
+          { label: "Cancel" },
+          { label: "Remove", variant: "danger", onClick: () => renderPanel(true) },
+        ],
+      });
+    })();
     return wrap;
   },
   play: async ({ canvasElement }) => {
     // The dialog mounts to document.body, not the story canvas — query the page.
-    await waitFor(() => expect(document.querySelector(".nq-dialog-title")?.textContent).toBe("Remove Tomás from this document?"), { timeout: 30_000 });
+    await waitFor(() => expect(document.querySelector(".nq-dialog-title")?.textContent).toBe("Remove Tomás from this document?"), { timeout: 15_000 });
     const bill = document.querySelectorAll(".nq-rotation-bill li");
     await expect(bill.length).toBe(3);
     await expect(bill[0]?.textContent).toBe("Tomás can no longer edit this document.");
     await expect(bill[1]?.textContent).toContain("keep access — their grants re-sign in this one transaction.");
     await expect(bill[2]?.textContent).toContain("see the change; other devices get it when they sync.");
-    // Confirm: the epoch advances, the badge and the sentence land — in the canvas.
+    // Confirm: the badge lands in the canvas.
     const remove = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent === "Remove");
     remove?.click();
-    await waitFor(() => expect(canvasElement.querySelector(".nq-access-removed")?.textContent).toBe("removed"), { timeout: 15_000 });
+    await waitFor(() => expect(canvasElement.querySelector(".nq-access-removed")?.textContent).toBe("removed"), { timeout: 5_000 });
   },
 };
 
