@@ -1,9 +1,8 @@
 # Proposal 0012: grant revocation — what "firing someone" can mean
 
-**Status: DRAFT — not yet opened. Drafted: 2026-11-02. Awaits the
-product owner's answers to §4 before the window opens.** Closes
-DM-10.6. No text below is decided; this document exists to make the
-tradeoffs legible enough to decide.
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Opened: 2026-11-02. Decision of record: issue #8.** All three §4
+product questions answered by the owner (2026-11-02). Closes DM-10.6.
 
 ## 1. The theorem first
 
@@ -55,7 +54,7 @@ honesty matches the system's existing convergence story. A remains what
 you reach for when the question isn't "stop their pen" but "stop their
 eyes" — and the pitch should say so plainly.
 
-## 4. Product decisions (1 and 2 answered 2026-11-02 by the owner)
+## 4. Product decisions (all three answered 2026-11-02 by the owner)
 
 1. **Eventual write-revocation is accepted.** Epochs are the everyday
    answer; fork stays the documented incident tool for "stop their eyes
@@ -73,10 +72,9 @@ eyes" — and the pitch should say so plainly.
      "X left the conversation" and a late message. The mechanics
      sentence ("edit admitted after removal reached this device") lives
      in the provenance detail pane and the spec, nowhere human-facing.
-3. **Rotation cost disclosure — OPEN.** Every epoch bump re-signs the
-   surviving grants; suggested default: no limit, but the owner sees
-   the re-signing bill before confirming (N devices, M surviving
-   grants).
+3. **Rotation cost disclosure — accepted as suggested (2026-11-02).**
+   No limit on rotation, but the owner sees the re-signing bill
+   before confirming (N devices, M surviving grants).
 
 ## 5. What lands if you say go
 

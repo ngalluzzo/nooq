@@ -1,8 +1,10 @@
 # Experience budgets (EXPERIENCE-BUDGETS.md): the lab runs on this change and
 # on its base commit, on the same runner in the same job, and the regression
-# gate compares the two (EB-6). Absolute budgets run in report mode
-# (NQ_LAB_GATE=report) until the reference editor first meets them; switch to
-# enforce by removing that variable.
+# gate compares the two (EB-6). ENFORCED since 2026-11-02: the reference
+# editor meets every budget (EB-5 0.2ms; EB-6 all four conditions; EB-7 zero
+# violations both seeds; EB-8 <=840ms loads). If CI's slower runners trip an
+# absolute gate that passes on faster machines, the budget doc's per-runner
+# floor comparison is the arbiter — not a silent flip back to report.
 name: lab
 
 on:
@@ -16,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      NQ_LAB_GATE: report
+      NQ_LAB_GATE: enforce
     steps:
       - uses: actions/checkout@v4
         with:
