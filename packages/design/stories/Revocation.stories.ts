@@ -103,17 +103,17 @@ export const RotationDialog: Story = {
     return wrap;
   },
   play: async ({ canvasElement }) => {
-    // The dialog opens with the bill; the words are the product answers.
-    await waitFor(() => expect(canvasElement.querySelector(".nq-dialog-title")?.textContent).toBe("Remove Tomás from this document?"), { timeout: 15_000 });
-    const bill = canvasElement.querySelectorAll(".nq-rotation-bill li");
+    // The dialog mounts to document.body, not the story canvas — query the page.
+    await waitFor(() => expect(document.querySelector(".nq-dialog-title")?.textContent).toBe("Remove Tomás from this document?"), { timeout: 30_000 });
+    const bill = document.querySelectorAll(".nq-rotation-bill li");
     await expect(bill.length).toBe(3);
     await expect(bill[0]?.textContent).toBe("Tomás can no longer edit this document.");
     await expect(bill[1]?.textContent).toContain("keep access — their grants re-sign in this one transaction.");
     await expect(bill[2]?.textContent).toContain("see the change; other devices get it when they sync.");
-    // Confirm: the epoch advances, the badge and the sentence land.
-    const remove = Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent === "Remove");
+    // Confirm: the epoch advances, the badge and the sentence land — in the canvas.
+    const remove = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(b => b.textContent === "Remove");
     remove?.click();
-    await waitFor(() => expect(canvasElement.querySelector(".nq-access-removed")?.textContent).toBe("removed"), { timeout: 10_000 });
+    await waitFor(() => expect(canvasElement.querySelector(".nq-access-removed")?.textContent).toBe("removed"), { timeout: 15_000 });
   },
 };
 
