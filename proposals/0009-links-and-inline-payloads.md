@@ -1,6 +1,6 @@
 # Proposal 0009: links and inline payloads
 
-**Status: ACCEPTED — direction of record, locked 2026-11-01.** Covers an
+**Status: ACCEPTED — direction of record, locked 2026-11-01. Decision of record: issue #10 (retroactive).** Covers an
 amendment to the plugin API (text policies gain a mark grammar and renderer
 contributions; `@nooq/plugins` gains one recipe) and one reserved mark. **No
 DOCUMENT-MODEL change and no digest change — that is the point of the design.**

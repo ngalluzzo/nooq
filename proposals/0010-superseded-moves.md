@@ -1,6 +1,6 @@
 # Proposal 0010: superseded moves
 
-**Status: ACCEPTED — direction of record, locked 2026-11-02.** Covers a
+**Status: ACCEPTED — direction of record, locked 2026-11-02. Decision of record: issue #11 (retroactive).** Covers a
 DOCUMENT-MODEL amendment (new DM-4.9; DM-10.1 closes to point at it) and one
 editor surface. A philosophy-adjacent document change is a significant change
 under GOVERNANCE: this proposal is the public record, open for review; the

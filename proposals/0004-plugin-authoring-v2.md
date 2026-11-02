@@ -1,6 +1,10 @@
 # Proposal 0004: plugin authoring v2
 
-Status: slices 1–4 and compatible leaf-block merging implemented; subtree restructuring, native IME acceptance, and performance gates remain open. Additive to plugin API version 1.
+**Status: DRAFT — not yet opened.** The window opens when the remaining
+implementation (subtree restructuring, native IME acceptance, performance
+gates) lands or the authors call it ready; it is additive to plugin API
+version 1 and will cite its decision-of-record issue here from opening.
+Implementation so far: slices 1–4 and compatible leaf-block merging.
 Date: 2026-10-31.
 
 ## Decision
