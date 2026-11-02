@@ -1,7 +1,7 @@
 # Proposal 0011: bounded holds
 
 **Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
-Opened: 2026-11-02. Decision of record: pending.** Covers one SYNC
+Opened: 2026-11-02. Decision of record: issue #7.** Covers one SYNC
 amendment (a new clause in SW-6, Draft 3.3) closing DM-10.7, and the
 corresponding reference implementations (session and relay). No wire
 change, no verdict-semantics change — which is the whole point.
