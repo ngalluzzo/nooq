@@ -26,8 +26,8 @@ test("defineDOMPlugin rejects a namespace poach with an error that names the rul
 });
 
 test("defineDOMPlugin rejects a foreign bare base with an error that names the rule", () => {
-  expect(() => defineDOMPlugin({ id: "acme.mentions", forPlugin: headless, views: [view(defineTextPolicy({ marks: ["highlight"] }))] }))
-    .toThrow(/Bare mark base "highlight" is reserved for nooq/);
+  expect(() => defineDOMPlugin({ id: "acme.mentions", forPlugin: headless, views: [view(defineTextPolicy({ marks: ["fuchsia"] }))] }))
+    .toThrow(/Bare mark base "fuchsia" is reserved for nooq/);
   expect(() => validateMarkBases(["em", "link"], "acme.mentions")).not.toThrow();
   expect(() => validateMarkBases(["acme.mentions.note"], "acme.mentions")).not.toThrow();
   expect(() => validateMarkBases(["acme.hijack"], "acme.mentions")).toThrow(/outside plugin/);
