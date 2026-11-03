@@ -34,7 +34,7 @@ nooq's code (not its aspirations) and BlockNote's current docs.
 |---|---|---|---|
 | **Code blocks with highlighting** | ❌ | ✅ (CodeMirror) | Medium — 0003 already decides this: CM embedded in node views. Blocked on the PM surface's node views |
 | **Paste from markdown/HTML** | ❌ (types as plain) | ✅ both | Medium — a parser mapping to nooq ops; the export engine's shape (block formatters) inverts |
-| **Tables** | ❌ | ✅ (XL) | Large — a genuinely hard structure (rows, cells, row/col ops). BlockNote ships it as XL; our answer needs a DM decision first |
+| **Tables** | 🔵 drafted (proposals/0015) — a table is a tree; ZERO model changes, the work is surface; opens with stage 1 | ✅ (XL tier) | The trap dissolved: every table op is an ordinary block op already built |
 | **Images / embeds** | ✅ v1 (plugin-image) — URL + host upload + digest field; blobs drafted as proposals/0014 | ✅ | v1 shipped; the content-addressed blob layer awaits its window |
 
 ### Tier 3 — the first week
