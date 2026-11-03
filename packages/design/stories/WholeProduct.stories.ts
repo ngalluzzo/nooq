@@ -64,40 +64,50 @@ async function stage(): Promise<HTMLElement> {
   const ai = new Editor({ docId, actor: { actorId: "ai:reference", name: "Reference", model: "qwen3-8b" }, key: aiKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
   await settled(6);
 
-  // Tomás writes first — provenance lands before Maya's eyes open.
+  // The document is the team's own weekly — real prose, real structure;
+  // every block type earns its place because the document calls for it.
   const insert = (editor: Editor, type: string, text: string, fields: Record<string, import("@nooq/core").JsonValue> = {}): string => editor.insertBlock({ type, parent: null, text, fields });
-  insert(maya, "nooq.title/v1", "The weekly build");
-  insert(maya, "nooq.paragraph/v1", "Everything the sprint shipped, in one document, on the real wire.");
-  insert(maya, "nooq.heading/v1", "Structure", { level: 2 });
-  const bullet = insert(maya, "nooq.list/v1", "Lists nest and merge", { kind: "bullet" });
-  maya.insertBlock({ type: "nooq.list/v1", parent: bullet, text: "Concurrent edits keep both writers", fields: { kind: "bullet" } });
-  insert(maya, "nooq.list/v1", "To-dos are one undoable write", { kind: "check" });
+  insert(maya, "nooq.title/v1", "nooq weekly — the surface sprint");
+  insert(maya, "nooq.paragraph/v1", "This week we closed the gap audit end to end. The audit asked what a skeptic reaches for in the first hour; every item on that list now ships, and the receipts are in the lab.");
+  insert(maya, "nooq.heading/v1", "Shipped", { level: 2 });
+  const first = insert(maya, "nooq.list/v1", "The writing surface: lists, levels, dividers, the drag handle", { kind: "bullet" });
+  maya.insertBlock({ type: "nooq.list/v1", parent: first, text: "Paste round-trips markdown both directions — pinned by test", fields: { kind: "bullet" } });
+  insert(maya, "nooq.list/v1", "Code blocks with real highlighting, math, diagrams, images", { kind: "bullet" });
+  insert(maya, "nooq.list/v1", "Tables: three stages, the ragged-row decision held under gesture", { kind: "bullet" });
+  insert(maya, "nooq.heading/v1", "The digest change", { level: 2 });
+  insert(maya, "nooq.paragraph/v1", "Mark runs landed: the canonical text form compacted, identity re-derived once, the whole suite green without a single digest change. The derivation is one function:");
+  insert(maya, "nooq.code/v1", "const textDigest = await fingerprint({ s: text.s, runs: runsOf(text) });", { lang: "ts" });
+  insert(maya, "nooq.paragraph/v1", "The overhead bound, measured and pinned:");
+  insert(maya, "nooq.math/v1", "\\text{overhead} = \\frac{|runs|}{|s|} < 1\\%");
+  insert(maya, "nooq.heading/v1", "How a write travels", { level: 2 });
+  insert(maya, "nooq.diagram/v1", "flowchart LR\n  W[Writer] --signed--> E[Envelope]\n  E --> R[Relay]\n  R --verified--> P[Peers]");
   insert(maya, "nooq.divider/v1", "");
-  insert(maya, "nooq.heading/v1", "The crafts", { level: 2 });
-  insert(maya, "nooq.code/v1", "const verdict = await admit(envelope); // signed, verified", { lang: "ts" });
-  insert(maya, "nooq.math/v1", "P(\\text{merge}) = 1");
-  insert(maya, "nooq.diagram/v1", "flowchart LR\n  M[Maya] --signed--> D[(the document)]\n  T[Tomás] --signed--> D");
-  insert(maya, "nooq.image/v1", "A caption is signed text", { src: "https://placehold.co/640x360/f2f0e5/555b6a?text=nooq" });
-  maya.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
-  maya.commands.run(insertTable, { parent: null }); // no index: appends
+  insert(maya, "nooq.heading/v1", "Status", { level: 2 });
+  maya.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "" });
+  maya.commands.run(insertTable, { parent: null });
   const tableId = [...maya.view.roots].reverse().find(id => maya.view.blocks[id]!.type === "nooq.table/v1")!;
   const rows = maya.view.blocks[tableId]!.children as string[];
-  (maya.view.blocks[rows[1]!]!.children as string[]).forEach((cell, i) => maya.commands.run("nooq.text.edit", { block: cell, changes: [{ insert: ["Build", "Verify", "Ship"][i] ?? "" }] }));
+  const cells = (row: string): string[] => maya.view.blocks[row]!.children as string[];
+  cells(rows[0]!).forEach((cell, i) => maya.commands.run("nooq.text.edit", { block: cell, changes: [{ insert: ["Area", "State", "Next"][i] ?? "" }] }));
+  cells(rows[1]!).forEach((cell, i) => maya.commands.run("nooq.text.edit", { block: cell, changes: [{ insert: ["Trust layer", "Done", "Ratifies Nov 9"][i] ?? "" }] }));
   maya.commands.run(toggleHeaderRow, { row: rows[0]! });
+  insert(maya, "nooq.paragraph/v1", "The budget graph, for the wall:");
+  insert(maya, "nooq.image/v1", "EB-6 keystroke p95 across the sprint — flat where it matters", { src: "https://placehold.co/640x360/f2f0e5/555b6a?text=p95+by+week" });
+  insert(maya, "nooq.heading/v1", "Open", { level: 2 });
+  insert(maya, "nooq.list/v1", "Set the column-gesture budget from the measurement", { kind: "check" });
+  insert(maya, "nooq.list/v1", "Mermaid sizing on narrow screens", { kind: "check", checked: true });
   await settled(6);
 
-  // The AI proposes — the suggestion awaits review.
-  const target = insert(tomas, "nooq.paragraph/v1", "The verdict column: ");
+  // Tomás writes where he's working; the AI proposes the verdict's ending.
+  const target = insert(tomas, "nooq.paragraph/v1", "The verdict so far: ");
   await settled(6);
   await ai.propose({
     actor: { actorId: "ai:reference", name: "Reference", model: "qwen3-8b" },
-    ops: [{ op: "textEdit", block: target, changes: [{ insert: "every write carries its writer." }] }],
+    ops: [{ op: "textEdit", block: target, changes: [{ insert: "a skeptic's first hour is covered, with receipts." }] }],
     evidence: [target],
     intent: "complete-the-verdict",
   });
   await settled(6);
-
-  // Tomás present, cursor live.
   tomas.setCursor({ block: target, offset: 4 });
 
   const header = createDocumentHeader(maya, { selfName: "Maya" });
