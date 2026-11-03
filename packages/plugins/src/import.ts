@@ -94,6 +94,23 @@ export function importMarkdown(markdown: string): ImportedBlock[] {
   for (let lineAt = 0; lineAt < lines.length; lineAt++) {
     const original = lines[lineAt]!;
     if (original.trim() === "") { pendingBlank = true; continue; }
+    // Display math (plugin-math): $$ opens and closes, the LaTeX verbatim.
+    if (original.trim() === "$$") {
+      const body: string[] = [];
+      lineAt++;
+      for (; lineAt < lines.length && lines[lineAt]!.trim() !== "$$"; lineAt++) body.push(lines[lineAt]!);
+      const mathNode: Block = {
+        id: newBlockId(), type: "nooq.math/v1",
+        fields: {} as Block["fields"],
+        text: { s: body.join("\n"), marks: body.join("\n").split("").map(() => []) },
+        children: [],
+        attribution: { created: { actor: "" }, fields: {} },
+      };
+      stack.length = 1; listDepth.length = 1; // a fence closes every open list
+      roots.push({ data: mathNode, children: [] });
+      pendingBlank = false;
+      continue;
+    }
     // Fenced code (plugin-code): ```lang opens, the body is verbatim until
     // the closing fence — never re-interpreted as markdown.
     if (original.startsWith("```")) {

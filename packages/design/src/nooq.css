@@ -463,3 +463,9 @@
    selection/focus path stays alive); CM is the visible editor. */
 .nq-code-bridge { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .nq-code-cm { background: var(--nq-paper-sunken); border-radius: var(--nq-radius-sm); padding: var(--nq-space-3); overflow-x: auto; }
+
+/* Tier-2 math: the source line (mono, quiet) with the live render beneath. */
+.nq-math { display: flex; flex-direction: column; gap: var(--nq-space-1); }
+.nq-math-source { font-family: var(--nq-font-mono); font-size: 13px; color: var(--nq-graphite-muted); }
+.nq-math-render { font-size: 18px; overflow-x: auto; padding: var(--nq-space-2) 0; }
+.nq-math-render[data-error] { font-family: var(--nq-font-mono); font-size: 13px; color: var(--nq-graphite-muted); border-bottom: 1px dashed var(--nq-rule-strong); }
