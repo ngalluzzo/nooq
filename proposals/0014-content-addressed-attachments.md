@@ -1,6 +1,7 @@
 # Proposal 0014: content-addressed attachments
 
-**Status: DRAFT — not yet opened. Drafted: 2026-11-03, with plugin-image v1.**
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Opened: 2026-11-03. Decision of record: issue #12.**
 Extends 0009's payload discipline and the SYNC wire; no DOCUMENT-MODEL
 change beyond the field's meaning. A new sync capability is a significant
 change under GOVERNANCE, so this needs an issue open for at least 7 days.
