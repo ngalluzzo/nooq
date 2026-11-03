@@ -8,6 +8,7 @@ import { loading, notice, presenceCaret, slashMenu, syncStatus, type NoticeActio
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
 import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
+import { importMarkdown as pluginsImportMarkdown } from "@nooq/plugins";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
 import { createAwayTracker, type AwayTracker } from "./away.ts";
@@ -218,6 +219,26 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // popover anchored to the surface root; the collector reads the resolved
   // key map above at open time, so the sheet cannot drift from keyDown.
   const shortcuts = mountShortcutSheet({ element: root, keymap: keys, textMode, signal: surfaceAbort.signal });
+  // Tier-2 paste (gap audit #5): markdown-shaped text becomes blocks — the
+  // import is the export engine's inverse, and the round trip is pinned by
+  // test. Plain single-line text falls through to the ordinary typing path;
+  // unknown syntax degrades to paragraphs, never a failed paste.
+  const MARKDOWN_LINE = /^\s*(#{1,6}\s|[-*]\s|\d+[.)]\s|[-*]\s\[ |x|X\]|>|---|===|\*\*\*)/;
+  const looksMarkdown = (text: string): boolean => text.split(/\r?\n/).some(line => MARKDOWN_LINE.test(line));
+  const onPaste = (event: ClipboardEvent): void => {
+    if (destroyed || rendering || !event.clipboardData) return;
+    const text = event.clipboardData.getData("text/plain");
+    if (!text || !looksMarkdown(text)) return; // ordinary text: the input path owns it
+    const focused = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>("[data-nq-block]") : null;
+    const after = focused?.dataset.nqBlock ?? Array.from(root.querySelectorAll<HTMLElement>("[data-nq-block]")).filter(el => root.contains(el)).at(-1)?.dataset.nqBlock;
+    if (!after || !liveTree(editor.view).alive.has(after)) return;
+    const result = editor.commands.run("nooq.doc.import", { blocks: pluginsImportMarkdown(text), after });
+    if (result.status === "failed") fail(undefined, result.error);
+    else if (result.status === "denied") fail(undefined, new AuthorizationError(result.reason, result.retryable));
+    else event.preventDefault();
+  };
+  
+  root.addEventListener("paste", onPaste, { signal: surfaceAbort.signal });
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });

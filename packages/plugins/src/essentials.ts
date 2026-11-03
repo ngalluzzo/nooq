@@ -126,6 +126,44 @@ export const splitBlock = defineCommand<{ block: string; anchor: number; head: n
     ], selection: { block: block.id, anchor: 0, head: 0 } };
   },
 });
+/** Paste's command (Tier-2, gap audit #5): a whole imported tree in ONE
+ *  transaction — the same single-tx discipline as insertColumns. The tree
+ *  walks depth-first; each child's op cites its parent's already-inserted id.
+ */
+export const importBlocks = defineCommand<{ blocks: readonly import("./import.ts").ImportedBlock[]; after: string }>({
+  id: "nooq.doc.import", label: "Import blocks",
+  validateArgs: (a): a is { blocks: readonly import("./import.ts").ImportedBlock[]; after: string } => object(a) && Array.isArray(a.blocks) && typeof a.after === "string",
+  prepare(ctx, { blocks, after }) {
+    if (!ctx.isAlive(after)) return { status: "not-applicable" };
+    const parentFound = ctx.parentOf(after);
+    if (parentFound === undefined) return { status: "not-applicable" };
+    const parent = parentFound;
+    if (parent !== null && !ctx.isAlive(parent)) return { status: "not-applicable" };
+    const siblings = parent === null ? ctx.snapshot.roots : (ctx.snapshot.blocks[parent]!.children as readonly string[]);
+    const index = siblings.indexOf(after) + 1;
+    const ops: Op[] = [];
+    let selection: { block: string; anchor: number; head: number } | undefined;
+    const walk = (nodes: readonly import("./import.ts").ImportedBlock[], at: { parent: string | null; index: number }): void => {
+      for (let i = 0; i < nodes.length; i++) {
+        const { data, children } = nodes[i]!;
+        // createBlock stamps the attribution the engine demands (the active
+        // actor, no fields); the import's CONTENT — fields and text — carries
+        // over. The ids stay the import's so children resolve.
+        const block = ctx.createBlock(data.type);
+        block.id = data.id;
+        block.fields = { ...data.fields };
+        if (data.text) block.text = data.text;
+        ops.push({ op: "insert", block, parent: at.parent, index: at.index + i });
+        if (selection === undefined && data.text) selection = { block: data.id, anchor: data.text.s.length, head: data.text.s.length };
+        walk(children, { parent: data.id, index: 0 });
+      }
+    };
+    walk(blocks, { parent, index });
+    if (ops.length === 0) return { status: "not-applicable" };
+    return { status: "ready", intent: "import-blocks", ops, ...(selection ? { selection } : {}) };
+  },
+});
+
 /** The drag handle's command (Tier-1, DM-4): one move op — a branch moves
  *  as a branch, one transaction, supersession resolution DM-4.7/4.9. */
 export const moveBlock = defineCommand<{ block: string; parent: string | null; index: number }>({
@@ -223,5 +261,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck, moveBlock] },
+  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, importBlocks, insertColumns, toggleCheck, moveBlock] },
 });

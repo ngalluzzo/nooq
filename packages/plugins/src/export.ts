@@ -153,12 +153,14 @@ export const columnsFormatter: BlockFormatter = (_block, { children }) => childr
 /** One column, the same passthrough; the pair exports left-then-right in tree order. */
 export const columnFormatter: BlockFormatter = (_block, { children }) => children;
 
-/** Tier-1 list items: `- `, `1. `, `- [ ] `/`- [x] `; nesting indents two
- *  spaces per depth — the walk's per-child join carries it. */
+/** Tier-1 list items: `- `, `1. `, `- [ ] `/`- [x] `; nesting indents the
+ *  children (markdown's two-space rule) so import reconstructs the tree —
+ *  the round trip's nesting limb. */
 export const listFormatter: BlockFormatter = (block, { text, children }) => {
   const kind = String(block.fields.kind ?? "bullet");
   const prefix = kind === "number" ? "1. " : kind === "check" ? (block.fields.checked === true ? "- [x] " : "- [ ] ") : "- ";
-  return withChildren(`${prefix}${text()}`, children);
+  const indented = children ? children.split("\n").map(line => line.trim() === "" ? line : `  ${line}`).join("\n") : "";
+  return withChildren(`${prefix}${text()}`, indented);
 };
 
 /** The reference formatters, keyed by block type; the base every export starts from. */
