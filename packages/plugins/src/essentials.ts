@@ -126,6 +126,30 @@ export const splitBlock = defineCommand<{ block: string; anchor: number; head: n
     ], selection: { block: block.id, anchor: 0, head: 0 } };
   },
 });
+/** The drag handle's command (Tier-1, DM-4): one move op — a branch moves
+ *  as a branch, one transaction, supersession resolution DM-4.7/4.9. */
+export const moveBlock = defineCommand<{ block: string; parent: string | null; index: number }>({
+  id: "nooq.block.move", label: "Move block",
+  validateArgs: (a): a is { block: string; parent: string | null; index: number } => object(a) && typeof a.block === "string" && (a.parent === null || typeof a.parent === "string") && Number.isInteger(a.index as number) && (a.index as number) >= 0,
+  prepare(ctx, { block: id, parent, index }) {
+    if (!ctx.isAlive(id)) return { status: "not-applicable" };
+    if (parent !== null && !ctx.isAlive(parent)) return { status: "not-applicable" };
+    if (parent === id) return { status: "not-applicable" }; // DM-3.1: never under itself
+    // The index is where the LINE said — computed against the destination
+    // BEFORE the move; applyMove enforces the subtree rule.
+    const view = ctx.snapshot;
+    const tree = (view as { roots: readonly string[]; blocks: Record<string, { children: readonly string[] }> });
+    const dest = parent === null ? tree.roots : tree.blocks[parent]?.children ?? [];
+    const at = Math.min(index, dest.length);
+    // Moving to the same place is a no-op, not a transaction.
+    const currentParent = Object.entries(tree.blocks).find(([, b]) => b.children.includes(id))?.[0] ?? null;
+    if (currentParent === parent && dest.indexOf(id) === at) return { status: "not-applicable" };
+    return { status: "ready", intent: "move-block", ops: [
+      { op: "move", block: id, newParent: parent, index: at },
+    ] };
+  },
+});
+
 /** The checkbox IS the field (Tier-1): one op, one transaction, undoable. */
 export const toggleCheck = defineCommand<{ block: string }>({
   id: "nooq.list.check", label: "Toggle to-do",
@@ -191,5 +215,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck] },
+  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck, moveBlock] },
 });

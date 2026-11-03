@@ -76,6 +76,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   if (options.selectionMode === "document" && (options.textMode !== "rich" || !editor.registry.command("nooq.text.edit"))) throw new Error("Document selection requires textMode: rich and a registered nooq.text.edit command");
   const textMode = options.textMode;
   const plugins = options.plugins ?? [], views = new Map<string, ViewProvider>();
+  /** §7 surface hooks (the drag handle): collected at registration, invoked after the root exists, cleaned up on destroy. */
+  const surfaceHooks: Array<{ plugin: string; hook: (context: import("@nooq/plugins/dom").SurfacePluginContext) => void | (() => void) }> = [];
+  const surfaceCleanups: Array<() => void> = [];
   const providers = new Map<string, ViewProvider[]>();
   const seen = new Set<string>(), menus: SurfaceAction[] = [];
   const definitions: Action[] = [], legacyIds = new Set(plugins.flatMap(p => [...p.menus ?? [], ...p.keys ?? []].map(a => a.id)));
@@ -97,6 +100,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }
     menus.push(...plugin.menus ?? []);
     for (const binding of plugin.keys ?? []) keys.set(binding.key, [...keys.get(binding.key) ?? [], binding]);
+    if (plugin.surface) surfaceHooks.push({ plugin: plugin.id, hook: plugin.surface }); // invoked once the root exists (below)
     for (const action of plugin.actions ?? []) {
       if (legacyIds.has(action.id) || definitions.some(a => a.id === action.id)) throw new Error(`Duplicate action ID ${action.id}`);
       definitions.push(action);
@@ -230,6 +234,14 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     }
     return snapshotCache.value;
   };
+  // §7 surface hooks (the drag handle): invoked once, after the root exists
+  // and the surface is otherwise assembled; cleanups run on destroy.
+  for (const { plugin: pluginId, hook } of surfaceHooks.splice(0)) {
+    try {
+      const cleanup = hook({ root, signal: surfaceAbort.signal, snapshot, run: (command, args) => { try { return editor.commands.run(command, args); } catch (cause) { fail(pluginId, cause); return { status: "failed" as const, error: cause }; } }, onChange: listener => { const off = editor.onChange(() => { if (!destroyed) listener(); }); surfaceCleanups.push(off); return off; }, report: cause => fail(pluginId, cause) });
+      if (cleanup) surfaceCleanups.push(cleanup);
+    } catch (cause) { fail(pluginId, cause); }
+  }
   const selection = (id: string): SelectionRequest => {
     return { block: id, ...rows.get(id)?.bindings[0]?.selection() ?? { anchor: 0, head: 0 } };
   };
@@ -963,7 +975,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   const markReady = () => { readyForContent = true; settleLoading(); };
   void editor.ready.then(markReady, markReady);
   let offClose = () => {};
-  const destroy = () => { if (destroyed) return; destroyed = true; documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); superseded.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); editor.ydoc.off("beforeTransaction", captureRemoteSelection); editor.ydoc.off("afterTransaction", releaseEmptySelection); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offSuperseded(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
+  const destroy = () => { if (destroyed) return; destroyed = true; for (const cleanup of surfaceCleanups.splice(0).reverse()) try { cleanup(); } catch { /* the surface is going away regardless */ } documentSelection?.destroy(); presence.destroy(); historyLayer.destroy(); surfaceStatus.destroy(); jobs.destroy(); away.destroy(); superseded.destroy(); links.destroy(); shortcuts.destroy(); formatToolbar.destroy(); surfaceAbort.abort(); editor.ydoc.off("beforeTransaction", captureRemoteSelection); editor.ydoc.off("afterTransaction", releaseEmptySelection); offEvents(); offChange(); offSelection(); offErrors(); offAdmissions(); offSuperseded(); offClose(); closeMenu(); loadHost.done(); for (const row of rows.values()) cleanup(row); rows.clear(); root.remove(); };
   offClose = editor.onClose(destroy); schedule();
   return { element: root, actions, keymap: keys, textMode, away, superseded, ...(documentSelection ? { selection: documentSelection.service } : {}), destroy, get remoteRenders() { return stats.remoteRenders; }, get pins() { return stats.pins; }, get lastAnchor() { return stats.lastAnchor; }, get lastDrift() { return stats.lastDrift; }, get lastAnchorRect() { return stats.lastAnchorRect; }, get lastViewportTop() { return stats.lastViewportTop; }, get renderCounts() { return stats.renderCounts; }, get mountedRows() { return rows.size; },
     estimateTop: (id: string): number => { let y = 0; const visit = (ids: readonly string[]): boolean => { for (const bid of ids) { const b = (renderState ?? editor.view).blocks[bid]; if (!b) continue; if (bid === id) return true; y += estimateOf(bid, b); if (visit(b.children)) return true; } return false; }; return visit((renderState ?? editor.view).roots) ? y : -1; } };

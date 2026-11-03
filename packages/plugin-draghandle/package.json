@@ -1,0 +1,14 @@
+{
+  "name": "@nooq/plugin-draghandle",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./dom": "./src/dom.ts"
+  },
+  "dependencies": {
+    "@nooq/plugins": "workspace:*",
+    "@nooq/core": "workspace:*",
+    "@nooq/editor": "workspace:*"
+  }
+}

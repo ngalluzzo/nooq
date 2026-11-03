@@ -8,3 +8,4 @@ export * from "./selection.ts";
 export * from "./merge.ts";
 export * from "./export.ts";
 export type { ActorDescriptor, Block, DocState, JsonValue, Op, RenderedText, TextChange, Transaction } from "@nooq/core";
+export type { SurfacePluginContext } from "./dom.ts";

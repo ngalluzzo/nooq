@@ -48,6 +48,7 @@
       "dependencies": {
         "@nooq/core": "workspace:*",
         "@nooq/design": "workspace:*",
+        "@nooq/plugin-callouts": "workspace:*",
         "@nooq/plugins": "workspace:*",
         "@nooq/sync": "workspace:*",
         "@nooq/yjs": "workspace:*",
@@ -60,7 +61,6 @@
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
-        "@nooq/plugin-callouts": "workspace:*",
       },
     },
     "packages/plugin-agent": {
@@ -88,6 +88,15 @@
       "name": "@nooq/plugin-callouts",
       "version": "0.1.0",
       "dependencies": {
+        "@nooq/plugins": "workspace:*",
+      },
+    },
+    "packages/plugin-draghandle": {
+      "name": "@nooq/plugin-draghandle",
+      "version": "1.0.0",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/editor": "workspace:*",
         "@nooq/plugins": "workspace:*",
       },
     },
@@ -321,6 +330,8 @@
     "@nooq/plugin-agent": ["@nooq/plugin-agent@workspace:packages/plugin-agent"],
 
     "@nooq/plugin-callouts": ["@nooq/plugin-callouts@workspace:packages/plugin-callouts"],
+
+    "@nooq/plugin-draghandle": ["@nooq/plugin-draghandle@workspace:packages/plugin-draghandle"],
 
     "@nooq/plugins": ["@nooq/plugins@workspace:packages/plugins"],
 

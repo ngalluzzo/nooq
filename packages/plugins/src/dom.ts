@@ -96,6 +96,29 @@ export interface DOMPlugin {
   menus?: readonly SurfaceAction[];
   keys?: readonly (SurfaceAction & { key: string; when?(context: SurfaceActionContext): boolean })[];
   history?(snapshot: Immutable<DocState>): readonly string[];
+  /**
+   * Called once when the surface mounts: cross-cutting affordances that are
+   * no single block's business (the drag handle) attach here, outside any
+   * view, and return their cleanup. The context is the surface's own —
+   * one root, one editor, not one row (§7: a plugin can ship it).
+   */
+  surface?(context: SurfacePluginContext): void | (() => void);
+}
+
+/** The surface-level context a `surface` hook receives. */
+export interface SurfacePluginContext {
+  /** The element the surface renders rows into; `[data-nq-block]` marks each row shell. */
+  root: HTMLElement;
+  /** Signal that fires when the surface tears down. */
+  signal: AbortSignal;
+  /** The live snapshot, frozen (the same view every row sees). */
+  snapshot(): Immutable<DocState>;
+  /** Run a command against the surface's editor, surfacing failures the surface's way. */
+  run<Args>(command: Command<Args> | string, args: Args): CommandResult;
+  /** Re-run on every committed change; returns the unsubscribe. */
+  onChange(listener: () => void): () => void;
+  /** Report a plugin-side failure through the surface's notice path. */
+  report(cause: unknown): void;
 }
 /**
  * A view's policy must be grammatical for its plugin (0009 §2): reserved
