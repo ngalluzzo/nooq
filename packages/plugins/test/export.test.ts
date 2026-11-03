@@ -214,7 +214,7 @@ test("an empty columns block contributes nothing and never counts", () => {
 
 test("reference formatters are keyed by the reference block types", () => {
   expect(Object.keys(referenceFormatters).sort()).toEqual([
-    "nooq.column/v1", "nooq.columns/v1", "nooq.heading/v1", "nooq.list/v1", "nooq.paragraph/v1", "nooq.quote/v1", "nooq.suggestion/v1", "nooq.title/v1",
+    "nooq.column/v1", "nooq.columns/v1", "nooq.divider/v1", "nooq.heading/v1", "nooq.list/v1", "nooq.paragraph/v1", "nooq.quote/v1", "nooq.suggestion/v1", "nooq.title/v1",
   ]);
   expect(Object.isFrozen(referenceFormatters)).toBe(true);
 });
