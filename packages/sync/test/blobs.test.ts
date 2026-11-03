@@ -105,7 +105,7 @@ describe("content-addressed blobs (0014)", () => {
 
     const payload = bytes(128);
     const digest = await store.put(payload);
-    const imageBlock = { id: newBlockId(), type: "nooq.image/v1", fields: { src: blobSrc(digest), digest }, text: { s: "pic", marks: [[], [], []] } // one mark slot per character — the model's invariant, children: [], attribution: { created: { actor: "human:o" }, fields: {} } };
+    const imageBlock = { id: newBlockId(), type: "nooq.image/v1", fields: { src: blobSrc(digest), digest }, text: { s: "pic", marks: [[], [], []] }, children: [], attribution: { created: { actor: "human:o" }, fields: {} } };
     const insert = await commitSigned(doc, tx([{ op: "insert", block: imageBlock, parent: null }]), owner, "human:o");
     session.sendUpdate(insert.update, insert.envelope);
     await settled();
