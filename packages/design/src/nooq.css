@@ -500,7 +500,7 @@
 /* 0015 stage 2: growth buttons, the ragged ghost, header rows. */
 .nq-table-inner { overflow-x: auto; }
 .nq-table-bar { display: flex; gap: var(--nq-space-1); padding: var(--nq-space-1) 0 0; }
-.nq-table-grow { width: 28px; height: 28px; border: 1px dashed var(--nq-rule); border-radius: var(--nq-radius-sm); background: none; color: var(--nq-graphite-muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.nq-table-grow { width: 28px; height: var(--nq-control-sm); border: 1px dashed var(--nq-rule); border-radius: var(--nq-radius-sm); background: none; color: var(--nq-graphite-muted); cursor: pointer; font-size: 14px; line-height: 1; }
 .nq-table-grow:hover { border-style: solid; color: var(--nq-graphite); }
 .nq-table-ghost { border: 1px dashed var(--nq-rule); border-radius: 0; background: none; color: var(--nq-graphite-muted); cursor: pointer; font-size: 12px; min-height: 1.5rem; }
 .nq-table-ghost:hover { color: var(--nq-graphite); border-color: var(--nq-rule-strong); }
