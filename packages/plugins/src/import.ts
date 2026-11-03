@@ -136,6 +136,20 @@ export function importMarkdown(markdown: string): ImportedBlock[] {
     let isList = false;
 
     let m: RegExpMatchArray | null;
+    if ((m = rest.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/)) !== null) {
+      // An image (plugin-image): ![alt](src) — the caption is the text limb.
+      const imgNode: Block = {
+        id: newBlockId(), type: "nooq.image/v1",
+        fields: { src: m[2]!, ...(m[1] !== undefined && m[1] !== "" ? { alt: m[1]! } : {}) } as Block["fields"],
+        text: { s: m[1] ?? "", marks: (m[1] ?? "").split("").map(() => []) },
+        children: [],
+        attribution: { created: { actor: "" }, fields: {} },
+      };
+      stack.length = 1; listDepth.length = 1;
+      roots.push({ data: imgNode, children: [] });
+      pendingBlank = false;
+      continue;
+    }
     if (DIVIDER.test(rest)) parsed = { depth, block: { id: newBlockId(), type: "nooq.divider/v1", fields: {}, children: [], attribution: { created: { actor: "" }, fields: {} } } as Block };
     else if ((m = rest.match(HEADING)) !== null) parsed = { depth, block: textBlock("nooq.heading/v1", m[2]!, { level: m[1]!.length }) };
     else if ((m = rest.match(CHECK)) !== null) { isList = true; parsed = { depth, block: textBlock("nooq.list/v1", m[2]!, { kind: "check", ...(m[1] !== " " ? { checked: true } : {}) }) }; }

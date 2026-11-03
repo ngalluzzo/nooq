@@ -124,6 +124,19 @@
         "@nooq/plugins": "workspace:*",
       },
     },
+    "packages/plugin-image": {
+      "name": "@nooq/plugin-image",
+      "version": "1.0.0",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/design": "workspace:*",
+        "@nooq/editor": "workspace:*",
+        "@nooq/plugins": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+      },
+    },
     "packages/plugin-math": {
       "name": "@nooq/plugin-math",
       "version": "1.0.0",
@@ -411,6 +424,8 @@
     "@nooq/plugin-code": ["@nooq/plugin-code@workspace:packages/plugin-code"],
 
     "@nooq/plugin-draghandle": ["@nooq/plugin-draghandle@workspace:packages/plugin-draghandle"],
+
+    "@nooq/plugin-image": ["@nooq/plugin-image@workspace:packages/plugin-image"],
 
     "@nooq/plugin-math": ["@nooq/plugin-math@workspace:packages/plugin-math"],
 

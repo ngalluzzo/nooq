@@ -469,3 +469,8 @@
 .nq-math-source { font-family: var(--nq-font-mono); font-size: 13px; color: var(--nq-graphite-muted); }
 .nq-math-render { font-size: 18px; overflow-x: auto; padding: var(--nq-space-2) 0; }
 .nq-math-render[data-error] { font-family: var(--nq-font-mono); font-size: 13px; color: var(--nq-graphite-muted); border-bottom: 1px dashed var(--nq-rule-strong); }
+
+/* Tier-2 images: the picture full-measure, the caption quiet beneath. */
+.nq-image { display: flex; flex-direction: column; gap: var(--nq-space-1); margin: 0; }
+.nq-image-picture { max-width: 100%; height: auto; border-radius: var(--nq-radius-sm); }
+.nq-image-caption { font-family: var(--nq-font-sans); font-size: 13px; color: var(--nq-graphite-muted); }
