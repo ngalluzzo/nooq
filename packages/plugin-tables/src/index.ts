@@ -158,6 +158,84 @@ export const completeRow = defineCommand<{ row: string }>({
   },
 });
 
+/** Paste into a range (stage 3): a pipes-or-TSV clipboard fills the
+ *  rectangle from its anchor — ONE transaction of textEdits. The fill
+ *  TRUNCATES honestly at the table's bounds: no auto-grow, no invented rows
+ *  (0015's grammar — the model does not guess intent). */
+export const pasteIntoRange = defineCommand<{ cells: readonly (readonly string[])[]; values: readonly (readonly string[])[] }>({
+  id: "nooq.table.paste-range", label: "Paste into cells",
+  validateArgs: (a): a is { cells: readonly (readonly string[])[]; values: readonly (readonly string[])[] } => {
+    if (!a || typeof a !== "object") return false;
+    const rowsOf = (value: unknown): value is readonly (readonly string[])[] => Array.isArray(value) && value.every(row => Array.isArray(row) && row.every(cell => typeof cell === "string"));
+    return Array.isArray((a as { cells?: unknown }).cells) && rowsOf((a as { cells?: unknown }).cells) && Array.isArray((a as { values?: unknown }).values) && rowsOf((a as { values?: unknown }).values);
+  },
+  prepare(ctx, { cells, values }) {
+    if (cells.length === 0 || values.length === 0) return { status: "not-applicable" };
+    const ops: import("@nooq/core").Op[] = [];
+    for (const [rowAt, row] of values.entries()) {
+      const targetRow = cells[rowAt];
+      if (targetRow === undefined) break; // the clipboard exceeds the rectangle: truncate honestly
+      for (const [column, value] of row.entries()) {
+        const cell = targetRow[column];
+        if (cell === undefined) break; // wider than the rectangle: same honesty
+        if (!ctx.isAlive(cell)) continue;
+        const text = ctx.snapshot.blocks[cell]!.text;
+        const current = text?.s ?? "";
+        if (current === value) continue; // identical: not an edit
+        ops.push(current.length === 0
+          ? { op: "textEdit", block: cell, changes: [{ insert: value }] }
+          : { op: "textEdit", block: cell, changes: [{ delete: current.length }, { insert: value }] });
+      }
+    }
+    if (ops.length === 0) return { status: "not-applicable" };
+    return { status: "ready", intent: "paste-range", ops };
+  },
+});
+
+/** Selection ranges (stage 3): clear the rectangle's cells — ONE transaction
+ *  of textEdits (empty cells stay empty; clearing an all-empty range is not
+ *  a transaction). The RANGE itself is view state, never document state —
+ *  caret movement is not an edit, and neither is selection. */
+export const clearRange = defineCommand<{ cells: readonly string[] }>({
+  id: "nooq.table.clear-range", label: "Clear cells",
+  validateArgs: (a): a is { cells: readonly string[] } => !!a && typeof a === "object" && Array.isArray((a as { cells?: unknown }).cells) && (a as { cells: unknown[] }).cells.every(id => typeof id === "string"),
+  prepare(ctx, { cells }) {
+    const ops: import("@nooq/core").Op[] = [];
+    for (const cell of cells) {
+      if (!ctx.isAlive(cell)) continue;
+      const text = ctx.snapshot.blocks[cell]!.text;
+      if (text === undefined || text.s.length === 0) continue; // empty stays empty
+      ops.push({ op: "textEdit", block: cell, changes: [{ delete: text.s.length }] });
+    }
+    if (ops.length === 0) return { status: "not-applicable" };
+    return { status: "ready", intent: "clear-range", ops };
+  },
+});
+
+/** Column sizing: the widths are ONE field on the table — relative weights,
+ *  low contention, LWW by design (0015: "no content"). The minimum is a
+ *  fraction of total width; the gesture clamps, the field records. */
+export const resizeColumn = defineCommand<{ table: string; column: number; deltaWeight: number }>({
+  id: "nooq.table.resize-column", label: "Resize column",
+  validateArgs: (a): a is { table: string; column: number; deltaWeight: number } => !!a && typeof a === "object" && typeof (a as { table?: unknown }).table === "string" && Number.isInteger((a as { column?: unknown }).column as number) && typeof (a as { deltaWeight?: unknown }).deltaWeight === "number",
+  prepare(ctx, { table: id, column, deltaWeight }) {
+    if (!ctx.isAlive(id) || ctx.snapshot.blocks[id]?.type !== table.type) return { status: "not-applicable" };
+    const view = ctx.snapshot as unknown as { blocks: Record<string, { children: readonly string[] }> };
+    const width = maxWidth(view, id);
+    if (column < 0 || column + 1 >= width) return { status: "not-applicable" }; // the last boundary is the table's edge
+    const current = ctx.snapshot.blocks[id]!.fields.widths;
+    const weights: number[] = Array.isArray(current) && current.every(w => typeof w === "number" && w > 0) ? [...current as number[]] : Array.from({ length: width }, () => 1);
+    while (weights.length < width) weights.push(1);
+    const MIN = 0.15;
+    const delta = Math.max(deltaWeight, MIN - weights[column]!);
+    const grow = Math.min(delta, weights[column + 1]! - MIN);
+    if (grow <= 0) return { status: "not-applicable" }; // clamped out: no-op is not a transaction
+    weights[column]! += grow;
+    weights[column + 1]! -= grow;
+    return { status: "ready", intent: "resize-column", ops: [{ op: "setField", block: id, key: "widths", value: weights }] };
+  },
+});
+
 /** A header is a row property (the row is a block; the field is data). */
 export const toggleHeaderRow = defineCommand<{ row: string }>({
   id: "nooq.table.toggle-header", label: "Toggle header row",
@@ -171,7 +249,7 @@ export const toggleHeaderRow = defineCommand<{ row: string }>({
 
 export const tablesPlugin = definePlugin({
   id: "nooq.tables", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow] },
+  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, resizeColumn, clearRange, pasteIntoRange] },
 });
 
 export const TABLES_VERSION = tablesPlugin.version;

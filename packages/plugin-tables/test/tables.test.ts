@@ -161,3 +161,85 @@ describe("stage 2: column gestures, the ragged repair, headers", () => {
     e.close();
   });
 });
+
+describe("stage 3a: column sizing", () => {
+  test("resizeColumn: ONE setField; weights land clamped; no-op deltas decline", () => {
+    const e = new Editor({ docId: "s3a", actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    const grew = e.commands.run("nooq.table.resize-column", { table: t, column: 0, deltaWeight: 1 });
+    expect(grew.status).toBe("applied");
+    const widths = e.view.blocks[t]!.fields.widths as number[];
+    expect(widths).toHaveLength(2);
+    expect(widths[0]).toBeGreaterThan(widths[1]); // grew rightward, absorbed by the neighbor
+    const sum = widths[0]! + widths[1]!;
+    expect(sum).toBeCloseTo(2); // the boundary moves; the table does not grow
+    // Clamp: squeezing column 0 below the minimum declines
+    expect(e.commands.run("nooq.table.resize-column", { table: t, column: 0, deltaWeight: -10 }).status).toBe("not-applicable");
+    e.close();
+  });
+  test("resize persists from the stored weights (a second gesture starts where the first ended)", () => {
+    const e = new Editor({ docId: "s3a2", actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    e.commands.run("nooq.table.resize-column", { table: t, column: 0, deltaWeight: 0.5 });
+    const first = e.view.blocks[t]!.fields.widths as number[];
+    e.commands.run("nooq.table.resize-column", { table: t, column: 0, deltaWeight: 0.25 });
+    const second = e.view.blocks[t]!.fields.widths as number[];
+    expect(second[0]!).toBeCloseTo(first[0]! + 0.25);
+    e.close();
+  });
+});
+
+describe("stage 3b: selection ranges", () => {
+  test("clearRange: the rectangle's non-empty cells in ONE transaction; all-empty declines", () => {
+    const e = new Editor({ docId: "s3b", actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    const grid = e.view.blocks[t]!.children.map(row => e.view.blocks[row]!.children as string[]);
+    for (const [r, row] of grid.entries()) for (const [c, cell] of row.entries()) e.commands.run("nooq.text.edit", { block: cell, changes: [{ insert: `r${r}c${c}` }] });
+    const rectangle = [grid[0]![0]!, grid[0]![1]!, grid[1]![0]!]; // an L across two rows
+    const cleared = e.commands.run("nooq.table.clear-range", { cells: rectangle });
+    expect(cleared.status).toBe("applied");
+    expect(e.view.blocks[grid[0]![0]!]!.text!.s).toBe("");
+    expect(e.view.blocks[grid[0]![1]!]!.text!.s).toBe("");
+    expect(e.view.blocks[grid[1]![0]!]!.text!.s).toBe("");
+    expect(e.view.blocks[grid[1]![1]!]!.text!.s).toBe("r1c1"); // outside the rectangle: untouched
+    expect(e.commands.run("nooq.table.clear-range", { cells: rectangle }).status).toBe("not-applicable"); // all empty now
+    e.close();
+  });
+});
+
+describe("stage 3c: paste into a range", () => {
+  test("pipes fill the rectangle from its anchor — ONE transaction; identical values are not edits", () => {
+    const e = new Editor({ docId: "s3c", actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    const grid = e.view.blocks[t]!.children.map(row => e.view.blocks[row]!.children as string[]);
+    const pasted = e.commands.run("nooq.table.paste-range", { cells: grid, values: [["a", "b"], ["c", "d"]] });
+    expect(pasted.status).toBe("applied");
+    expect(e.view.blocks[grid[0]![0]!]!.text!.s).toBe("a");
+    expect(e.view.blocks[grid[1]![1]!]!.text!.s).toBe("d");
+    // Re-pasting identical values: not a transaction
+    expect(e.commands.run("nooq.table.paste-range", { cells: grid, values: [["a", "b"], ["c", "d"]] }).status).toBe("not-applicable");
+    e.close();
+  });
+
+  test("the clipboard exceeding the rectangle truncates honestly — no auto-grow, no invented cells", () => {
+    const e = new Editor({ docId: "s3c2", actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    const grid = e.view.blocks[t]!.children.map(row => e.view.blocks[row]!.children as string[]);
+    const oneRow: string[][] = [grid[0]!]; // a 1-row rectangle
+    e.commands.run("nooq.table.paste-range", { cells: oneRow, values: [["x", "y"], ["overflow", "row"]] });
+    expect(e.view.blocks[grid[0]![0]!]!.text!.s).toBe("x");
+    expect(e.view.blocks[grid[0]![1]!]!.text!.s).toBe("y");
+    expect(e.view.blocks[grid[1]![0]!]!.text!.s).toBe(""); // the overflow row never landed
+    e.close();
+  });
+});

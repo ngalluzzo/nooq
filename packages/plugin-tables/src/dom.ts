@@ -13,7 +13,7 @@
 import { defineDOMPlugin, defineTextPolicy, insertAfterSelection, type BlockViewContext } from "@nooq/plugins/dom";
 import { defineAction } from "@nooq/plugins";
 import { blockRow } from "@nooq/design";
-import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow } from "./index.ts";
+import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, clearRange, pasteIntoRange } from "./index.ts";
 
 /** From a focused cell, its table id — or null outside tables. */
 type TableView = { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
@@ -82,7 +82,137 @@ export const tablesDOM = defineDOMPlugin({
       bar.className = "nq-table-bar";
       bar.append(growRow, growColumn);
       element.append(inner, bar);
-      return { element, update() {} };
+      // Selection ranges: the range is VIEW state (never a transaction —
+      // caret movement is not an edit, and neither is selection). Shift-click
+      // anchors and extends; the rectangle highlights; Delete clears (one
+      // transaction); Cmd+C copies pipes; Escape or a plain click exits.
+      let range: { anchor: { row: number; col: number }; focus: { row: number; col: number } } | undefined;
+      const cellIds = (): string[][] => {
+        const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
+        return ((ctx.snapshot().blocks[ctx.block]?.children ?? []) as readonly string[])
+          .map(row => ((ctx.snapshot().blocks[row]?.children ?? []) as readonly string[]).slice());
+      };
+      const cellBlockAt = (r: number, c: number): string | undefined => cellIds()[r]?.[c];
+      const idOfCell = (id: string): { row: number; col: number } | undefined => {
+        const grid = cellIds();
+        for (let r = 0; r < grid.length; r++) { const c = grid[r]!.indexOf(id); if (c >= 0) return { row: r, col: c }; }
+        return undefined;
+      };
+      const paint = (): void => {
+        for (const shell of Array.from(element.querySelectorAll<HTMLElement>(".nq-table-cell"))) shell.classList.remove("nq-table-cell-selected");
+        if (range === undefined) return;
+        const r0 = Math.min(range.anchor.row, range.focus.row), r1 = Math.max(range.anchor.row, range.focus.row);
+        const c0 = Math.min(range.anchor.col, range.focus.col), c1 = Math.max(range.anchor.col, range.focus.col);
+        const grid = cellIds();
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+          const id = grid[r]?.[c];
+          if (id === undefined) continue; // ragged: the rectangle clips honestly
+          element.querySelector<HTMLElement>(`[data-nq-block="${CSS.escape(id)}"] .nq-table-cell`)?.classList.add("nq-table-cell-selected");
+        }
+      };
+      const selectedCells = (): string[][] => {
+        if (range === undefined) return [];
+        const r0 = Math.min(range.anchor.row, range.focus.row), r1 = Math.max(range.anchor.row, range.focus.row);
+        const c0 = Math.min(range.anchor.col, range.focus.col), c1 = Math.max(range.anchor.col, range.focus.col);
+        const grid = cellIds();
+        const rows: string[][] = [];
+        for (let r = r0; r <= r1; r++) {
+          const ids: string[] = [];
+          for (let c = c0; c <= c1; c++) { const id = grid[r]?.[c]; if (id !== undefined) ids.push(id); }
+          rows.push(ids); // ragged rows contribute fewer — the paste truncates against reality
+        }
+        return rows;
+      };
+      const pipesOf = (): string => {
+        const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[]; text?: { s: string } }> };
+        const grid = cellIds();
+        const r0 = Math.min(range!.anchor.row, range!.focus.row), r1 = Math.max(range!.anchor.row, range!.focus.row);
+        const c0 = Math.min(range!.anchor.col, range!.focus.col), c1 = Math.max(range!.anchor.col, range!.focus.col);
+        const lines: string[] = [];
+        for (let r = r0; r <= r1; r++) {
+          const cells: string[] = [];
+          for (let c = c0; c <= c1; c++) { const id = grid[r]?.[c]; cells.push(id !== undefined ? (view.blocks[id]!.text?.s ?? "") : ""); }
+          lines.push(`| ${cells.join(" | ")} |`);
+        }
+        return lines.join("\n");
+      };
+      element.addEventListener("click", (event) => {
+        if (!(event.target instanceof Element)) return;
+        const shell = event.target.closest<HTMLElement>("[data-nq-block]");
+        const cellShell = shell?.querySelector(".nq-table-cell") !== null && event.target.closest(".nq-table-cell") !== null ? shell : null;
+        if (cellShell === null || shell === null) { if (event.shiftKey) return; range = undefined; paint(); return; } // plain click outside cells exits
+        const at = idOfCell(shell.dataset.nqBlock!);
+        if (at === undefined) return;
+        if (event.shiftKey && range !== undefined) { range = { ...range, focus: at }; inner.focus({ preventScroll: true }); }
+        else if (event.shiftKey) { range = { anchor: at, focus: at }; inner.focus({ preventScroll: true }); }
+        else { range = undefined; }
+        paint();
+      });
+      inner.setAttribute("tabindex", "0");
+      inner.setAttribute("role", "grid");
+      inner.addEventListener("keydown", (event) => {
+        if (range === undefined) return;
+        const clearing = event.key === "Delete" || event.key === "Backspace";
+        if (clearing) { event.preventDefault(); void ctx.run("nooq.table.clear-range", { cells: selectedCells().flat() }); return; }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") { event.preventDefault(); void navigator.clipboard?.writeText(pipesOf()); return; }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v") {
+          event.preventDefault();
+          void navigator.clipboard?.readText().then(text => {
+            const trimmed = text.trim();
+            if (trimmed === "") return;
+            const isPipes = trimmed.split("\n").every(line => /^\|.*\|$/.test(line.trim()) && !/^\|[\s:|-]+\|$/.test(line.trim()));
+            const values = isPipes
+              ? trimmed.split("\n").map(line => line.trim().slice(1, -1).split("|").map(cell => cell.trim()))
+              : trimmed.includes("\t") ? trimmed.split("\n").map(line => line.split("\t"))
+              : [[trimmed]];
+            void ctx.run("nooq.table.paste-range", { cells: selectedCells(), values });
+          });
+          return;
+        }
+        if (event.key === "Escape") { range = undefined; paint(); }
+      });
+      // Column sizing: every row reads the same widths field, so the columns
+      // align by construction; the live drag restyles rows directly, release
+      // commits ONE setField (the model sees the gesture exactly once).
+      const applyWidths = (weights: readonly number[]): void => {
+        const columns = weights.map(w => `minmax(4rem, ${w}fr)`).join(" ");
+        for (const row of Array.from(element.querySelectorAll<HTMLElement>(".nq-table-row"))) row.style.gridTemplateColumns = columns;
+      };
+      const widthsOf = (): readonly number[] => {
+        const block = ctx.snapshot().blocks[ctx.block];
+        const stored = block?.fields.widths;
+        const rows = (ctx.snapshot().blocks[ctx.block]?.children ?? []) as readonly string[];
+        const widest = Math.max(1, ...rows.map(r => ((ctx.snapshot().blocks[r]?.children ?? []) as readonly string[]).length));
+        return Array.isArray(stored) && stored.every(w => typeof w === "number" && w > 0) ? (stored as number[]) : Array.from({ length: widest }, () => 1);
+      };
+      let dragging: { column: number; weights: number[]; original: number; tableWidth: number } | undefined;
+      element.addEventListener("pointerdown", (event) => {
+        const handle = event.target instanceof Element ? event.target.closest<HTMLElement>(".nq-table-resize") : null;
+        if (handle === null) return;
+        event.preventDefault();
+        const column = Number(handle.dataset.column);
+        const weights = [...widthsOf()];
+        dragging = { column, weights, original: weights[column] ?? 1, tableWidth: inner.getBoundingClientRect().width };
+        handle.setPointerCapture?.(event.pointerId);
+      });
+      element.addEventListener("pointermove", (event) => {
+        if (dragging === undefined) return;
+        const deltaWeight = event.movementX / Math.max(1, dragging.tableWidth);
+        const { column, weights } = dragging;
+        const MIN = 0.15;
+        const delta = Math.max(deltaWeight, MIN - weights[column]!);
+        const grow = Math.min(delta, weights[column + 1]! - MIN);
+        if (grow > 0) { weights[column]! += grow; weights[column + 1]! -= grow; applyWidths(weights); }
+      });
+      const release = (): void => {
+        if (dragging === undefined) return;
+        const { column, weights, original } = dragging;
+        dragging = undefined;
+        void ctx.run("nooq.table.resize-column", { table: ctx.block, column, deltaWeight: weights[column]! - original });
+      };
+      element.addEventListener("pointerup", release);
+      element.addEventListener("pointercancel", () => { if (dragging !== undefined) { applyWidths(widthsOf()); dragging = undefined; } });
+      return { element, update() { applyWidths(widthsOf()); } };
     } },
     { type: tableRow.type, mount(ctx) {
       const element = document.createElement("div");
@@ -116,6 +246,26 @@ export const tablesDOM = defineDOMPlugin({
         const element = blockRow({ content: [editor, ctx.children.element], kind: "paragraph", actor: "human" });
         const body = element.querySelector<HTMLElement>(".nq-block-body");
         if (body) body.classList.add("nq-table-cell");
+        // The resize reporter: a column edge when this cell is not its row's
+        // last (the table's own right edge is nobody's handle). data-column
+        // names the column it grows; the TABLE view owns the drag.
+        const resize = document.createElement("div");
+        resize.className = "nq-table-resize";
+        resize.setAttribute("role", "separator");
+        const columnOfCell = (): number => {
+          const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
+          const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(ctx.block));
+          return row === undefined ? -1 : (view.blocks[row]!.children as readonly string[]).indexOf(ctx.block);
+        };
+        const refresh = (): void => {
+          const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
+          const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(ctx.block));
+          const last = row !== undefined && (view.blocks[row]!.children as readonly string[]).at(-1) === ctx.block;
+          if (last) { resize.remove(); return; }
+          resize.dataset.column = String(columnOfCell());
+          if (!body?.contains(resize)) body?.append(resize);
+        };
+        refresh();
 
         // Navigation: view-local; only row-creation is a command.
         const position = (): { row: string; rows: readonly string[]; cells: readonly string[]; at: number } | null => {
@@ -164,7 +314,7 @@ export const tablesDOM = defineDOMPlugin({
             void ctx.run("nooq.table.add-row", { afterRow: here.row });
           }
         });
-        return { element, update() {}, destroy() { text.destroy(); } };
+        return { element, update() { refresh(); }, destroy() { text.destroy(); resize.remove(); } };
       } },
   ],
 });

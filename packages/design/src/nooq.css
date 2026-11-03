@@ -505,3 +505,12 @@
 .nq-table-ghost { border: 1px dashed var(--nq-rule); border-radius: 0; background: none; color: var(--nq-graphite-muted); cursor: pointer; font-size: 12px; min-height: 1.5rem; }
 .nq-table-ghost:hover { color: var(--nq-graphite); border-color: var(--nq-rule-strong); }
 .nq-table-header-row .nq-table-cell { background: var(--nq-paper-sunken); font-weight: 600; }
+
+/* Stage 3 sizing: the column edge — invisible until hovered, a live double rule. */
+.nq-table-cell { position: relative; }
+.nq-table-resize { position: absolute; top: 0; right: -2px; width: 5px; height: 100%; cursor: col-resize; z-index: var(--nq-layer-presence); }
+.nq-table-resize::after { content: ""; position: absolute; top: 25%; bottom: 25%; right: 2px; width: 1px; background: transparent; }
+.nq-table-resize:hover::after, .nq-table-resize:active::after { background: var(--nq-ink); }
+
+/* Stage 3 ranges: the rectangle, in the selection ink. */
+.nq-table-cell-selected { background: var(--nq-selection) !important; }
