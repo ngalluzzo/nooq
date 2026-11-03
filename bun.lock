@@ -147,6 +147,7 @@
         "@nooq/design": "workspace:*",
         "@nooq/editor": "workspace:*",
         "@nooq/plugins": "workspace:*",
+        "@nooq/sync": "workspace:*",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",

@@ -3,7 +3,18 @@
   "version": "1.0.0",
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./dom": "./src/dom.ts" },
-  "dependencies": { "@nooq/plugins": "workspace:*", "@nooq/core": "workspace:*", "@nooq/design": "workspace:*", "@nooq/editor": "workspace:*" },
-  "devDependencies": { "@happy-dom/global-registrator": "21.0.4" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./dom": "./src/dom.ts"
+  },
+  "dependencies": {
+    "@nooq/plugins": "workspace:*",
+    "@nooq/core": "workspace:*",
+    "@nooq/design": "workspace:*",
+    "@nooq/editor": "workspace:*",
+    "@nooq/sync": "workspace:*"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4"
+  }
 }

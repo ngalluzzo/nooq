@@ -47,3 +47,70 @@ describe("image blocks (embeds v1)", () => {
     e.close();
   });
 });
+
+describe("the blob limb (0014's render path)", () => {
+  const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+
+  test("a nooq-blob: src renders through the host's verified channel", async () => {
+    const { imageDOM } = await import("../src/dom.ts");
+    const fetched: string[] = [];
+    const dom = imageDOM({ fetchBlob: async digest => { fetched.push(digest); return pngBytes; } });
+    // Mount through a real editor surface
+    const { createSurface } = await import("@nooq/editor");
+    const e = new Editor({ docId: "blob-img", actor: { actorId: "w" }, plugins: [essentials, imagePlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    const id = e.insertBlock({ type: "nooq.image/v1", parent: null, fields: { src: `nooq-blob:sha256:${"a".repeat(64)}`, digest: `sha256:${"a".repeat(64)}` }, text: "pic" });
+    const surface = createSurface(e, { plugins: [dom] });
+    document.body.append(surface.element);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const img = document.body.querySelector<HTMLImageElement>(".nq-image-picture")!;
+    expect(fetched).toEqual([`sha256:${"a".repeat(64)}`]); // the digest went to the channel
+    expect(img.getAttribute("src")).toContain("blob:"); // rendered from verified bytes
+    surface.destroy(); e.close();
+  });
+
+  test("src and digest disagree: the honest error, no broken img", async () => {
+    const { imageDOM } = await import("../src/dom.ts");
+    const dom = imageDOM({ fetchBlob: async () => pngBytes });
+    const { createSurface } = await import("@nooq/editor");
+    const e = new Editor({ docId: "blob-dis", actor: { actorId: "w" }, plugins: [essentials, imagePlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.insertBlock({ type: "nooq.image/v1", parent: null, fields: { src: `nooq-blob:sha256:${"b".repeat(64)}`, digest: `sha256:${"c".repeat(64)}` }, text: "pic" });
+    const surface = createSurface(e, { plugins: [dom] });
+    document.body.append(surface.element);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const shell = document.body.querySelector<HTMLElement>(".nq-image")!;
+    expect(shell.getAttribute("data-error")).toContain("disagree");
+    surface.destroy(); e.close();
+  });
+
+  test("no fetcher with a blob src: 'This host cannot fetch stored images.'", async () => {
+    const { imageDOM } = await import("../src/dom.ts");
+    const dom = imageDOM({}); // a host with URL storage only
+    const { createSurface } = await import("@nooq/editor");
+    const e = new Editor({ docId: "blob-none", actor: { actorId: "w" }, plugins: [essentials, imagePlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.insertBlock({ type: "nooq.image/v1", parent: null, fields: { src: `nooq-blob:sha256:${"d".repeat(64)}` }, text: "pic" });
+    const surface = createSurface(e, { plugins: [dom] });
+    document.body.append(surface.element);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const shell = document.body.querySelector<HTMLElement>(".nq-image")!;
+    expect(shell.getAttribute("data-error")).toContain("cannot fetch");
+    surface.destroy(); e.close();
+  });
+
+  test("a failed fetch (the store's verification rejects): the honest error", async () => {
+    const { imageDOM } = await import("../src/dom.ts");
+    const dom = imageDOM({ fetchBlob: async () => { throw new Error("digest mismatch: expected x, got y"); } });
+    const { createSurface } = await import("@nooq/editor");
+    const e = new Editor({ docId: "blob-bad", actor: { actorId: "w" }, plugins: [essentials, imagePlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.insertBlock({ type: "nooq.image/v1", parent: null, fields: { src: `nooq-blob:sha256:${"e".repeat(64)}` }, text: "pic" });
+    const surface = createSurface(e, { plugins: [dom] });
+    document.body.append(surface.element);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const shell = document.body.querySelector<HTMLElement>(".nq-image")!;
+    expect(shell.getAttribute("data-error")).toContain("could not be fetched");
+    surface.destroy(); e.close();
+  });
+});

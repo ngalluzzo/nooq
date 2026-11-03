@@ -8,12 +8,20 @@
 import { defineDOMPlugin, defineTextPolicy, type BlockViewContext, type SurfacePluginContext } from "@nooq/plugins/dom";
 import { blockRow } from "@nooq/design";
 import { image, imagePlugin } from "./index.ts";
+import { digestOfBlobSrc } from "@nooq/sync";
 
 export interface ImageHostOptions {
   /** The host's storage: a file in, a durable reference out. Digest optional —
    *  verifiable when the host can, plain when it cannot. */
   onImageFile?(file: File): Promise<{ src: string; digest?: string }>;
+  /** 0014: the blob channel — resolve a digest to verified bytes (the
+   *  session's BlobStore does this: re-hash on arrival, cache forever).
+   *  Hosts without blob storage render a named error, never a broken img. */
+  fetchBlob?(digest: string): Promise<Uint8Array>;
 }
+
+/** Object URLs by digest: content-addressed means immutable — one URL, kept. */
+const objectUrls = new Map<string, string>();
 
 export const imageDOM = (host: ImageHostOptions = {}) => defineDOMPlugin({
   id: "nooq.image.dom", forPlugin: imagePlugin,
@@ -32,12 +40,40 @@ export const imageDOM = (host: ImageHostOptions = {}) => defineDOMPlugin({
       shell.className = "nq-image";
       shell.append(img, caption, ctx.children.element);
       const element = blockRow({ content: [shell], kind: "paragraph", actor: "human" });
+      let renderedDigest: string | null = null;
+      const honest = (problem: string | undefined): void => {
+        if (problem === undefined) { shell.removeAttribute("data-error"); delete shell.dataset.problem; }
+        else { shell.setAttribute("data-error", problem); }
+      };
       return { element, update(block) {
         const src = typeof block.fields.src === "string" ? block.fields.src : "";
-        if (img.getAttribute("src") !== src) img.src = src;
         // §9: alt is the field when present, the caption otherwise — never empty on purpose.
         const alt = typeof block.fields.alt === "string" && block.fields.alt !== "" ? block.fields.alt : block.text?.s ?? "";
         img.alt = alt;
+        // 0014: a nooq-blob: src resolves through the host's verified channel.
+        const blobDigest = digestOfBlobSrc(src);
+        if (blobDigest === null) {
+          renderedDigest = null;
+          honest(undefined);
+          if (img.getAttribute("src") !== src) img.src = src;
+          return;
+        }
+        if (blobDigest === renderedDigest) return; // already rendered (or in flight)
+        renderedDigest = blobDigest;
+        // The named digest must agree with the digest field when both exist.
+        const fieldDigest = typeof block.fields.digest === "string" ? block.fields.digest : undefined;
+        if (fieldDigest !== undefined && fieldDigest !== blobDigest) { honest("The image's source and its digest disagree."); img.removeAttribute("src"); return; }
+        if (!host.fetchBlob) { honest("This host cannot fetch stored images."); img.removeAttribute("src"); return; }
+        void host.fetchBlob(blobDigest).then(bytes => {
+          let url = objectUrls.get(blobDigest);
+          if (url === undefined) {
+            const type = bytes[0] === 0x89 && bytes[1] === 0x50 ? "image/png" : "image/jpeg";
+            url = URL.createObjectURL(new Blob([bytes.slice() as unknown as BlobPart], { type }));
+            objectUrls.set(blobDigest, url);
+          }
+          honest(undefined);
+          img.src = url;
+        }).catch(() => { honest("The image could not be fetched or verified."); img.removeAttribute("src"); });
       }, destroy() { text.destroy(); } };
     },
   }],

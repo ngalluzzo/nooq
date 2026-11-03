@@ -483,3 +483,7 @@
 .nq-diagram-render { overflow-x: auto; padding: var(--nq-space-2) 0; }
 .nq-diagram-render[data-error] { font-family: var(--nq-font-mono); font-size: 13px; color: var(--nq-graphite-muted); border-bottom: 1px dashed var(--nq-rule-strong); }
 .nq-diagram { --pele-bg: transparent; --pele-fg: var(--nq-graphite); --pele-muted: var(--nq-graphite-muted); --pele-line: var(--nq-graphite); --pele-surface: var(--nq-paper-sunken); --pele-surface-alt: var(--nq-paper-raised); --pele-border: var(--nq-rule); --pele-accent: var(--nq-ink); --pele-radius: var(--nq-radius-sm); --pele-series-1: var(--nq-ink); --pele-series-2: var(--nq-peer-teal); --pele-series-3: var(--nq-peer-violet); --pele-series-4: var(--nq-peer-sepia); --pele-series-5: var(--nq-peer-green); --pele-series-6: var(--nq-peer-magenta); --pele-series-7: var(--nq-peer-slate); --pele-series-8: var(--nq-graphite-muted); }
+
+/* 0014's honest error state: the named problem rides the figure, the
+   picture never renders broken. */
+.nq-image[data-error]::after { content: attr(data-error); font-family: var(--nq-font-sans); font-size: 13px; color: var(--nq-graphite-muted); border-bottom: 1px dashed var(--nq-rule-strong); padding: var(--nq-space-1) 0; }
