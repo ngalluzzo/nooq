@@ -458,3 +458,8 @@
 .nq-code-copy { position: absolute; top: var(--nq-space-1); right: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-xs); background: var(--nq-paper-raised); color: var(--nq-graphite-muted); cursor: pointer; opacity: 0; }
 .nq-block:hover .nq-code-copy, .nq-code-copy:focus-visible { opacity: 1; }
 .nq-code-copy:hover { color: var(--nq-graphite); }
+
+/* CM stage 2: the mirror textarea is hidden but focusable (the surface's
+   selection/focus path stays alive); CM is the visible editor. */
+.nq-code-bridge { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.nq-code-cm { background: var(--nq-paper-sunken); border-radius: var(--nq-radius-sm); padding: var(--nq-space-3); overflow-x: auto; }

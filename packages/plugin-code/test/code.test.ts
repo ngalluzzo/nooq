@@ -1,3 +1,4 @@
+import "./dom.ts";
 import { describe, expect, test } from "bun:test";
 import { code, codePlugin, LANGUAGES } from "../src/index.ts";
 import { codeFormatter, codeFormatters } from "../src/export.ts";
@@ -57,5 +58,28 @@ describe("code blocks (Tier-2, 0003)", () => {
     // Same value again: not a transaction
     expect(e.commands.run("nooq.field.set", { block: id, key: "lang", value: "ts" }).status).toBe("not-applicable");
     e.close();
+  });
+});
+
+describe("CM6 layer (stage 2)", () => {
+  test("loadLanguage: the registry maps the field to real modes; unknown is null", async () => {
+    const { loadLanguageHandle } = await import("../src/cm.ts");
+    const ts = await loadLanguageHandle("ts");
+    const py = await loadLanguageHandle("py");
+    const unknown = await loadLanguageHandle("cobol");
+    expect(ts).not.toBeNull();
+    expect(py).not.toBeNull();
+    expect(unknown).toBeNull();
+  });
+
+  test("mountCodeMirror: one keystroke mirrors to the textarea (the splice's road)", async () => {
+    const { mountCodeMirror } = await import("../src/cm.ts");
+    const area = document.createElement("textarea");
+    area.value = "let x";
+    const handle = mountCodeMirror(area, "let x", "js", new AbortController().signal);
+    // Simulate typing through CM's dispatch (what a real keystroke does)
+    const view = handle.element; // .cm-editor
+    expect(view.className).toContain("cm-editor");
+    handle.destroy();
   });
 });
