@@ -446,6 +446,6 @@
 .nq-divider { border: none; border-top: 1px solid var(--nq-graphite-muted); margin: 0.5rem 0; }
 
 /* Tier-1 drop indicator: the blue line; the grip is .nq-handle (tokens). */
-.nq-drop-indicator { position: absolute; height: 1px; background: var(--nq-ink); border-radius: var(--nq-radius-xs); z-index: 6; pointer-events: none; }
+.nq-drop-indicator { position: absolute; height: 1px; background: var(--nq-ink); border-radius: var(--nq-radius-xs); z-index: var(--nq-layer-presence); pointer-events: none; }
 .nq-handle-active { opacity: 1 !important; cursor: grabbing !important; }
 .nq-editor { position: relative; }
