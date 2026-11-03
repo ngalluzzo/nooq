@@ -10,7 +10,7 @@
  * cell. Enter steps down the column, adding a row when stepping past the
  * last. Shift+Tab walks back.
  */
-import { defineDOMPlugin, defineTextPolicy, type BlockViewContext } from "@nooq/plugins/dom";
+import { defineDOMPlugin, defineTextPolicy, insertAfterSelection, type BlockViewContext } from "@nooq/plugins/dom";
 import { blockRow } from "@nooq/design";
 import { table, tableCell, tableRow, tablesPlugin } from "./index.ts";
 
@@ -21,6 +21,9 @@ const focusCell = (root: HTMLElement, blockId: string): void => {
 
 export const tablesDOM = defineDOMPlugin({
   id: "nooq.tables.dom", forPlugin: tablesPlugin,
+  // The slash entry ships with the plugin (§7): hosts without tables never
+  // see the action, and the action's command is always registered.
+  menus: [{ id: "insert:nooq.table/v1", label: "Table", glyph: "⊞", command: "nooq.table.insert", args: ctx => insertAfterSelection(ctx) }],
   views: [
     { type: table.type, mount(ctx) {
       const element = document.createElement("div");

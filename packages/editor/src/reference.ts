@@ -212,14 +212,6 @@ export const essentialsDOM = defineDOMPlugin({
         return { type: "nooq.divider/v1", parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
       },
     },
-    // 0015 tables: the 2×2 starter in one transaction.
-    { id: "insert:nooq.table/v1", label: "Table", glyph: "⊞", command: "nooq.table.insert",
-      args(ctx: SurfaceActionContext) {
-        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
-        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
-        return { parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
-      },
-    },
     // Tier-1 lists: three slash entries, one block type — the kind is the
     // first field write a new writer makes after landing in the item.
     ...(["bullet", "number", "check"] as const).map(kind => ({ id: `insert:nooq.list/v1:${kind}`, label: kind === "bullet" ? "Bulleted list" : kind === "number" ? "Numbered list" : "To-do list", glyph: kind === "bullet" ? "•" : kind === "number" ? "1." : "☑", command: insertBlock.id,
