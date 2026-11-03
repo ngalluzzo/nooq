@@ -17,18 +17,18 @@ import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, move
 
 /** From a focused cell, its table id — or null outside tables. */
 type TableView = { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
+/** Action helpers: one scan per invocation (actions fire on click, never
+ *  per-cell — the hot paths are the views, which read the context's tree). */
 function tableOf(ctx: { block: string; snapshot: unknown }): string | null {
   const view = ctx.snapshot as unknown as TableView;
-  let current: string | undefined = ctx.block;
-  for (let depth = 0; depth < 3 && current !== undefined; depth++) {
-    current = Object.keys(view.blocks).find(id => view.blocks[id]!.children.includes(current!));
-    if (current !== undefined && view.blocks[current]!.type === "nooq.table/v1") return current;
-  }
-  return null;
+  const row = Object.keys(view.blocks).find(id => (view.blocks[id]!.children as readonly string[]).includes(ctx.block));
+  if (row === undefined) return null;
+  const table = Object.keys(view.blocks).find(id => (view.blocks[id]!.children as readonly string[]).includes(row));
+  return table ?? null;
 }
 function rowOf(ctx: { block: string; snapshot: unknown }): string | null {
   const view = ctx.snapshot as unknown as TableView;
-  return Object.keys(view.blocks).find(id => view.blocks[id]!.children.includes(ctx.block)) ?? null;
+  return Object.keys(view.blocks).find(id => (view.blocks[id]!.children as readonly string[]).includes(ctx.block)) ?? null;
 }
 function columnOf(ctx: { block: string; snapshot: unknown }): number {
   const view = ctx.snapshot as unknown as TableView;
@@ -228,8 +228,8 @@ export const tablesDOM = defineDOMPlugin({
       ghost.addEventListener("click", () => { void ctx.run("nooq.table.complete-row", { row: ctx.block }); });
       return { element, update(block) {
         const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
-        const tableId = Object.keys(view.blocks).find(tid => view.blocks[tid]!.children.includes(ctx.block));
-        const widest = tableId === undefined ? 0 : Math.max(...(view.blocks[tableId]!.children.map(row => view.blocks[row]!.children.length)));
+        const tableId = ctx.parent; // the row's parent IS the table (EB-T: no scan)
+        const widest = tableId === null ? 0 : Math.max(...((view.blocks[tableId]?.children ?? []) as readonly string[]).map(row => view.blocks[row]!.children.length));
         const short = block.children.length < widest;
         if (short && !element.contains(ghost)) element.append(ghost);
         if (!short && element.contains(ghost)) ghost.remove();
@@ -252,17 +252,22 @@ export const tablesDOM = defineDOMPlugin({
         const resize = document.createElement("div");
         resize.className = "nq-table-resize";
         resize.setAttribute("role", "separator");
+        // Structure without scanning (EB-T): the context carries the tree —
+        // ctx.parent IS the row, ctx.parentOf finds the table, O(1) each.
+        const rowOfCell = (): string | null => ctx.parent; // typed narrow once, below stays honest
         const columnOfCell = (): number => {
+          const row = rowOfCell();
+          if (row === null) return -1;
           const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
-          const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(ctx.block));
-          return row === undefined ? -1 : (view.blocks[row]!.children as readonly string[]).indexOf(ctx.block);
+          return (view.blocks[row]?.children as readonly string[] | undefined)?.indexOf(ctx.block) ?? -1;
         };
         const refresh = (): void => {
+          const row = rowOfCell();
+          if (row === null) { resize.remove(); return; }
           const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
-          const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(ctx.block));
-          const last = row !== undefined && (view.blocks[row]!.children as readonly string[]).at(-1) === ctx.block;
-          if (last) { resize.remove(); return; }
-          resize.dataset.column = String(columnOfCell());
+          const cells = view.blocks[row]?.children as readonly string[] | undefined;
+          if (cells === undefined || cells.at(-1) === ctx.block) { resize.remove(); return; }
+          resize.dataset.column = String(cells.indexOf(ctx.block));
           if (!body?.contains(resize)) body?.append(resize);
         };
         refresh();
@@ -270,14 +275,14 @@ export const tablesDOM = defineDOMPlugin({
         // Navigation: view-local; only row-creation is a command.
         const position = (): { row: string; rows: readonly string[]; cells: readonly string[]; at: number } | null => {
           const view = ctx.snapshot() as unknown as { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
-          const id = ctx.block;
-          const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(id));
-          if (row === undefined) return null;
-          const tableId = Object.keys(view.blocks).find(tid => view.blocks[tid]!.children.includes(row));
-          if (tableId === undefined) return null;
+          const row = rowOfCell();
+          if (row === null) return null;
+          const tableId = ctx.parentOf(row);
+          if (tableId === undefined || tableId === null) return null;
           const rows = view.blocks[tableId]!.children;
-          const cells = view.blocks[row]!.children;
-          return { row, rows, cells, at: cells.indexOf(id) };
+          const cells = view.blocks[row]?.children;
+          if (cells === undefined) return null;
+          return { row, rows, cells, at: cells.indexOf(ctx.block) };
         };
         const step = (target: () => string | undefined): void => {
           const to = target();

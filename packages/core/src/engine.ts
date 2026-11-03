@@ -93,9 +93,18 @@ export function isValidated(tx: Transaction): boolean { return validatedTx.has(t
 
 export function validateTransaction(state: DocState, tx: Transaction): void {
   if (tryValidateReadonly(state, tx)) return; // EB-6 fast path: O(ops) on the SHARED state, no copy, no mutation
+  // EB-T: ONE live-tree per pass, maintained by the ops themselves — a
+  // 101-insert column gesture paid 101 full-tree builds before (O(cells x
+  // doc)); the set and map below stay exactly what liveTree(state) would
+  // compute at each op, because every mutation path maintains them.
+  const tree = liveTree(state);
+  const scope: { alive: Set<BlockId>; parentOf: Map<BlockId, BlockId | null> } = { alive: tree.alive, parentOf: tree.parentOf };
   tx.ops.forEach((op, index) => {
     try {
-      applyOp(state, op, tx);
+      applyOp(state, op, tx, scope);
+      if (op.op === "insert") scope.alive.add(op.block.id);
+      else if (op.op === "restore") scope.alive.add(op.block);
+      else if (op.op === "delete") scope.alive.delete(op.block);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`transaction ${tx.id} op ${index} (${op.op}) failed: ${message}`);
@@ -110,31 +119,39 @@ function requireBlock(state: DocState, id: BlockId): Block {
   return block;
 }
 
-function requireAlive(state: DocState, id: BlockId): Block {
+interface PassScope { alive: Set<BlockId>; parentOf: Map<BlockId, BlockId | null> }
+
+function requireAlive(state: DocState, id: BlockId, scope?: PassScope): Block {
   requireBlock(state, id);
-  if (!liveTree(state).alive.has(id)) throw new Error(`block ${id} is tombstoned`);
+  const isAlive = scope !== undefined ? scope.alive.has(id) : liveTree(state).alive.has(id);
+  if (!isAlive) throw new Error(`block ${id} is tombstoned`);
   return state.blocks[id]!;
 }
 
-function attach(state: DocState, id: BlockId, parent: BlockId | null, index: number | undefined): void {
+function attach(state: DocState, id: BlockId, parent: BlockId | null, index: number | undefined, scope?: PassScope, fresh = false): void {
   // Placement-register semantics (DM-4.6/4.7): a block lives in exactly one
   // list. Scrub every occurrence — including stale entries in tombstoned
   // parents' lists — so a block revived elsewhere never appears twice.
-  detachFromAllLists(state, id);
-  const list = parent === null ? state.roots : requireAlive(state, parent).children;
+  // A FRESH insert skips the scrub: the caller's already-exists check just
+  // proved this block was created in this pass and never attached (EB-T:
+  // the scrub is O(doc) and a 101-cell gesture paid it 101 times).
+  if (!fresh) detachFromAllLists(state, id);
+  const list = parent === null ? state.roots : requireAlive(state, parent, scope).children;
   const at = index ?? list.length;
   if (!Number.isInteger(at) || at < 0 || at > list.length) throw new Error(`index ${at} out of range`);
   list.splice(at, 0, id);
+  scope?.parentOf.set(id, parent);
 }
 
-function detach(state: DocState, id: BlockId): void {
-  const { parentOf } = liveTree(state);
+function detach(state: DocState, id: BlockId, scope?: PassScope): void {
+  const parentOf = scope !== undefined ? scope.parentOf : liveTree(state).parentOf;
   const parent = parentOf.get(id);
   if (parent === undefined) throw new Error(`block ${id} is not live`);
   const list = parent === null ? state.roots : state.blocks[parent]!.children;
   const at = list.indexOf(id);
   if (at < 0) throw new Error(`block ${id} missing from its parent's children`);
   list.splice(at, 1);
+  scope?.parentOf.delete(id);
 }
 
 /** Remove every occurrence of id from roots and all children lists (register semantics). */
@@ -147,7 +164,7 @@ function detachFromAllLists(state: DocState, id: BlockId): void {
   }
 }
 
-function applyOp(state: DocState, op: Op, tx: Transaction): void {
+function applyOp(state: DocState, op: Op, tx: Transaction, scope?: PassScope): void {
   const writer = { actor: tx.actor.actorId, lamport: tx.lamport, ...(tx.adoptedBy !== undefined ? { adoptedBy: tx.adoptedBy } : {}) };
   switch (op.op) {
     case "insert": {
@@ -159,7 +176,7 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       if (block.text !== undefined) block.text = validateRenderedText(block.text);
       state.blocks[block.id] = block;
       try {
-        attach(state, block.id, op.parent, op.index);
+        attach(state, block.id, op.parent, op.index, scope, true);
       } catch (cause) {
         delete state.blocks[block.id];
         throw cause;
@@ -179,17 +196,17 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       return;
     }
     case "move": {
-      requireAlive(state, op.block);
+      requireAlive(state, op.block, scope);
       if (op.newParent === op.block) throw new Error("cannot move a block under itself");
       if (op.newParent !== null) {
-        requireAlive(state, op.newParent);
+        requireAlive(state, op.newParent, scope);
         if (subtreeOf(state, op.block).has(op.newParent)) {
           throw new Error("cannot move a block into its own subtree (DM-3.1)");
         }
       }
-      detach(state, op.block);
+      detach(state, op.block, scope);
       try {
-        attach(state, op.block, op.newParent, op.index);
+        attach(state, op.block, op.newParent, op.index, scope);
       } catch (cause) {
         // Restore the previous position so the failed op leaves no partial state
         // visible to later ops in the same transaction; the whole transaction
@@ -199,8 +216,8 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
       return;
     }
     case "delete": {
-      requireAlive(state, op.block);
-      detach(state, op.block); // Tombstone: map entry, fields, and text persist (DM-3.4).
+      requireAlive(state, op.block, scope);
+      detach(state, op.block, scope); // Tombstone: map entry, fields, and text persist (DM-3.4).
       return;
     }
     case "setAccess": {
@@ -210,16 +227,16 @@ function applyOp(state: DocState, op: Op, tx: Transaction): void {
     }
     case "restore": {
       requireBlock(state, op.block);
-      if (liveTree(state).alive.has(op.block)) throw new Error(`block ${op.block} is not tombstoned`);
+      if ((scope !== undefined ? scope.alive : liveTree(state).alive).has(op.block)) throw new Error(`block ${op.block} is not tombstoned`);
       if (op.parent !== null) {
-        requireAlive(state, op.parent);
+        requireAlive(state, op.parent, scope);
         // The subtree may contain tombstoned descendants, so this check is
         // needed even though the restored block is unreachable (DM-4.6).
         if (subtreeOf(state, op.block).has(op.parent)) {
           throw new Error("cannot restore a block into its own subtree (DM-3.1)");
         }
       }
-      attach(state, op.block, op.parent, op.index);
+      attach(state, op.block, op.parent, op.index, scope);
       return;
     }
   }

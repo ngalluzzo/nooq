@@ -514,6 +514,11 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     for (const dispose of row.cleanups.splice(0).reverse()) try { dispose(); } catch (cause) { fail(undefined, cause); }
     try { row.view?.destroy?.(); } catch (cause) { fail(undefined, cause); }
   }
+  /** One liveTree per render, shared by every mount's context (EB-T: a
+   *  101-cell column gesture paid 101 full-doc walks — one each — before). */
+  let renderTree: ReturnType<typeof liveTree> | undefined;
+  const treeOfRender = (): ReturnType<typeof liveTree> => renderTree ??= liveTree(editor.view);
+
   function makeRow(id: string, block: Block): Row {
     const shell = document.createElement("div"), children = document.createElement("div"), presence = document.createElement("div");
     shell.dataset.nqBlock = id; children.className = "nq-children";
@@ -522,7 +527,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const signal = row.abort.signal;
     const canAct = () => { if (signal.aborted || destroyed) throw new Error("View is disposed"); if (rendering) throw new Error("Views cannot dispatch while rendering"); };
     const context: BlockViewContext = {
-      block: id, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
+      block: id, parent: treeOfRender().parentOf.get(id) ?? null, parentOf: (bid: string) => treeOfRender().parentOf.get(bid) ?? undefined, signal, children: { element: children }, mountText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountText(id, row, options?.label); },
       mountRichText: options => { if (signal.aborted) throw new Error("View is disposed"); return mountRichText(id, row, options); },
       mountTextEditor: options => { if (signal.aborted) throw new Error("View is disposed"); return mountTextEditor(id, row, options?.label, provider?.textPolicy); },
       actions: {
@@ -700,6 +705,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   editor.ydoc.on("afterTransaction", releaseEmptySelection);
 
   function render() {
+    renderTree = undefined; // the render's mounts share ONE tree walk
     documentSelection?.beforeRender();
     scheduled = false; if (destroyed) return;
     rendering = true;

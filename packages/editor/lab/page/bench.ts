@@ -181,17 +181,32 @@ function concurrentRemote(block: BlockId, first: number, second: number, reverse
     },
   };
 }
+const labEditor = editor; // the probe reaches the instance
 const lab = {
   docName,
   condition,
   textMode,
   blockCount: () => surface.element.querySelectorAll("[data-nq-block]").length,
+  /** Lab: the editor instance (deep probes only — never a product seam). */
+  editor: labEditor,
   /** Diagnostics: the direct engine path, bypassing the command runtime. */
   diagApply: (id: string) => { editor.applyTextChanges(id, [{ insert: "Z" }]); return lab.textOf(id)?.slice(0, 60) ?? null; },
   diagRun: (id: string) => { const r = editor.commands.run("nooq.text.edit", { block: id, changes: [{ insert: "W" }] }); return { status: r.status, text: lab.textOf(id)?.slice(0, 60) ?? null }; },
   /** Lab: run any command by id (diagnostics; 0015's column gestures measured here). */
+  /** Lab: the parent block id of a block (the probe walks the tree by it). */
+  blockParentOf: (id: string): string | null => { const view = editor.view; for (const block of Object.values(view.blocks)) { if ((block.children as readonly string[]).includes(id)) return block.id; } return null; },
   diagCommand: (id: string, args: unknown): string => { const r = editor.commands.run(id as never, args as never); return r.status; },
+  /** Lab: phase-split a command — sync apply+render, then the paint. */
+  diagCommandPhased: async (id: string, args: unknown): Promise<{ status: string; syncMs: number; paintMs: number }> => {
+    const t0 = performance.now();
+    const r = editor.commands.run(id as never, args as never);
+    const t1 = performance.now();
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const t2 = performance.now();
+    return { status: r.status, syncMs: t1 - t0, paintMs: t2 - t1 };
+  },
   /** Lab: run any command by id (diagnostics; 0015's column gestures measured here). */
+  /** Lab: the parent block id of a block (the probe walks the tree by it). */
   /** EB-6/EB-8: scroll to a block by id, through windowing placeholders. */
   scrollToBlock: async (id: string): Promise<string> => {
     const direct = document.querySelector(`[data-nq-block="${CSS.escape(id)}"]`);

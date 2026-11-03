@@ -45,6 +45,12 @@ export interface TextAuthor {
 }
 export interface BlockViewContext {
   block: string;
+  /** The block's parent id (null for roots) at mount — O(1), never a scan.
+   *  Views that need structure read this; the surface owns the tree. */
+  parent: string | null;
+  /** Any block's parent id (null for roots, undefined when unknown) — O(1)
+   *  per lookup over the render's live tree. Structure without scanning. */
+  parentOf(id: string): string | null | undefined;
   signal: AbortSignal;
   children: { element: HTMLElement };
   mountText(options?: { label?: string }): TextBinding;
