@@ -94,6 +94,35 @@ export function importMarkdown(markdown: string): ImportedBlock[] {
   for (let lineAt = 0; lineAt < lines.length; lineAt++) {
     const original = lines[lineAt]!;
     if (original.trim() === "") { pendingBlank = true; continue; }
+    // Tables (plugin-tables, 0015): consecutive pipe rows, separators skipped.
+    if (/^\|.*\|$/.test(original.trim())) {
+      const rowLines: string[] = [];
+      let scan = lineAt;
+      for (; scan < lines.length; scan++) {
+        const candidate = depthOf(lines[scan]!).rest.trim();
+        if (!/^\|.*\|$/.test(candidate)) break;
+        if (!/^\|[\s:|-]+\|$/.test(candidate)) rowLines.push(candidate); // skip separators
+      }
+      lineAt = scan - 1;
+      if (rowLines.length > 0) {
+        const tableNode: Block = { id: newBlockId(), type: "nooq.table/v1", fields: {} as Block["fields"], children: [], attribution: { created: { actor: "" }, fields: {} } };
+        const tableItem: ImportedBlock = { data: tableNode, children: [] };
+        for (const rowLine of rowLines) {
+          const cells = rowLine.slice(1, -1).split("|").map(cell => cell.trim());
+          const rowNode: Block = { id: newBlockId(), type: "nooq.table-row/v1", fields: {} as Block["fields"], children: [], attribution: { created: { actor: "" }, fields: {} } };
+          const rowItem: ImportedBlock = { data: rowNode, children: [] };
+          for (const cellText of cells) {
+            const cellNode: Block = { id: newBlockId(), type: "nooq.table-cell/v1", fields: {} as Block["fields"], text: { s: cellText, marks: cellText.split("").map(() => []) }, children: [], attribution: { created: { actor: "" }, fields: {} } };
+            rowItem.children.push({ data: cellNode, children: [] });
+          }
+          tableItem.children.push(rowItem);
+        }
+        stack.length = 1; listDepth.length = 1;
+        roots.push(tableItem);
+        pendingBlank = false;
+        continue;
+      }
+    }
     // Display math (plugin-math): $$ opens and closes, the LaTeX verbatim.
     if (original.trim() === "$$") {
       const body: string[] = [];

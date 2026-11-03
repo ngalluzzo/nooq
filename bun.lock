@@ -168,6 +168,19 @@
         "@types/katex": "0.16.7",
       },
     },
+    "packages/plugin-tables": {
+      "name": "@nooq/plugin-tables",
+      "version": "1.0.0",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/design": "workspace:*",
+        "@nooq/editor": "workspace:*",
+        "@nooq/plugins": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+      },
+    },
     "packages/plugins": {
       "name": "@nooq/plugins",
       "version": "0.0.1",
@@ -446,6 +459,8 @@
     "@nooq/plugin-image": ["@nooq/plugin-image@workspace:packages/plugin-image"],
 
     "@nooq/plugin-math": ["@nooq/plugin-math@workspace:packages/plugin-math"],
+
+    "@nooq/plugin-tables": ["@nooq/plugin-tables@workspace:packages/plugin-tables"],
 
     "@nooq/plugins": ["@nooq/plugins@workspace:packages/plugins"],
 

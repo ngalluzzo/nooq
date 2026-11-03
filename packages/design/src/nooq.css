@@ -487,3 +487,12 @@
 /* 0014's honest error state: the named problem rides the figure, the
    picture never renders broken. */
 .nq-image[data-error]::after { content: attr(data-error); font-family: var(--nq-font-sans); font-size: 13px; color: var(--nq-graphite-muted); border-bottom: 1px dashed var(--nq-rule-strong); padding: var(--nq-space-1) 0; }
+
+/* 0015 tables: the shell draws its rules; each row grids its own width —
+   a ragged row renders narrower, honestly. */
+.nq-table { display: flex; flex-direction: column; border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-sm); overflow: hidden; }
+.nq-table-row { border-bottom: 1px solid var(--nq-rule); }
+.nq-table-row:last-child { border-bottom: none; }
+.nq-table-cell { border-right: 1px solid var(--nq-rule); padding: var(--nq-space-1) var(--nq-space-2); min-height: 1.5rem; }
+.nq-table-cell:last-child { border-right: none; }
+.nq-table-cell-input { font-family: var(--nq-font-sans); font-size: 14px; line-height: 20px; width: 100%; background: none; border: none; outline: none; color: inherit; resize: none; }

@@ -1,6 +1,7 @@
 # Proposal 0015: tables
 
-**Status: DRAFT — not yet opened. Drafted: 2026-11-03.** A new plugin
+**Status: OPEN — 7-day comment period (GOVERNANCE, "significant changes").
+Opened: 2026-11-03. Decision of record: issue #13.** A new plugin
 package (a "significant change" under GOVERNANCE) — and, unusually, **zero
 DOCUMENT-MODEL change**: tables are an instance of the tree the model
 already owns. The product decision this proposal exists to make in public:
