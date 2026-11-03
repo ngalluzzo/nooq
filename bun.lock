@@ -61,6 +61,7 @@
         "@nooq/core": "workspace:*",
         "@nooq/design": "workspace:*",
         "@nooq/plugin-callouts": "workspace:*",
+        "@nooq/plugin-tables": "workspace:*",
         "@nooq/plugins": "workspace:*",
         "@nooq/sync": "workspace:*",
         "@nooq/yjs": "workspace:*",

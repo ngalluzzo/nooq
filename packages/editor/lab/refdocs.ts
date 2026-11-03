@@ -10,12 +10,15 @@ import * as Y from "yjs";
 import type { ActorDescriptor, Block, RenderedText, Transaction } from "@nooq/core";
 import { applyTransaction, newDocument } from "@nooq/yjs";
 
-export type RefDocName = "ref-small" | "ref-large" | "ref-huge";
+export type RefDocName = "ref-small" | "ref-large" | "ref-huge" | "ref-tables";
 
-const SPECS: Record<RefDocName, { blocks: number; seed: number }> = {
+const SPECS: Record<RefDocName, { blocks: number; seed: number; table?: { rows: number; columns: number } }> = {
   "ref-small": { blocks: 50, seed: 0x5eed01 },
   "ref-large": { blocks: 2000, seed: 0x5eed02 },
   "ref-huge": { blocks: 10000, seed: 0x5eed03 },
+  // 0015's lab shape: 40 paragraphs around one 100-row x 8-column table
+  // (901 blocks, ~942 with the shell) — table-heavy by construction.
+  "ref-tables": { blocks: 40, seed: 0x5eed04, table: { rows: 100, columns: 8 } },
 };
 
 const ACTORS: ActorDescriptor[] = [
@@ -68,8 +71,42 @@ function marked(rand: () => number, s: string): RenderedText {
 }
 
 /** The transactions that build a reference document, in order. */
+function tableTransactions(seed: number, spec: { rows: number; columns: number }, startIndex: number): { ops: import("@nooq/core").Op[]; cellIds: string[][] } {
+  const rand = random(seed ^ 0x7ab1e);
+  const ops: import("@nooq/core").Op[] = [];
+  const cellIds: string[][] = [];
+  const tableId = idFor(seed, startIndex), rowBase = startIndex + 1;
+  ops.push({ op: "insert", block: { id: tableId, type: "nooq.table/v1", fields: {}, children: [], attribution: { created: { actor: ACTORS[0]!.actorId }, fields: {} } }, parent: null });
+  for (let r = 0; r < spec.rows; r++) {
+    const rowId = idFor(seed, rowBase + r);
+    ops.push({ op: "insert", block: { id: rowId, type: "nooq.table-row/v1", fields: {}, children: [], attribution: { created: { actor: ACTORS[0]!.actorId }, fields: {} } }, parent: tableId, index: r });
+    const rowCells: string[] = [];
+    for (let c = 0; c < spec.columns; c++) {
+      const cellId = idFor(seed, rowBase + spec.rows + r * spec.columns + c);
+      const text = sentence(rand, 3 + Math.floor(rand() * 4));
+      ops.push({ op: "insert", block: { id: cellId, type: "nooq.table-cell/v1", fields: {}, text: marked(rand, text), children: [], attribution: { created: { actor: ACTORS[0]!.actorId }, fields: {} } }, parent: rowId, index: c });
+      rowCells.push(cellId);
+    }
+    cellIds.push(rowCells);
+  }
+  return { ops, cellIds };
+}
+
 export function refTransactions(name: RefDocName): Transaction[] {
   const { blocks, seed } = SPECS[name];
+  if (name === "ref-tables") {
+    const spec = SPECS[name]!.table!;
+    const rand = random(seed);
+    const txs: Transaction[] = [];
+    for (let i = 0; i < blocks; i++) {
+      const actor = ACTORS[Math.floor(rand() * ACTORS.length)]!;
+      const s2 = sentence(rand, 14 + Math.floor(rand() * 8));
+      txs.push({ id: idFor(seed ^ 0xff, i), actor, lamport: i + 1, causality: {}, intent: "ref-doc", ops: [{ op: "insert", block: { id: idFor(seed, i), type: "nooq.paragraph/v1", fields: {}, text: marked(rand, s2), children: [], attribution: { created: { actor: actor.actorId }, fields: {} } }, parent: null }] });
+    }
+    const { ops } = tableTransactions(seed, spec, blocks);
+    txs.push({ id: idFor(seed ^ 0xfe, 0), actor: ACTORS[0]!, lamport: 1, causality: {}, intent: "ref-doc", ops });
+    return txs;
+  }
   const rand = random(seed);
   const lamports = new Map<string, number>();
   const txs: Transaction[] = [];
@@ -93,6 +130,16 @@ export function refTransactions(name: RefDocName): Transaction[] {
 }
 
 export const refBlockId = (name: RefDocName, i: number) => idFor(SPECS[name].seed, i);
+
+/** A table cell's id in ref-tables (deterministic; the lab's typing target). */
+export function refTableCellId(row: number, column: number): string {
+  const spec = SPECS["ref-tables"]!;
+  const base = spec.blocks + 1 + spec.table!.rows;
+  return idFor(spec.seed, base + row * spec.table!.columns + column);
+}
+
+/** The big table's id in ref-tables (the column-gesture target). */
+export const refTableId = (): string => idFor(SPECS["ref-tables"]!.seed, SPECS["ref-tables"]!.blocks);
 
 const cache = new Map<string, Uint8Array>();
 

@@ -25,7 +25,8 @@
     "prosemirror-state": "^1",
     "prosemirror-transform": "^1",
     "prosemirror-view": "^1",
-    "yjs": "13.6.33"
+    "yjs": "13.6.33",
+    "@nooq/plugin-tables": "workspace:*"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4"

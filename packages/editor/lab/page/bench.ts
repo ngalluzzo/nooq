@@ -189,6 +189,9 @@ const lab = {
   /** Diagnostics: the direct engine path, bypassing the command runtime. */
   diagApply: (id: string) => { editor.applyTextChanges(id, [{ insert: "Z" }]); return lab.textOf(id)?.slice(0, 60) ?? null; },
   diagRun: (id: string) => { const r = editor.commands.run("nooq.text.edit", { block: id, changes: [{ insert: "W" }] }); return { status: r.status, text: lab.textOf(id)?.slice(0, 60) ?? null }; },
+  /** Lab: run any command by id (diagnostics; 0015's column gestures measured here). */
+  diagCommand: (id: string, args: unknown): string => { const r = editor.commands.run(id as never, args as never); return r.status; },
+  /** Lab: run any command by id (diagnostics; 0015's column gestures measured here). */
   /** EB-6/EB-8: scroll to a block by id, through windowing placeholders. */
   scrollToBlock: async (id: string): Promise<string> => {
     const direct = document.querySelector(`[data-nq-block="${CSS.escape(id)}"]`);

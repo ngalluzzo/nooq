@@ -3,6 +3,8 @@ import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Block, 
 import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@nooq/plugins";
 import { defineDOMPlugin, defineTextPolicy, type BlockViewContext, type BlockViewDefinition, type MarkRenderer, type SurfaceActionContext } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock, deleteBlock, insertColumns } from "@nooq/plugins/essentials";
+import { tablesPlugin } from "@nooq/plugin-tables";
+import { tablesDOM } from "@nooq/plugin-tables/dom";
 import { blockRow, suggestionCard, tooltip, type DiffSegment, type SuggestionState } from "@nooq/design";
 import { callout, calloutMarkdown } from "@nooq/plugin-callouts";
 import { actorKindOf, type Editor, type JobBinding } from "./controller.ts";
@@ -323,8 +325,8 @@ export const simulatedRewrite = rewritePlugin({
     return target;
   },
 });
-export const referencePlugins = [essentials, review, simulatedRewrite.plugin] as const;
-export const referenceDOM = [essentialsDOM, reviewDOM, simulatedRewrite.dom] as const;
+export const referencePlugins = [essentials, review, simulatedRewrite.plugin, tablesPlugin] as const;
+export const referenceDOM = [essentialsDOM, reviewDOM, simulatedRewrite.dom, tablesDOM] as const;
 export function referenceJobBindings(signer?: ActorKey): JobBinding[] {
   return [{ job: simulatedRewrite.job, actor: { actorId: "ai:reference", kind: "ai", model: "simulated/1" }, signer }];
 }
