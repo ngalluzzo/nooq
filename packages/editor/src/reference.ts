@@ -31,6 +31,23 @@ export const renderLinkMark: MarkRenderer = (payload, text) => {
 };
 
 /** Writing Basics: the reference policy — the reserved payloaded base `link` admitted and rendered (0009 §5). */
+/** 1-based position among the block's run of consecutive numbered siblings. */
+function numberedPosition(view: { roots: readonly string[]; blocks: Readonly<Record<string, { id?: string; type: string; fields: Record<string, unknown>; children: readonly string[] }>> }, id: string): number {
+  const block = view.blocks[id];
+  if (!block) return 1;
+  let parentId: string | null = null;
+  for (const [pid, candidate] of Object.entries(view.blocks)) { if (candidate.children.includes(id)) { parentId = pid; break; } }
+  const siblings = parentId === null ? view.roots : view.blocks[parentId]?.children ?? [];
+  const at = siblings.indexOf(id);
+  let n = 1;
+  for (let i = at - 1; i >= 0; i--) {
+    const prev = view.blocks[siblings[i]!];
+    if (!prev || prev.type !== "nooq.list/v1" || prev.fields.kind !== "number") break;
+    n++;
+  }
+  return n;
+}
+
 export const writingTextPolicy = defineTextPolicy({
   defaultMode: "plain", enter: { command: splitBlock },
   marks: ["strong", "em", "code", "link"],
@@ -75,6 +92,45 @@ export const essentialsDOM = defineDOMPlugin({
         }
       }, destroy: () => { tip?.destroy(); text.destroy(); } };
     } })),
+    // Tier-1 lists: the marker is view-only state from fields; the checkbox
+    // is the nooq.list.check command (§1: one op, one transaction, undoable).
+    { type: "nooq.list/v1", textPolicy: writingTextPolicy, mount(ctx) {
+      const text = ctx.mountTextEditor({ label: "List item" });
+      const marker = document.createElement("span");
+      marker.className = "nq-list-marker";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "nq-list-marker-check";
+      check.addEventListener("change", () => { void ctx.run("nooq.list.check", { block: ctx.block }); });
+      const body = document.createElement("div");
+      body.className = "nq-list-body";
+      body.append(text.element, ctx.children.element);
+      const shell = document.createElement("ul");
+      shell.className = "nq-list-shell";
+      shell.style.listStyle = "none";
+      shell.style.margin = "0";
+      shell.style.padding = "0";
+      const row = document.createElement("li");
+      row.className = "nq-list-row";
+      row.style.display = "flex";
+      row.style.gap = "0.5rem";
+      row.style.alignItems = "flex-start";
+      const element = blockRow({ content: [shell], kind: "list", actor: "human" });
+      shell.append(row);
+      return { element, update(block: Block) {
+        const kind = String(block.fields.kind ?? "bullet");
+        if (kind === "check") {
+          check.checked = block.fields.checked === true;
+          marker.replaceChildren(check);
+        } else if (kind === "number") {
+          marker.replaceChildren(document.createTextNode(`${numberedPosition(ctx.snapshot(), block.id)}.`));
+        } else {
+          marker.replaceChildren(document.createTextNode("•"));
+        }
+        marker.dataset.kind = kind;
+        if (!row.contains(marker)) { row.append(marker, body); }
+      }, destroy() { text.destroy(); } };
+    } },
     // Multi-column layout (foundation P2): the plainest possible views — a
     // shell carrying the class, the children container retained, nothing
     // else. The surface's recursive walk does the nesting; the theme's grid
@@ -108,6 +164,15 @@ export const essentialsDOM = defineDOMPlugin({
         const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
         const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
         return { type: block.type, parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
+      },
+    })),
+    // Tier-1 lists: three slash entries, one block type — the kind is the
+    // first field write a new writer makes after landing in the item.
+    ...(["bullet", "number", "check"] as const).map(kind => ({ id: `insert:nooq.list/v1:${kind}`, label: kind === "bullet" ? "Bulleted list" : kind === "number" ? "Numbered list" : "To-do list", glyph: kind === "bullet" ? "•" : kind === "number" ? "1." : "☑", command: insertBlock.id,
+      args(ctx: SurfaceActionContext) {
+        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
+        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+        return { type: "nooq.list/v1", parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block, fields: { kind } };
       },
     })),
     // Multi-column layout: one prepared command, one intent — five blocks and

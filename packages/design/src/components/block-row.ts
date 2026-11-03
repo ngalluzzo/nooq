@@ -5,15 +5,17 @@ import { inkVar, type Ink } from "./actor-chip.ts";
 import { button } from "./button.ts";
 import { tooltip } from "./tooltip.ts";
 
-export type BlockKind = "paragraph" | "heading" | "title" | "quote";
+export type BlockKind = "paragraph" | "heading" | "title" | "quote" | "list";
 
 const TYPE_STYLE: Record<BlockKind, string> = {
   paragraph: "nq-doc-body",
   heading: "nq-doc-h2",
   title: "nq-doc-title",
   quote: "nq-doc-quote",
+
+  list: "nq-block-list",
 };
-const TAG = { paragraph: "p", heading: "h2", title: "h1", quote: "blockquote" } as const;
+const TAG = { paragraph: "p", heading: "h2", title: "h1", quote: "blockquote", list: "li" } as const;
 
 export interface BlockRowProps {
   /** The block's rendered content. */

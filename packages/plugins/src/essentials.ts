@@ -15,6 +15,18 @@ export const quote = textBlock("nooq.quote/v1", "Quote");
  */
 export const title = textBlock("nooq.title/v1", "Title");
 /**
+ * List items (DM-3.2 structure, Tier-1 surface): ONE block type, three
+ * kinds by field — bullet, number, check — nesting through children like
+ * every block (§7: the model adds no list-specific rules). `checked` is
+ * only meaningful for kind "check"; the surface renders the box.
+ */
+export const listItem = defineBlock({
+  type: "nooq.list/v1", label: "List item",
+  text: "inline", textMerge: "same-type",
+  create: () => ({ fields: { kind: "bullet" }, text: { s: "", marks: [] } }),
+  diagnose: () => [],
+});
+/**
  * Multi-column layout (foundation P2). Structure is children, not fields
  * (DM-3.2): the columns block carries two column children, each seeded with
  * an empty paragraph so a writer lands in column 1 ready to type. Reading
@@ -26,12 +38,14 @@ export const columns = layoutBlock("nooq.columns/v1", "Columns");
 export const column = layoutBlock("nooq.column/v1", "Column");
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
 
-export const insertBlock = defineCommand<{ type: string; parent: string | null; index?: number; clearBlock?: string }>({
+export const insertBlock = defineCommand<{ type: string; parent: string | null; index?: number; clearBlock?: string; fields?: Record<string, import("@nooq/core").JsonValue> }>({
   id: "nooq.block.insert", label: "Insert block",
-  validateArgs: (a): a is { type: string; parent: string | null; index?: number; clearBlock?: string } => object(a) && typeof a.type === "string" && (a.parent === null || typeof a.parent === "string") && (a.index === undefined || Number.isInteger(a.index)) && (a.clearBlock === undefined || typeof a.clearBlock === "string"),
+  validateArgs: (a): a is { type: string; parent: string | null; index?: number; clearBlock?: string; fields?: Record<string, import("@nooq/core").JsonValue> } => object(a) && typeof a.type === "string" && (a.parent === null || typeof a.parent === "string") && (a.index === undefined || Number.isInteger(a.index)) && (a.clearBlock === undefined || typeof a.clearBlock === "string") && (a.fields === undefined || object(a.fields)),
   prepare(ctx, args) {
     if (args.parent !== null && !ctx.isAlive(args.parent)) return { status: "not-applicable" };
-    const block = ctx.createBlock(args.type), ops: Op[] = [];
+    const block = ctx.createBlock(args.type);
+    if (args.fields) block.fields = { ...block.fields, ...args.fields }; // Tier-1: the slash picks the list kind
+    const ops: Op[] = [];
     if (args.clearBlock) {
       // A menu may stay open while remote text arrives. Only consume its slash.
       if (!ctx.isAlive(args.clearBlock) || ctx.snapshot.blocks[args.clearBlock]!.text?.s !== "/") return { status: "not-applicable" };
@@ -68,14 +82,46 @@ export const splitBlock = defineCommand<{ block: string; anchor: number; head: n
     const target = ctx.snapshot.blocks[id]!, text = target.text ?? { s: "", marks: [] };
     const from = Math.min(anchor, head), to = Math.max(anchor, head);
     if (from < 0 || to > text.s.length) throw new Error("Selection out of range");
-    const block = ctx.createBlock(paragraph.type);
-    block.text = { s: text.s.slice(to), marks: text.marks.slice(to).map(m => [...m]) };
     const parent = ctx.parentOf(id)!;
     const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+    // Same-type split (Tier-1): the new block continues what was split — a
+    // list item begets a list item of the same kind, a heading a heading —
+    // EXCEPT an empty list item, where Enter exits the list to a paragraph.
+    const isList = target.type === listItem.type;
+    if (isList && text.s.length === 0 && from === 0 && to === 0) {
+      const exit = ctx.createBlock(paragraph.type);
+      return { status: "ready", intent: "exit-list", ops: [
+        { op: "delete", block: id },
+        { op: "insert", block: exit, parent, index: siblings.indexOf(id) },
+      ], selection: { block: exit.id, anchor: 0, head: 0 } };
+    }
+    const block = ctx.createBlock(isList ? listItem.type : target.type);
+    if (isList) block.fields = { ...target.fields } as Record<string, import("@nooq/core").JsonValue>;
+    else if (target.type !== paragraph.type) {
+      // Non-list built-ins (heading, quote) keep their fields — the model
+      // carries them; the reference renders what fields say.
+      block.fields = { ...target.fields } as Record<string, import("@nooq/core").JsonValue>;
+    }
+    block.text = { s: text.s.slice(to), marks: text.marks.slice(to).map(m => [...m]) };
     return { status: "ready", intent: "split-block", ops: [
       { op: "textEdit", block: id, changes: [{ retain: from }, { delete: text.s.length - from }] },
       { op: "insert", block, parent, index: siblings.indexOf(id) + 1 },
     ], selection: { block: block.id, anchor: 0, head: 0 } };
+  },
+});
+/** The checkbox IS the field (Tier-1): one op, one transaction, undoable. */
+export const toggleCheck = defineCommand<{ block: string }>({
+  id: "nooq.list.check", label: "Toggle to-do",
+  validateArgs: (a): a is { block: string } => object(a) && typeof a.block === "string",
+  prepare(ctx, { block: id }) {
+    if (!ctx.isAlive(id)) return { status: "not-applicable" };
+    const target = ctx.snapshot.blocks[id]!;
+    if (target.type !== listItem.type || target.fields.kind !== "check") return { status: "not-applicable" };
+    // setField always carries a value (DM-4): unchecked is false, not absent.
+    const next = target.fields.checked === true ? false : true;
+    return { status: "ready", intent: "toggle-check", ops: [
+      { op: "setField", block: id, key: "checked", value: next },
+    ] };
   },
 });
 /**
@@ -128,5 +174,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, quote, title, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns] },
+  contributes: { blocks: [paragraph, heading, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck] },
 });
