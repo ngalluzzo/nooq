@@ -368,6 +368,13 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     // Mod-k is the writer-facing link chord (0009 §5): one popover over the
     // selection, before any plugin key binding could claim the same chord.
     if (links.keyDown(id, event)) return true;
+    // DM-4.10: undo/redo — the surface's own chord, before plugins.
+    const undoChord = (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "z";
+    if (undoChord) {
+      if (event.shiftKey) editor.redo();
+      else editor.undo();
+      return true;
+    }
     const key = [event.ctrlKey ? "Ctrl" : "", event.metaKey ? "Meta" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.key].filter(Boolean).join("+");
     for (const action of keys.get(key) ?? []) try {
       const outcome = invoke(action, id);

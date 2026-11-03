@@ -41,6 +41,7 @@ import {
   type Role,
   type TextChange,
   type Transaction,
+  inverseOf,
 } from "@nooq/core";
 import { replaceChanges } from "@nooq/core";
 import { MaintainedProjection } from "@nooq/yjs";
@@ -515,6 +516,9 @@ export class Editor {
   private applyBound(tx: Transaction, identity: { actor: ActorDescriptor; key?: import("@nooq/core").ActorKey; publicKey?: string; ready: boolean }, genesis = false): void {
     if (this.closed || this.applying) throw new Error("Cannot mutate in this phase");
     const typing = this.typingKey(tx, identity);
+    // DM-4.10: capture the pre-state BEFORE the apply — the inverse is
+    // computed against exactly the state the transaction validates on.
+    const undoPre = this.#undoing === 0 && genesis === false ? structuredClone(this.view) as DocState : undefined;
     if (this.burst && !(typing !== undefined && this.continuesBurst(this.burst, typing, tx))) this.flush(); // any other action seals first
     if (!genesis) {
       const verdict = authorizeLocal(this.view, tx, { actorId: identity.actor.actorId, key: identity.publicKey, signingReady: identity.ready && !!identity.key }, () => readState(this.ydoc)); // structural shapes get a fresh read, not a clone (EB-6)
@@ -531,14 +535,17 @@ export class Editor {
       const captured = applyCaptured(this.ydoc, tx, identity.key, signer);
       if (typing !== undefined) {
         this.extendBurst(typing, tx, captured, identity.key, signer);
+        if (undoPre !== undefined) this.pushUndo(tx, undoPre, this.continuesBurstOpen(typing));
         return;
       }
       this.record(tx); // DM-4: durable intent precedes shipping
+      if (undoPre !== undefined) this.pushUndo(tx, undoPre, false);
       if (captured) void this.ship(captured); // a transaction with no effects has nothing to replicate
       return;
     }
     applyToDoc(this.ydoc, tx, undefined, undefined, this.#maintained?.value); // fast path on the shared projection (EB-6 stage 2)
     this.record(tx);
+    if (undoPre !== undefined) this.pushUndo(tx, undoPre, false);
     } finally { this.currentTx = undefined; this.applying = false; }
   }
 
@@ -551,6 +558,12 @@ export class Editor {
   }
 
   /** The next keystroke continues the burst when it has the same author and block and touches the caret. */
+  /** DM-4.10: a burst's FIRST tx pushes one undo entry; continuations ride it (undo reverts the sentence). */
+  private continuesBurstOpen(typing: string): boolean {
+    return this.burst !== undefined && this.burst.first !== undefined && this.#undoStack.length > 0
+      && this.#undoStack[this.#undoStack.length - 1]!.tx === this.burst.first;
+  }
+
   private continuesBurst(burst: Burst, key: string, tx: Transaction): boolean {
     if (burst.key !== key) return false;
     const span = editSpan((tx.ops[0] as Extract<Op, { op: "textEdit" }>).changes);
@@ -595,6 +608,61 @@ export class Editor {
   history(): readonly Transaction[] {
     return this.historyEntries;
   }
+
+  /**
+   * DM-4.10 (undo): the local undo stack. An entry rides for every applied
+   * local action EXCEPT burst continuations (one entry per burst — undo
+   * reverts the sentence, not a keystroke) and undo/redo's own transactions.
+   * Access writes never enter (an epoch cannot go backward — Cmd+Z does not
+   * un-revoke; you re-grant, which is one ordinary transaction).
+   */
+  #undoStack: Array<{ tx: Transaction; inverse: Op[] }> = [];
+  #redoStack: Array<{ tx: Transaction; inverse: Op[] }> = [];
+  #undoing = 0; // >0 while applying an undo/redo transaction itself
+
+  private pushUndo(tx: Transaction, pre: DocState, burstContinuation: boolean): void {
+    if (this.#undoing > 0 || burstContinuation) return;
+    if (tx.ops.some(op => op.op === "setAccess")) return; // the exception, by design
+    const inverse = inverseOf(pre, tx);
+    if (inverse === undefined) return;
+    this.#undoStack.push({ tx, inverse });
+    if (this.#undoStack.length > 200) this.#undoStack.shift(); // bounded, like the lab's history tail
+    this.#redoStack = []; // a new action forks the timeline; redo expires
+  }
+
+  /** DM-4.10: undo is ANOTHER EDIT — the inverse ships as an ordinary
+   *  signed transaction, attributed to the undoer. The entry crossing to
+   *  the redo stack carries the COUNTER-inverse (the inverse of the undo
+   *  itself): a restore revives what delete tombstoned — the original ops
+   *  verbatim would collide with the kept ids (DM-3.4). */
+  undo(): void {
+    const entry = this.#undoStack.pop();
+    if (entry === undefined) return;
+    this.traverse(entry, "undo", this.#redoStack);
+  }
+
+  /** Redo applies the undo's counter-inverse — the same walk, the other
+   *  direction; undo-after-redo is symmetric by the same recompute. */
+  redo(): void {
+    const entry = this.#redoStack.pop();
+    if (entry === undefined) return;
+    this.traverse(entry, "redo", this.#undoStack);
+  }
+
+  private traverse(entry: { tx: Transaction; inverse: Op[] }, intent: "undo" | "redo", sink: Array<{ tx: Transaction; inverse: Op[] }>): void {
+    const pre = structuredClone(this.view) as DocState;
+    this.#undoing++;
+    let counter: Op[] | undefined;
+    try {
+      const tx = this.tx([...entry.inverse], intent);
+      this.apply(tx);
+      counter = inverseOf(pre, tx);
+    } finally { this.#undoing--; }
+    if (counter !== undefined) sink.push({ tx: entry.tx, inverse: counter });
+  }
+
+  canUndo(): boolean { return this.#undoStack.length > 0; }
+  canRedo(): boolean { return this.#redoStack.length > 0; }
 
   private record(tx: Transaction, notify = true): void {
     if (this.recorded.has(tx.id)) return;

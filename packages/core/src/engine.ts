@@ -91,6 +91,86 @@ export function applyTransaction(state: DocState, tx: Transaction): DocState {
 const validatedTx = new WeakMap<object, true>();
 export function isValidated(tx: Transaction): boolean { return validatedTx.has(tx as object); }
 
+/**
+ * DM-4.10 (undo): the inverse transaction of a local action — the ops that
+ * restore the pre-state, computed against the state the action validated
+ * on. Undo is ANOTHER EDIT: the inverse ships as an ordinary signed
+ * envelope, verified and admitted like any transaction, attributed to the
+ * undoer. `undefined` marks a non-invertible action (an access write — an
+ * epoch rotation cannot go backward, by 0012's design; Cmd+Z does not
+ * un-revoke, you re-grant).
+ */
+export function inverseOf(pre: DocState, tx: Transaction): Op[] | undefined {
+  const working = structuredClone(pre);
+  const inverses: Op[] = [];
+  for (const op of tx.ops) {
+    switch (op.op) {
+      case "setAccess":
+        return undefined; // epochs advance only; the exception is the design
+      case "insert": {
+        applyOp(working, op, tx);
+        inverses.push({ op: "delete", block: op.block.id });
+        break;
+      }
+      case "delete": {
+        const { parentOf } = liveTree(working);
+        const parent = parentOf.get(op.block) ?? null;
+        const siblings = parent === null ? working.roots : working.blocks[parent]!.children;
+        const index = siblings.indexOf(op.block);
+        applyOp(working, op, tx);
+        inverses.push({ op: "restore", block: op.block, parent, index });
+        break;
+      }
+      case "restore": {
+        applyOp(working, op, tx);
+        inverses.push({ op: "delete", block: op.block });
+        break;
+      }
+      case "textEdit": {
+        const before = working.blocks[op.block]?.text?.s ?? "";
+        applyOp(working, op, tx);
+        // The reverse splice: walk the changes against the pre-text; every
+        // deletion returns as an insertion of what it took, every insertion
+        // as a deletion of its length; retains stay — emitted in reverse.
+        // The reverse splice: retentions anchor positions, deletions return
+        // as insertions of what they took, insertions as deletions — IN
+        // ORDER (splices invert in place; reversing the list would detach
+        // the anchors).
+        let at = 0;
+        const parts: import("./text.ts").TextChange[] = [];
+        for (const change of op.changes) {
+          if ("retain" in change) { parts.push({ retain: change.retain }); at += change.retain; }
+          else if ("delete" in change) { parts.push({ insert: before.slice(at, at + change.delete) }); at += change.delete; }
+          else if ("insert" in change) { parts.push({ delete: change.insert.length }); }
+        }
+        inverses.push({ op: "textEdit", block: op.block, changes: parts });
+        break;
+      }
+      case "setField": {
+        const had = Object.prototype.hasOwnProperty.call(working.blocks[op.block]?.fields ?? {}, op.key);
+        const previous = had ? structuredClone(working.blocks[op.block]!.fields[op.key]) : undefined;
+        applyOp(working, op, tx);
+        // A first-set cannot un-set (fields carry values, DM-3.2); its undo
+        // is the nearest honest thing — leave the key (the create() default
+        // usually already named it). Stated in DM-4.10.
+        if (had && previous !== undefined) inverses.push({ op: "setField", block: op.block, key: op.key, value: previous });
+        break;
+      }
+      case "move": {
+        const { parentOf } = liveTree(working);
+        const oldParent = parentOf.get(op.block) ?? null;
+        const oldSiblings = oldParent === null ? working.roots : working.blocks[oldParent]!.children;
+        const oldIndex = oldSiblings.indexOf(op.block);
+        applyOp(working, op, tx);
+        inverses.push({ op: "move", block: op.block, newParent: oldParent, index: oldIndex });
+        break;
+      }
+    }
+  }
+  inverses.reverse();
+  return inverses;
+}
+
 export function validateTransaction(state: DocState, tx: Transaction): void {
   if (tryValidateReadonly(state, tx)) return; // EB-6 fast path: O(ops) on the SHARED state, no copy, no mutation
   // EB-T: ONE live-tree per pass, maintained by the ops themselves — a

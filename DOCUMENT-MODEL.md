@@ -549,6 +549,18 @@ The document header gains an optional `access` value:
   - **reader** — no ops.
   - **checkpointer** — signs checkpoints (DM-15) and nothing else; no ops.
     For hosts that persist documents. *(Draft 1.8, proposals/0005.)*
+- **Undo and redo (DM-4.10).** Undo is ANOTHER EDIT: the inverse of a
+  local action, computed against the state the action validated on, ships
+  as an ordinary signed transaction — verified and admitted like any edit,
+  attributed to the undoer, merged by the CRDT with concurrent work. The
+  stack is local (your actions only); one entry per burst (undo reverts
+  the sentence, not a keystroke); redo applies the inverse of the undo (a
+  restore revives what delete tombstoned — the original ops verbatim
+  would collide with the kept ids, DM-3.4). Two stated limits: an access
+  write never enters the stack (an epoch cannot go backward — Cmd+Z does
+  not un-revoke; you re-grant, which is one ordinary transaction), and a
+  first field-set cannot un-set (fields carry values, DM-3.2; undo leaves
+  the key, whose create() default usually named it).
 - Accept and reject require a writer. An adoption is signed by its
   `adoptedBy` actor, and its ops MUST canonically equal the proposal's
   ops (DM-6.3's "verbatim" now verified, not promised).

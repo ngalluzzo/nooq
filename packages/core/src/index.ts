@@ -56,6 +56,7 @@ export {
 } from "./digests.ts";
 export {
   applyTransaction,
+  inverseOf,
   freezeInPlace,
   isValidated,
   tryValidateReadonly,
