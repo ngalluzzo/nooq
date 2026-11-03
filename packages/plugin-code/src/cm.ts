@@ -125,6 +125,9 @@ export function mountCodeMirror(textarea: HTMLTextAreaElement, initialText: stri
   // the caret belongs in CM, so focus forwards — once, no loop.
   const forward = () => { if (!destroyed) view.focus(); };
   textarea.addEventListener("focus", forward, { signal });
+  // §9: a scrollable region is keyboard-scrollable (axe's rule, met at the
+  // source — wide code overflows small viewports).
+  view.scrollDOM.setAttribute("tabindex", "0");
 
   const setLanguage = (lang: string): void => {
     void loadLanguage(lang).then(extension => {
