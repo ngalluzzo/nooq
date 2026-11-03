@@ -9,7 +9,7 @@ import { blockRow } from "@nooq/design";
 import { code, codePlugin, LANGUAGES } from "./index.ts";
 import { mountCodeMirror, type CodeMirrorHandle } from "./cm.ts";
 
-export const codeDOM = defineDOMPlugin({
+export const codeDOM: import("@nooq/plugins/dom").DOMPlugin = defineDOMPlugin({
   id: "nooq.code.dom", forPlugin: codePlugin,
   views: [{
     type: code.type,

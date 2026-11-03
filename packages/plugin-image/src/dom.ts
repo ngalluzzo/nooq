@@ -23,7 +23,7 @@ export interface ImageHostOptions {
 /** Object URLs by digest: content-addressed means immutable — one URL, kept. */
 const objectUrls = new Map<string, string>();
 
-export const imageDOM = (host: ImageHostOptions = {}) => defineDOMPlugin({
+export const imageDOM = (host: ImageHostOptions = {}): import("@nooq/plugins/dom").DOMPlugin => defineDOMPlugin({
   id: "nooq.image.dom", forPlugin: imagePlugin,
   views: [{
     type: image.type,

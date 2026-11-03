@@ -9,7 +9,7 @@ import { blockRow } from "@nooq/design";
 import katex from "katex";
 import { math, mathPlugin } from "./index.ts";
 
-export const mathDOM = defineDOMPlugin({
+export const mathDOM: import("@nooq/plugins/dom").DOMPlugin = defineDOMPlugin({
   id: "nooq.math.dom", forPlugin: mathPlugin,
   views: [{
     type: math.type,

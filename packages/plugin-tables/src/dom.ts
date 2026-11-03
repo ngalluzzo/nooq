@@ -148,8 +148,7 @@ export const tablesDOM = defineDOMPlugin({
         else { range = undefined; }
         paint();
       });
-      inner.setAttribute("tabindex", "0");
-      inner.setAttribute("role", "grid");
+      inner.setAttribute("tabindex", "0"); // range mode takes keys here
       inner.addEventListener("keydown", (event) => {
         if (range === undefined) return;
         const clearing = event.key === "Delete" || event.key === "Backspace";

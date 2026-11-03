@@ -10,7 +10,7 @@ import { blockRow } from "@nooq/design";
 import { mount as peleMount } from "pele";
 import { diagram, diagramPlugin } from "./index.ts";
 
-export const diagramDOM = defineDOMPlugin({
+export const diagramDOM: import("@nooq/plugins/dom").DOMPlugin = defineDOMPlugin({
   id: "nooq.diagram.dom", forPlugin: diagramPlugin,
   views: [{
     type: diagram.type,

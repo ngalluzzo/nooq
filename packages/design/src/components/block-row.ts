@@ -15,7 +15,7 @@ const TYPE_STYLE: Record<BlockKind, string> = {
 
   list: "nq-block-list",
 };
-const TAG = { paragraph: "p", heading: "h2", title: "h1", quote: "blockquote", list: "li" } as const;
+const TAG = { paragraph: "p", heading: "h2", title: "h1", quote: "blockquote", list: "div" } as const; // the surface's shells orphan a bare li (axe); the list view's own ul>li carries the shape
 
 export interface BlockRowProps {
   /** The block's rendered content. */

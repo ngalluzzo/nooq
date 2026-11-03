@@ -152,6 +152,9 @@ export const essentialsDOM = defineDOMPlugin({
         const kind = String(block.fields.kind ?? "bullet");
         if (kind === "check") {
           check.checked = block.fields.checked === true;
+          // §9: the box names itself by what it marks done (the item's own words).
+          const words = (block.text?.s ?? "").slice(0, 60);
+          check.setAttribute("aria-label", words === "" ? "Mark this to-do as done" : `Mark \"${words}\" as done`);
           marker.replaceChildren(check);
         } else if (kind === "number") {
           marker.replaceChildren(document.createTextNode(`${numberedPosition(ctx.snapshot(), block.id)}.`));
@@ -325,8 +328,10 @@ export const simulatedRewrite = rewritePlugin({
     return target;
   },
 });
-export const referencePlugins = [essentials, review, simulatedRewrite.plugin, tablesPlugin] as const;
-export const referenceDOM = [essentialsDOM, reviewDOM, simulatedRewrite.dom, tablesDOM] as const;
+import type { Plugin } from "@nooq/plugins";
+import type { DOMPlugin } from "@nooq/plugins/dom";
+export const referencePlugins: readonly Plugin[] = [essentials, review, simulatedRewrite.plugin, tablesPlugin];
+export const referenceDOM: readonly DOMPlugin[] = [essentialsDOM, reviewDOM, simulatedRewrite.dom, tablesDOM];
 export function referenceJobBindings(signer?: ActorKey): JobBinding[] {
   return [{ job: simulatedRewrite.job, actor: { actorId: "ai:reference", kind: "ai", model: "simulated/1" }, signer }];
 }
