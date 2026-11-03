@@ -54,7 +54,8 @@ export const writingTextPolicy = defineTextPolicy({
   renderMarks: { link: renderLinkMark },
 });
 /** The inline-text essentials blocks, in the order the reference kinds array below types them. */
-const textBlocks = essentials.contributes.blocks.filter(block => block.text === "inline");
+// The list item has its own view (markers, checkbox) — exclude it from the generic text-block views.
+const textBlocks = essentials.contributes.blocks.filter(block => block.text === "inline" && block.type !== "nooq.list/v1");
 export const essentialsDOM = defineDOMPlugin({
   id: "nooq.essentials", forPlugin: essentials,
   views: [
