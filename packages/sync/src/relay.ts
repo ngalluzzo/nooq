@@ -8,7 +8,7 @@
  */
 
 import * as Y from "yjs";
-import { checkpointId, checkpointSignerKey, rootDigest, toBase64 as keyToBase64, type ActorKey, type Checkpoint, type Envelope } from "@nooq/core";
+import { checkpointId, checkpointSignerKey, rootDigest, sha256, toBase64 as keyToBase64, toHex, type ActorKey, type Checkpoint, type Envelope } from "@nooq/core";
 import { admitEnvelope, createCheckpoint, newDocument, readState } from "@nooq/yjs";
 import { fromBase64, toBase64 } from "./base64.ts";
 import { BACKEND, decodeMessage, encodeMessage, errorFor } from "./messages.ts";
@@ -150,6 +150,33 @@ export class NooqRelay {
    * Verify then admit, exactly like any peer (SW-6). A duplicate (an update
    * already admitted) changes nothing and is neither logged nor relayed.
    */
+  /** 0014: the blob store — bytes by digest, deduplicated by content. */
+  readonly #blobs = new Map<string, Uint8Array>();
+  /** The per-blob cap (0014): 10 MiB; bigger uploads are refused, named. */
+  static readonly BLOB_LIMIT = 10 * 1024 * 1024;
+  /** Test seam: distinct blobs stored (dedup counts once). */
+  blobCount(): number { return this.#blobs.size; }
+
+  private serveBlob(message: { t: "blob-put" | "blob-get"; doc: string; blob?: string; digest?: string }, server: SyncTransport): void {
+    if (message.t === "blob-put") {
+      const bytes = fromBase64(message.blob ?? "");
+      if (bytes.byteLength === 0 || bytes.byteLength > NooqRelay.BLOB_LIMIT) {
+        server.send(encodeMessage(errorFor(message.doc, "blob-size", `blobs are 1 byte to ${NooqRelay.BLOB_LIMIT} bytes`)));
+        return;
+      }
+      void (async () => {
+        const digest = "sha256:" + toHex(await sha256(bytes));
+        if (!this.#blobs.has(digest)) this.#blobs.set(digest, bytes); // dedup by content
+        server.send(encodeMessage({ v: 1, t: "blob-ok", doc: message.doc, digest }));
+      })();
+      return;
+    }
+    const bytes = this.#blobs.get(message.digest ?? "");
+    server.send(bytes === undefined
+      ? encodeMessage({ v: 1, t: "blob-miss", doc: message.doc, digest: message.digest ?? "" })
+      : encodeMessage({ v: 1, t: "blob-ok", doc: message.doc, digest: message.digest ?? "", blob: toBase64(bytes) }));
+  }
+
   private async verifyAndAdmit(docId: string, envelope: Envelope, update: Uint8Array, raw: string): Promise<"allow" | "hold" | "deny" | "duplicate"> {
     const doc = this.docs.get(docId) ?? this.open(docId);
     const admitted = this.admitted.get(docId)!;
@@ -214,6 +241,12 @@ export class NooqRelay {
   private async handle(docId: string, server: SyncTransport, raw: string): Promise<void> {
     const message = decodeMessage(raw);
     if (!message) return; // unknown envelope: ignore (SW-2)
+    // 0014: blobs are not transactions — unsigned, content-addressed, inert;
+    // the digest IS the authenticity. Never inside the CRDT, never a verdict.
+    if (message.t === "blob-put" || message.t === "blob-get") {
+      this.serveBlob(message, server);
+      return;
+    }
     if (message.doc !== docId) {
       server.send(encodeMessage(errorFor(message.doc, "bad-doc", `this session serves ${docId}`)));
       return;

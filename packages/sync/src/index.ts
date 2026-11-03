@@ -19,3 +19,4 @@ export { NooqRelay, type NooqRelayOptions } from "./relay.ts";
 export { REMOTE_ORIGIN, SyncSession, type AwarenessEntry, type OutboxEntry, type SyncSessionOptions } from "./session.ts";
 export type { SyncTransport } from "./transport.ts";
 export { settled } from "./transport.ts";
+export { createBlobStore, blobSrc, digestOfBlobSrc, type BlobStore } from "./blob-store.ts";

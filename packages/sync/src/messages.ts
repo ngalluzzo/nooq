@@ -53,7 +53,12 @@ export type WireMessage =
       name?: string | null;
       cursor: Cursor;
     }
-  | { v: typeof WIRE_VERSION; t: "error"; doc: string; code: string; message?: string };
+  | { v: typeof WIRE_VERSION; t: "error"; doc: string; code: string; message?: string }
+  /** 0014: content-addressed blobs — bytes by content, digest the name. */
+  | { v: typeof WIRE_VERSION; t: "blob-put"; doc: string; blob: string }
+  | { v: typeof WIRE_VERSION; t: "blob-get"; doc: string; digest: string }
+  | { v: typeof WIRE_VERSION; t: "blob-ok"; doc: string; digest: string; blob?: string }
+  | { v: typeof WIRE_VERSION; t: "blob-miss"; doc: string; digest: string };
 
 export function encodeMessage(message: WireMessage): string {
   return JSON.stringify(message);
@@ -78,6 +83,10 @@ export function decodeMessage(raw: string): WireMessage | null {
     case "delta":
     case "awareness":
     case "error":
+    case "blob-put": // 0014: blobs ride the same wire (SW-2's unknown-t rule stays for OLDER peers)
+    case "blob-get":
+    case "blob-ok":
+    case "blob-miss":
       return parsed as WireMessage;
     default:
       return null;
