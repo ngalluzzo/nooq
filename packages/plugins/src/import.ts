@@ -115,6 +115,24 @@ export function importMarkdown(markdown: string): ImportedBlock[] {
     // the closing fence — never re-interpreted as markdown.
     if (original.startsWith("```")) {
       const lang = original.slice(3).trim();
+      // ```mermaid is a DIAGRAM (plugin-diagram), not code — the fence's
+      // info string routes it, the source rides verbatim either way.
+      if (lang.toLowerCase() === "mermaid") {
+        const body: string[] = [];
+        lineAt++;
+        for (; lineAt < lines.length && !lines[lineAt]!.startsWith("```"); lineAt++) body.push(lines[lineAt]!);
+        const diagramNode: Block = {
+          id: newBlockId(), type: "nooq.diagram/v1",
+          fields: {} as Block["fields"],
+          text: { s: body.join("\n"), marks: body.join("\n").split("").map(() => []) },
+          children: [],
+          attribution: { created: { actor: "" }, fields: {} },
+        };
+        stack.length = 1; listDepth.length = 1;
+        roots.push({ data: diagramNode, children: [] });
+        pendingBlank = false;
+        continue;
+      }
       const body: string[] = [];
       lineAt++;
       for (; lineAt < lines.length && !lines[lineAt]!.startsWith("```"); lineAt++) body.push(lines[lineAt]!);

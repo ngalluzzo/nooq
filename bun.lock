@@ -14,6 +14,7 @@
         "@codemirror/language": "^6.13.1",
         "@lezer/highlight": "^1.2.5",
         "katex": "^0.19.1",
+        "pele": "^1.13.0",
       },
       "devDependencies": {
         "@codemirror/state": "^6",
@@ -110,6 +111,20 @@
         "@nooq/design": "workspace:*",
         "@nooq/editor": "workspace:*",
         "@nooq/plugins": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+      },
+    },
+    "packages/plugin-diagram": {
+      "name": "@nooq/plugin-diagram",
+      "version": "1.0.0",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/design": "workspace:*",
+        "@nooq/editor": "workspace:*",
+        "@nooq/plugins": "workspace:*",
+        "pele": "^1.13.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
@@ -422,6 +437,8 @@
     "@nooq/plugin-callouts": ["@nooq/plugin-callouts@workspace:packages/plugin-callouts"],
 
     "@nooq/plugin-code": ["@nooq/plugin-code@workspace:packages/plugin-code"],
+
+    "@nooq/plugin-diagram": ["@nooq/plugin-diagram@workspace:packages/plugin-diagram"],
 
     "@nooq/plugin-draghandle": ["@nooq/plugin-draghandle@workspace:packages/plugin-draghandle"],
 
@@ -886,6 +903,8 @@
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
     "pathval": ["pathval@2.0.1", "", {}, "sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ=="],
+
+    "pele": ["pele@1.13.0", "", {}, "sha512-Ie8UKY9x00MsuR3jO6AzUwzK2Z6MIV3Tf4EDdITiuk8Uaz8K7g0R082WqsqNaSU8DdgkrRvZThzhit83mi/uiw=="],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 
