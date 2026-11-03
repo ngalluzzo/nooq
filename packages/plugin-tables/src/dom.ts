@@ -11,8 +11,30 @@
  * last. Shift+Tab walks back.
  */
 import { defineDOMPlugin, defineTextPolicy, insertAfterSelection, type BlockViewContext } from "@nooq/plugins/dom";
+import { defineAction } from "@nooq/plugins";
 import { blockRow } from "@nooq/design";
-import { table, tableCell, tableRow, tablesPlugin } from "./index.ts";
+import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow } from "./index.ts";
+
+/** From a focused cell, its table id — or null outside tables. */
+type TableView = { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
+function tableOf(ctx: { block: string; snapshot: unknown }): string | null {
+  const view = ctx.snapshot as unknown as TableView;
+  let current: string | undefined = ctx.block;
+  for (let depth = 0; depth < 3 && current !== undefined; depth++) {
+    current = Object.keys(view.blocks).find(id => view.blocks[id]!.children.includes(current!));
+    if (current !== undefined && view.blocks[current]!.type === "nooq.table/v1") return current;
+  }
+  return null;
+}
+function rowOf(ctx: { block: string; snapshot: unknown }): string | null {
+  const view = ctx.snapshot as unknown as TableView;
+  return Object.keys(view.blocks).find(id => view.blocks[id]!.children.includes(ctx.block)) ?? null;
+}
+function columnOf(ctx: { block: string; snapshot: unknown }): number {
+  const view = ctx.snapshot as unknown as TableView;
+  const row = rowOf(ctx);
+  return row === null ? -1 : (view.blocks[row]!.children as readonly string[]).indexOf(ctx.block);
+}
 
 const focusCell = (root: HTMLElement, blockId: string): void => {
   const shell = root.querySelector<HTMLElement>(`[data-nq-block="${CSS.escape(blockId)}"]`);
@@ -24,11 +46,42 @@ export const tablesDOM = defineDOMPlugin({
   // The slash entry ships with the plugin (§7): hosts without tables never
   // see the action, and the action's command is always registered.
   menus: [{ id: "insert:nooq.table/v1", label: "Table", glyph: "⊞", command: "nooq.table.insert", args: ctx => insertAfterSelection(ctx) }],
+  // Column gestures where the caret is: the toolbar acts on the focused
+  // cell's column (its position derived per invocation, never cached).
+  actions: [
+    defineAction({ id: "nooq.table.action.delete-column", label: "Delete column", placements: ["toolbar"], command: removeColumn,
+      args: ctx => ({ table: tableOf(ctx) as string, at: columnOf(ctx) }), when: ctx => tableOf(ctx) !== null }),
+    defineAction({ id: "nooq.table.action.move-column-left", label: "Move column left", placements: ["toolbar"], command: moveColumn,
+      args: ctx => ({ table: tableOf(ctx) as string, from: columnOf(ctx), to: columnOf(ctx) - 1 }), when: ctx => tableOf(ctx) !== null && columnOf(ctx) > 0 }),
+    defineAction({ id: "nooq.table.action.move-column-right", label: "Move column right", placements: ["toolbar"], command: moveColumn,
+      args: ctx => ({ table: tableOf(ctx) as string, from: columnOf(ctx), to: columnOf(ctx) + 1 }), when: ctx => tableOf(ctx) !== null }),
+    defineAction({ id: "nooq.table.action.toggle-header", label: "Toggle header row", placements: ["toolbar"], command: toggleHeaderRow,
+      args: ctx => ({ row: rowOf(ctx) as string }), when: ctx => tableOf(ctx) !== null }),
+  ],
   views: [
     { type: table.type, mount(ctx) {
       const element = document.createElement("div");
       element.className = "nq-table";
-      element.append(ctx.children.element);
+      const inner = document.createElement("div");
+      inner.className = "nq-table-inner";
+      inner.append(ctx.children.element);
+      // The growth gestures: a row button below, a column button at the right —
+      // each one transaction, each visible always (a table grows both ways).
+      const growRow = document.createElement("button");
+      growRow.type = "button"; growRow.className = "nq-table-grow nq-table-grow-row"; growRow.textContent = "+"; growRow.setAttribute("aria-label", "Add row");
+      growRow.addEventListener("click", () => {
+        const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
+        const rows = view.blocks[ctx.block]?.children ?? [];
+        const last = rows[rows.length - 1];
+        if (last !== undefined) void ctx.run("nooq.table.add-row", { afterRow: last });
+      });
+      const growColumn = document.createElement("button");
+      growColumn.type = "button"; growColumn.className = "nq-table-grow nq-table-grow-column"; growColumn.textContent = "+"; growColumn.setAttribute("aria-label", "Add column");
+      growColumn.addEventListener("click", () => { void ctx.run("nooq.table.add-column", { table: ctx.block }); });
+      const bar = document.createElement("div");
+      bar.className = "nq-table-bar";
+      bar.append(growRow, growColumn);
+      element.append(inner, bar);
       return { element, update() {} };
     } },
     { type: tableRow.type, mount(ctx) {
@@ -37,8 +90,21 @@ export const tablesDOM = defineDOMPlugin({
       element.style.display = "grid";
       element.style.gridTemplateColumns = `repeat(${Math.max(1, ctx.snapshot().blocks[ctx.block]?.children.length ?? 1)}, minmax(4rem, 1fr))`;
       element.append(ctx.children.element);
+      // The ragged repair (0015's public decision, rendered): a short row shows
+      // its gap as a dashed ghost cell with the one-transaction fix.
+      const ghost = document.createElement("button");
+      ghost.type = "button"; ghost.className = "nq-table-ghost"; ghost.textContent = "+";
+      ghost.setAttribute("aria-label", "Complete this row");
+      ghost.addEventListener("click", () => { void ctx.run("nooq.table.complete-row", { row: ctx.block }); });
       return { element, update(block) {
-        element.style.gridTemplateColumns = `repeat(${Math.max(1, block.children.length)}, minmax(4rem, 1fr))`;
+        const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
+        const tableId = Object.keys(view.blocks).find(tid => view.blocks[tid]!.children.includes(ctx.block));
+        const widest = tableId === undefined ? 0 : Math.max(...(view.blocks[tableId]!.children.map(row => view.blocks[row]!.children.length)));
+        const short = block.children.length < widest;
+        if (short && !element.contains(ghost)) element.append(ghost);
+        if (!short && element.contains(ghost)) ghost.remove();
+        element.style.gridTemplateColumns = `repeat(${Math.max(1, block.children.length + (short ? 1 : 0))}, minmax(4rem, 1fr))`;
+        element.classList.toggle("nq-table-header-row", block.fields.header === true);
       } };
     } },
     { type: tableCell.type,
