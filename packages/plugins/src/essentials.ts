@@ -164,6 +164,22 @@ export const importBlocks = defineCommand<{ blocks: readonly import("./import.ts
   },
 });
 
+/** One field write as a command (DM-3.2): the generic primitive behind
+ *  every picker — the language select, heading levels, list kinds. */
+export const setField = defineCommand<{ block: string; key: string; value: import("@nooq/core").JsonValue }>({
+  id: "nooq.field.set", label: "Set field",
+  validateArgs: (a): a is { block: string; key: string; value: import("@nooq/core").JsonValue } => object(a) && typeof a.block === "string" && typeof a.key === "string" && a.key !== "" && "value" in a,
+  prepare(ctx, { block: id, key, value }) {
+    if (!ctx.isAlive(id)) return { status: "not-applicable" };
+    const current = ctx.snapshot.blocks[id]!.fields[key];
+    const same = JSON.stringify(current ?? null) === JSON.stringify(value ?? null);
+    if (same) return { status: "not-applicable" }; // a no-op write is not a transaction
+    return { status: "ready", intent: "set-field", ops: [
+      { op: "setField", block: id, key, value },
+    ] };
+  },
+});
+
 /** The drag handle's command (Tier-1, DM-4): one move op — a branch moves
  *  as a branch, one transaction, supersession resolution DM-4.7/4.9. */
 export const moveBlock = defineCommand<{ block: string; parent: string | null; index: number }>({
@@ -261,5 +277,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, importBlocks, insertColumns, toggleCheck, moveBlock] },
+  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, importBlocks, insertColumns, setField, toggleCheck, moveBlock] },
 });

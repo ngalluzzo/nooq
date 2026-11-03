@@ -91,8 +91,29 @@ export function importMarkdown(markdown: string): ImportedBlock[] {
   const listDepth: number[] = [-1];
   let pendingBlank = false;
 
-  for (const original of lines) {
+  for (let lineAt = 0; lineAt < lines.length; lineAt++) {
+    const original = lines[lineAt]!;
     if (original.trim() === "") { pendingBlank = true; continue; }
+    // Fenced code (plugin-code): ```lang opens, the body is verbatim until
+    // the closing fence — never re-interpreted as markdown.
+    if (original.startsWith("```")) {
+      const lang = original.slice(3).trim();
+      const body: string[] = [];
+      lineAt++;
+      for (; lineAt < lines.length && !lines[lineAt]!.startsWith("```"); lineAt++) body.push(lines[lineAt]!);
+      stack.length = 1; listDepth.length = 1; // a fence closes every open list
+      const codeNode: Block = {
+        id: newBlockId(), type: "nooq.code/v1",
+        fields: { lang: lang === "" ? "text" : lang } as Block["fields"],
+        // One mark slot per character (the model's invariant) — code has none.
+        text: { s: body.join("\n"), marks: body.join("\n").split("").map(() => []) },
+        children: [],
+        attribution: { created: { actor: "" }, fields: {} },
+      };
+      roots.push({ data: codeNode, children: [] });
+      pendingBlank = false;
+      continue;
+    }
     const { depth, rest } = depthOf(original);
     let parsed: ParsedLine | null = null;
     let isList = false;

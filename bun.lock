@@ -91,6 +91,16 @@
         "@nooq/plugins": "workspace:*",
       },
     },
+    "packages/plugin-code": {
+      "name": "@nooq/plugin-code",
+      "version": "1.0.0",
+      "dependencies": {
+        "@nooq/core": "workspace:*",
+        "@nooq/design": "workspace:*",
+        "@nooq/editor": "workspace:*",
+        "@nooq/plugins": "workspace:*",
+      },
+    },
     "packages/plugin-draghandle": {
       "name": "@nooq/plugin-draghandle",
       "version": "1.0.0",
@@ -330,6 +340,8 @@
     "@nooq/plugin-agent": ["@nooq/plugin-agent@workspace:packages/plugin-agent"],
 
     "@nooq/plugin-callouts": ["@nooq/plugin-callouts@workspace:packages/plugin-callouts"],
+
+    "@nooq/plugin-code": ["@nooq/plugin-code@workspace:packages/plugin-code"],
 
     "@nooq/plugin-draghandle": ["@nooq/plugin-draghandle@workspace:packages/plugin-draghandle"],
 

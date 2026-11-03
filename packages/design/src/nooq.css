@@ -449,3 +449,12 @@
 .nq-drop-indicator { position: absolute; height: 1px; background: var(--nq-ink); border-radius: var(--nq-radius-xs); z-index: var(--nq-layer-presence); pointer-events: none; }
 .nq-handle-active { opacity: 1 !important; cursor: grabbing !important; }
 .nq-editor { position: relative; }
+
+/* Tier-2 code blocks: mono, unwrapped, sunken ground; the picker rides the
+   gutter; copy floats top-right on row hover. */
+.nq-code-body { font-family: var(--nq-font-mono); font-size: var(--nq-code-size, 14px); line-height: 22px; background: var(--nq-paper-sunken); border-radius: var(--nq-radius-sm); padding: var(--nq-space-3); white-space: pre; overflow-x: auto; }
+.nq-code-body textarea { font: inherit; white-space: pre; overflow-x: auto; resize: none; background: none; border: none; outline: none; color: inherit; width: 100%; }
+.nq-code-lang { border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-xs); background: var(--nq-paper-raised); color: var(--nq-graphite-muted); font-family: var(--nq-font-mono); }
+.nq-code-copy { position: absolute; top: var(--nq-space-1); right: var(--nq-space-1); border: 1px solid var(--nq-rule); border-radius: var(--nq-radius-xs); background: var(--nq-paper-raised); color: var(--nq-graphite-muted); cursor: pointer; opacity: 0; }
+.nq-block:hover .nq-code-copy, .nq-code-copy:focus-visible { opacity: 1; }
+.nq-code-copy:hover { color: var(--nq-graphite); }

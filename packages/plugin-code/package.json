@@ -1,0 +1,16 @@
+{
+  "name": "@nooq/plugin-code",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./dom": "./src/dom.ts"
+  },
+  "dependencies": {
+    "@nooq/plugins": "workspace:*",
+    "@nooq/core": "workspace:*",
+    "@nooq/design": "workspace:*",
+    "@nooq/editor": "workspace:*"
+  }
+}
