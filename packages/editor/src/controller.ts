@@ -692,8 +692,11 @@ export class Editor {
     fields?: Record<string, JsonValue>;
     text?: string;
   }): BlockId {
+    // Tier-1: a host insert without fields takes the plugin's create()
+    // defaults — the same starting point the slash command path produces.
+    const fields = init.fields ?? this.registry.block(init.type)?.definition.create().fields ?? {};
     const block = makeBlock(
-      { type: init.type, ...(init.fields ? { fields: init.fields } : {}), ...(init.text !== undefined ? { text: unmarked(init.text) } : {}) },
+      { type: init.type, fields, ...(init.text !== undefined ? { text: unmarked(init.text) } : {}) },
       this.options.actor.actorId,
     );
     this.apply(this.tx([{ op: "insert", block, parent: init.parent, ...(init.index !== undefined ? { index: init.index } : {}) }], `insert:${init.type}`));

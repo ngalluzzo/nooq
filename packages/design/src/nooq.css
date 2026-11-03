@@ -435,3 +435,12 @@
 }
 
 .nq-history-event { color: var(--nq-graphite-muted); list-style: none; padding-left: 0; margin: 0 0 0.25rem; }
+
+/* Tier-1 heading levels: h1-h6 by data-level (the tag already matches). */
+.nq-block-body[data-level="1"] { font-size: 1.75rem; font-weight: 700; }
+.nq-block-body[data-level="2"] { font-size: 1.4rem; font-weight: 700; }
+.nq-block-body[data-level="3"] { font-size: 1.2rem; font-weight: 600; }
+.nq-block-body[data-level="4"] { font-size: 1.1rem; font-weight: 600; }
+.nq-block-body[data-level="5"] { font-size: 1rem; font-weight: 600; }
+.nq-block-body[data-level="6"] { font-size: 0.9rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.nq-divider { border: none; border-top: 1px solid var(--nq-graphite-muted); margin: 0.5rem 0; }

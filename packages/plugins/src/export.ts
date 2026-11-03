@@ -128,6 +128,9 @@ export const headingFormatter: BlockFormatter = (block, { text, children }) => {
   return withChildren(`${"#".repeat(depth)} ${text()}`, children);
 };
 
+/** The divider: `---`, children after a blank line (Tier-1). */
+export const dividerFormatter: BlockFormatter = (block, { children }) => withChildren("---", children);
+
 /** Plain: the rendered text, children after a blank line. Also the §8 fallback for unknown inline-text types. */
 export const paragraphFormatter: BlockFormatter = (block, { text, children }) => withChildren(text(), children);
 
@@ -165,6 +168,7 @@ export const referenceFormatters: Readonly<Record<string, BlockFormatter>> = Obj
   "nooq.paragraph/v1": paragraphFormatter,
   "nooq.quote/v1": quoteFormatter,
   "nooq.list/v1": listFormatter,
+  "nooq.divider/v1": dividerFormatter,
   "nooq.columns/v1": columnsFormatter,
   "nooq.column/v1": columnFormatter,
   [SUGGESTION_TYPE]: suggestionFormatter,

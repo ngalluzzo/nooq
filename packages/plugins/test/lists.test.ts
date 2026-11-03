@@ -106,3 +106,43 @@ describe("list items (Tier-1)", () => {
     e.close();
   });
 });
+
+describe("heading levels + divider (Tier-1)", () => {
+  function editor() {
+    return new Editor({ docId: "levels", actor: { actorId: "w" }, plugins: [essentials] });
+  }
+
+  test("heading defaults to level 2; slash-insert at any level; split preserves it", () => {
+    const e = editor();
+    const h2 = e.insertBlock({ type: "nooq.heading/v1", parent: null, text: "default" });
+    expect(e.view.blocks[h2]!.fields.level).toBe(2);
+    const h1 = e.insertBlock({ type: "nooq.heading/v1", parent: null, text: "top", fields: { level: 1 } });
+    expect(e.view.blocks[h1]!.fields.level).toBe(1);
+    // Split carries the level (same-type split from the lists work)
+    e.commands.run(splitBlock, { block: h1, anchor: 3, head: 3 }, { selection: { block: h1, anchor: 3, head: 3 } });
+    expect(e.view.blocks[e.view.roots[2]!]!.fields.level).toBe(1);
+    e.close();
+  });
+
+  test("export: level hashes match", () => {
+    const e = editor();
+    e.insertBlock({ type: "nooq.heading/v1", parent: null, text: "one", fields: { level: 1 } });
+    e.insertBlock({ type: "nooq.heading/v1", parent: null, text: "three", fields: { level: 3 } });
+    const md = exportMarkdown(e.view as never).markdown;
+    expect(md).toContain("# one");
+    expect(md).toContain("### three");
+    e.close();
+  });
+
+  test("divider: textless block, markdown ---", () => {
+    const e = editor();
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "above" });
+    e.insertBlock({ type: "nooq.divider/v1", parent: null });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "below" });
+    const md = exportMarkdown(e.view as never).markdown;
+    expect(md).toContain("above");
+    expect(md).toContain("---");
+    expect(md).toContain("below");
+    e.close();
+  });
+});

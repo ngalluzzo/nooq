@@ -60,22 +60,42 @@ export const essentialsDOM = defineDOMPlugin({
   id: "nooq.essentials", forPlugin: essentials,
   views: [
     ...textBlocks.map((block, i) => ({ type: block.type, textPolicy: writingTextPolicy, mount(ctx: BlockViewContext) {
+      // Tier-1: headings pick their h1-h6 tag from the level field per update.
+      let headingTag: string | undefined;
       const text = ctx.mountTextEditor({ label: block.label });
       // The bar opens this block's history. The host owns the history store and
       // the popover, so onHistory only announces the request — one bubbling
       // `nq:block-history` event, the same contract for every plugin's bars.
+      const isHeading = block.type === "nooq.heading/v1";
+      let levelEl: HTMLElement | undefined;
       const element = blockRow({
         content: [text.element, ctx.children.element],
         // The title renders like every other document block — the doc-title
         // style through the "title" kind, no special casing in the surface.
         // One title per document is convention, not enforcement (§7).
         kind: (["paragraph", "heading", "quote", "title"] as const)[i]!,
+        ...(isHeading ? { level: 2 } : {}),
         actor: "human",
         onHistory: () => bar.dispatchEvent(new CustomEvent("nq:block-history", { bubbles: true })),
       });
       const bar = element.querySelector<HTMLElement>(".nq-bar")!;
       let tip: ReturnType<typeof tooltip> | undefined, tipWriter: string | undefined;
       return { element, update(block: Block) {
+        // Tier-1: heading level by field — the tag swaps in place, data-level
+        // drives the style, the level field feeds export. One field, one truth.
+        if (isHeading) {
+          const lvl = Math.max(1, Math.min(6, typeof block.fields.level === "number" ? block.fields.level : 2));
+          const body = element.querySelector<HTMLElement>(".nq-block-body")!;
+          if (body.tagName.toLowerCase() !== `h${lvl}`) {
+            const next = document.createElement(`h${lvl}`);
+            next.className = body.className;
+            next.setAttribute("data-level", String(lvl));
+            while (body.firstChild) next.append(body.firstChild);
+            body.replaceWith(next);
+          } else {
+            body.setAttribute("data-level", String(lvl));
+          }
+        }
         // DM-14.2: every character keeps its author; AI text stays visibly AI after adoption.
         const authors = ctx.authors(), names = authors.length ? authors.map(author => author.actorId) : [block.attribution.created.actor];
         const kinds = authors.length ? authors.map(author => author.kind) : [actorKindOf(names[0]!)];
@@ -93,6 +113,14 @@ export const essentialsDOM = defineDOMPlugin({
         }
       }, destroy: () => { tip?.destroy(); text.destroy(); } };
     } })),
+    // Tier-1 divider: a rule, nothing else — textless, styleless intent.
+    { type: "nooq.divider/v1", mount(ctx) {
+      const element = blockRow({ content: [], kind: "paragraph", actor: "human" });
+      const hr = document.createElement("hr");
+      hr.className = "nq-divider";
+      element.querySelector(".nq-block-body")?.replaceWith(hr);
+      return { element, update() {} };
+    } },
     // Tier-1 lists: the marker is view-only state from fields; the checkbox
     // is the nooq.list.check command (§1: one op, one transaction, undoable).
     { type: "nooq.list/v1", textPolicy: writingTextPolicy, mount(ctx) {
@@ -167,6 +195,23 @@ export const essentialsDOM = defineDOMPlugin({
         return { type: block.type, parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
       },
     })),
+    // Tier-1 headings: three levels in the slash menu (H4-H6 arrive by
+    // setField; nobody slash-searches for them).
+    ...([1, 2, 3] as const).map(level => ({ id: `insert:heading:${level}`, label: `Heading ${level}`, glyph: `H${level}`, command: insertBlock.id,
+      args(ctx: SurfaceActionContext) {
+        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
+        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+        return { type: "nooq.heading/v1", parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block, fields: { level } };
+      },
+    })),
+    // Tier-1 divider: the shortest slash entry.
+    { id: "insert:divider", label: "Divider", glyph: "—", command: insertBlock.id,
+      args(ctx: SurfaceActionContext) {
+        const tree = liveTree(ctx.snapshot as any), parent = tree.parentOf.get(ctx.block) ?? null;
+        const siblings = parent === null ? ctx.snapshot.roots : ctx.snapshot.blocks[parent]!.children;
+        return { type: "nooq.divider/v1", parent, index: siblings.indexOf(ctx.block) + 1, clearBlock: ctx.block };
+      },
+    },
     // Tier-1 lists: three slash entries, one block type — the kind is the
     // first field write a new writer makes after landing in the item.
     ...(["bullet", "number", "check"] as const).map(kind => ({ id: `insert:nooq.list/v1:${kind}`, label: kind === "bullet" ? "Bulleted list" : kind === "number" ? "Numbered list" : "To-do list", glyph: kind === "bullet" ? "•" : kind === "number" ? "1." : "☑", command: insertBlock.id,

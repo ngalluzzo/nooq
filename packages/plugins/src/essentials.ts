@@ -6,7 +6,24 @@ import type { Op, TextChange } from "@nooq/core";
 
 const textBlock = (type: string, label: string) => defineBlock({ type, label, text: "inline", textMerge: "same-type", create: () => ({ fields: {}, text: { s: "", marks: [] } }), diagnose: () => [] });
 export const paragraph = textBlock("nooq.paragraph/v1", "Text");
-export const heading = textBlock("nooq.heading/v1", "Heading");
+/**
+ * Headings carry their level as a field (DM-3.2: data, not type variants —
+ * one block type, six levels). The reference renders h1-h6 by it; export
+ * hashes per it; split carries it (Tier-1).
+ */
+export const heading = defineBlock({
+  type: "nooq.heading/v1", label: "Heading",
+  text: "inline", textMerge: "same-type",
+  create: () => ({ fields: { level: 2 }, text: { s: "", marks: [] } }),
+  diagnose: () => [],
+});
+/**
+ * The divider (Tier-1): textless, one horizontal rule. `---` in markdown.
+ */
+export const divider = defineBlock({
+  type: "nooq.divider/v1", label: "Divider",
+  text: "none", create: () => ({ fields: {} }), diagnose: () => [],
+});
 export const quote = textBlock("nooq.quote/v1", "Quote");
 /**
  * The document's title (foundation P2): an ordinary inline-text block — the
@@ -174,5 +191,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck] },
+  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, insertColumns, toggleCheck] },
 });

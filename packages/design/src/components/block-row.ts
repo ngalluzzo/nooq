@@ -31,6 +31,8 @@ export interface BlockRowProps {
   deleted?: boolean;
   /** DM-4.8: edits made after the delete, restored with the block. */
   laterEdits?: number;
+  /** The heading's level (1-6): renders as data-level, styles by level. */
+  level?: number;
   /** Shows the drag handle without hover. */
   active?: boolean;
   onRestore?: () => void;
@@ -53,7 +55,7 @@ export function deletedLabel(laterEdits: number): string {
 }
 
 /** One block on the writing surface, built-in or third-party alike (§7), with its gutter. */
-export function blockRow({ content, kind = "paragraph", actor = "human", ink = "self", writer, deleted, laterEdits = 0, active, onHistory, onRestore }: BlockRowProps): HTMLDivElement {
+export function blockRow({ content, kind = "paragraph", actor = "human", ink = "self", writer, deleted, laterEdits = 0, active, level, onHistory, onRestore }: BlockRowProps): HTMLDivElement {
   const bar = changeBarKind(actor);
   const body = deleted
     ? el(
@@ -62,7 +64,7 @@ export function blockRow({ content, kind = "paragraph", actor = "human", ink = "
         el("del", {}, content),
         el("div", { class: "nq-tomb-meta nq-ui-body" }, el("span", {}, deletedLabel(laterEdits)), button({ label: "Restore", variant: "quiet", onClick: () => onRestore?.() })),
       )
-    : el(TAG[kind], { class: cx("nq-block-body", TYPE_STYLE[kind]) }, content);
+    : el(TAG[kind], { class: cx("nq-block-body", TYPE_STYLE[kind]), ...(kind === "heading" && level !== undefined ? { "data-level": String(level) } : {}) }, content);
   // With onHistory the bar is the control that opens the history popover: a
   // real button, named for the last writer, explained by a tooltip on hover
   // AND keyboard focus — the reachable replacement for a title attribute.
