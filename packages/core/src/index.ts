@@ -50,7 +50,9 @@ export { rebaseOps } from "./rebase.ts";
 export {
   computeDigests,
   rootDigest,
+  runsOf,
   type BlockDigests,
+  type TextRun,
 } from "./digests.ts";
 export {
   applyTransaction,

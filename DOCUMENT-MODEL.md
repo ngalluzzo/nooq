@@ -272,7 +272,13 @@ The proposal payload:
 - **DM-6.1 Digests.** Three digests per block:
   - The **content digest** — fingerprint over exactly
     `{type, fields, textDigest}`, where `textDigest` is the fingerprint of
-    the canonical rendered `{s, marks}`.
+    the canonical rendered `{s, runs}` — the **run form** (proposals/0013,
+    Draft 1.11): per-character marks derive minimal, ordered,
+    non-overlapping runs; adjacent equal-marks runs merge, empty-marks
+    runs are omitted. Content-equal marks derive byte-equal runs, so the
+    digest is stable across equivalent representations, and 10k formatted
+    characters carry ~one run instead of ~33KB of arrays. Identity
+    re-derived once, pre-deployment, by the same change.
   - The **structure digest** — fingerprint over exactly
     `{children: [{id, structureDigest}]}` — the *content-free* recursive
     shape of the subtree. Because it never incorporates any content
@@ -386,13 +392,13 @@ The proposal payload:
 
 1. **Move under concurrent moves to the same parent** — resolved by
    DM-4.7; supersession detection and UX by DM-4.9 (closed by 0010).
-2. **Mark churn** — measured 2026-11-02 (packages/core/test/mark-churn):
-   per-character marks cost ~10 canonical bytes per character regardless
-   of run structure (93KB for 10k formatted chars; the runs' information
-   content is ~150 bytes). Memory is NOT the cost — readText run-shares
-   arrays and structuredClone preserves sharing. The fix is a canonical
-   run form (proposals/0013, drafted): `{s, runs: [{marks, from, to}]}`,
-   identity re-derived once, before deployment.
+2. **Mark churn** — RESOLVED by 0013 (Draft 1.11, implemented 2026-11-03):
+   the canonical text form is runs — measured before (93KB of arrays for
+   10k formatted chars, the runs' information content ~150 bytes),
+   measured after (one run beside the string, under 1% overhead; the
+   content-equal property pinned by test: equivalent per-character
+   representations derive the same digest). Memory was never the cost —
+   readText run-shares arrays and structuredClone preserves sharing.
 3. **Very large documents** — explicit rebase bounds live state (DM-16);
    lazily materialized subtrees remain open, and v1 assumes
    whole-document residency.

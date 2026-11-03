@@ -54,8 +54,14 @@ async function digestsOf(
   if (!block) throw new Error(`Missing block ${id}`);
 
   const stack = [...ancestors, id];
+  // 0013 (DM-10.2): the canonical text form is RUNS — minimal, ordered,
+  // non-overlapping; adjacent equal-marks runs merge, empty-marks runs are
+  // omitted — content-equal marks derive byte-equal runs, so the digest is
+  // stable across equivalent per-character representations, and 10k
+  // formatted characters digest ~150 bytes instead of ~93,000 (measured,
+  // packages/core/test/mark-churn.test.ts). Identity re-derived once, here.
   const textDigest = block.text
-    ? await fingerprint({ s: block.text.s, marks: block.text.marks })
+    ? await fingerprint({ s: block.text.s, runs: runsOf(block.text) })
     : null;
   const childDigests: Array<string | null> = [];
   const childStructure: Array<{ id: BlockId; structureDigest: string | null }> = [];
@@ -86,4 +92,29 @@ export async function rootDigest(state: DocState): Promise<string> {
     roots.push(info.blockDigest);
   }
   return fingerprint({ roots });
+}
+
+
+/** A canonical text run: one marks set over [from, to). (0013) */
+export interface TextRun { marks: readonly string[]; from: number; to: number }
+
+/**
+ * Per-character marks → minimal runs (0013, the canonical form): ordered,
+ * non-overlapping; adjacent runs with equal marks merge; a run whose marks
+ * are empty is omitted entirely — unmarked text is the absence of a run.
+ * Deterministic: content-equal inputs derive byte-equal runs.
+ */
+export function runsOf(text: { s: string; marks: readonly (readonly string[])[] }): TextRun[] {
+  const runs: TextRun[] = [];
+  let current: { marks: string[]; from: number } | undefined;
+  const keyOf = (marks: readonly string[]): string => [...new Set(marks)].filter(Boolean).sort().join("\u0000");
+  for (let at = 0; at < text.s.length; at++) {
+    const marks = [...new Set(text.marks[at] ?? [])].filter(Boolean).sort();
+    const key = keyOf(marks);
+    if (current !== undefined && keyOf(current.marks) === key) continue; // extend: same set
+    if (current !== undefined && current.marks.length > 0) runs.push({ marks: current.marks, from: current.from, to: at });
+    current = marks.length > 0 ? { marks, from: at } : undefined;
+  }
+  if (current !== undefined && current.marks.length > 0) runs.push({ marks: current.marks, from: current.from, to: text.s.length });
+  return runs;
 }

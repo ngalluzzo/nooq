@@ -1,4 +1,4 @@
-import { describe, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { canonicalJson } from "@nooq/core";
 import { freezeInPlace } from "@nooq/core";
 
@@ -43,5 +43,47 @@ describe("DM-10.2 mark churn: measured", () => {
         ` | canonical ${(json.length / 1024).toFixed(0)}KB in ${jsonMs.toFixed(1)}ms | clone ${cloneMs.toFixed(1)}ms | freeze ${freezeMs.toFixed(1)}ms`,
       );
     }
+  });
+});
+
+import { runsOf } from "../src/digests.ts";
+import { fingerprint } from "../src/digest.ts";
+
+describe("0013: the canonical run form", () => {
+  test("runsOf: merging, omission, ordering — minimal by construction", () => {
+    const text = { s: "abcdefghij", marks: [["bold"], ["bold"], [], [], ["em"], [], ["em", "strong"], ["em", "strong"], [], []] };
+    expect(runsOf(text)).toEqual([
+      { marks: ["bold"], from: 0, to: 2 },
+      { marks: ["em"], from: 4, to: 5 },
+      { marks: ["em", "strong"], from: 6, to: 8 },
+    ]);
+    expect(runsOf({ s: "", marks: [] })).toEqual([]);
+    expect(runsOf({ s: "plain", marks: [[], [], [], [], []] })).toEqual([]); // unmarked: the absence of runs
+  });
+
+  test("THE 0013 PROPERTY: content-equal marks derive the SAME digest", async () => {
+    const a = { s: "hello world", marks: [["bold"], ["bold"], ["bold"], ["bold"], ["bold"], [], [], [], [], [], []] };
+    // Same content, equivalent representation: duplicated sets, unsorted, extra empties
+    const b = { s: "hello world", marks: [["bold", "bold"], ["bold"], ["bold"], ["bold"], ["bold"], [], [], [], undefined, [], []] as never };
+    const digestA = await fingerprint({ s: a.s, runs: runsOf(a) });
+    const digestB = await fingerprint({ s: b.s, runs: runsOf(b) });
+    expect(digestA).toBe(digestB);
+    // And different content differs
+    const c = { s: "hello world", marks: [["em"], ["em"], [], [], [], [], [], [], [], [], []] };
+    expect(await fingerprint({ s: c.s, runs: runsOf(c) })).not.toBe(digestA);
+  });
+
+  test("the size claim, asserted: the digest input shrinks ~600x on formatted text", async () => {
+    const chars = 10_000;
+    const s = "x".repeat(chars);
+    const marks: string[][] = [];
+    for (let i = 0; i < chars; i++) marks.push(i < 500 ? ["bold"] : []);
+    const perChar = JSON.stringify({ s, marks });
+    const runs = JSON.stringify({ s, runs: runsOf({ s, marks }) });
+    // The string rides both forms verbatim; the claim is the OVERHEAD: the
+    // per-char form pays ~33KB of mark arrays beside a 10KB string (4.3x
+    // content); the run form pays one run (~50 bytes) — under 1% overhead.
+    expect(runs.length).toBeLessThan(s.length * 1.01 + 100);
+    expect(perChar.length).toBeGreaterThan(s.length * 3);
   });
 });
