@@ -17,11 +17,16 @@ export type { MarkRenderer } from "@nooq/plugins/dom";
 export type RichTextSurfaceOptions = Omit<RichTextOptions, "marks"> & { marks?: readonly string[]; renderMarks?: Readonly<Record<string, MarkRenderer>> };
 
 // The bases whose PM marks carry no payload; every other base is payloaded (0009 §1/§2).
-const bareMarkSpecs: Record<"strong" | "em" | "code", MarkSpec> = {
+const bareMarkSpecs: Record<"strong" | "em" | "code" | "strike" | "underline" | "highlight", MarkSpec> = {
   strong: { toDOM: () => ["strong", 0], parseDOM: [{ tag: "strong" }, { tag: "b" }] },
   em: { toDOM: () => ["em", 0], parseDOM: [{ tag: "em" }, { tag: "i" }] },
   // The code type class carries the mono face; the host theme adds the sunken ground.
   code: { toDOM: () => ["code", { class: "nq-code" }, 0], parseDOM: [{ tag: "code" }] },
+  strike: { toDOM: () => ["del", 0], parseDOM: [{ tag: "del" }, { tag: "s" }] },
+  underline: { toDOM: () => ["u", 0], parseDOM: [{ tag: "u" }] },
+  // Highlight rides the pencil's soft wash — a fixed, themed color (no
+  // per-character payload: that's the link mechanism's job, 0009 §1).
+  highlight: { toDOM: () => ["mark", { class: "nq-highlight" }, 0], parseDOM: [{ tag: "mark" }] },
 };
 
 /** One payloaded base as a PM mark: the token rides an attribute, and toDOM hands the resolved payload to the renderer (0009 §3). */
@@ -287,7 +292,8 @@ export function mountRichText(host: {
       if (composing || event.isComposing || view.composing) return false;
       if (host.keyDown(event)) return true;
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
-        const mark = ({ b: "strong", i: "em", "`": "code" } as const)[event.key.toLowerCase() as "b" | "i" | "`"];
+        const chord = `${event.shiftKey ? "Shift+" : ""}${event.key.toLowerCase()}` as string;
+        const mark = ({ b: "strong", i: "em", "`": "code", "Shift+x": "strike", "Shift+u": "underline", "Shift+h": "highlight" } as const)[chord];
         // Consume known formatting shortcuts even when disallowed: browser defaults
         // must not introduce formatting outside this binding's authoring policy.
         if (mark) { toggleMark(mark); return true; }

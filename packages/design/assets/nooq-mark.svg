@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="318 0 92 145.106" role="img" aria-label="nooq">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="318 0 86 135.106" role="img" aria-label="nooq">
 <title>nooq</title>
-<path d="M356 9H372A29 29 0 0 1 401 38V62A29 29 0 0 1 372 91H356A29 29 0 0 1 327 62V38A29 29 0 0 1 356 9Z" stroke="#15171c" fill="none" stroke-width="18" stroke-linejoin="round"/>
-<polyline points="401,38 401,145.106" stroke="#2343d1" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<path d="M394 72V28A18 18 0 0 0 376 10H346A18 18 0 0 0 328 28V72A18 18 0 0 0 346 90H376A18 18 0 0 0 394 72Z" stroke="#2343d1" fill="none" stroke-width="20" stroke-linejoin="round"/>
+<polyline points="394,135.106 394,28" stroke="#2343d1" fill="none" stroke-width="20" stroke-linejoin="round"/>
 </svg>

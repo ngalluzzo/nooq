@@ -292,12 +292,14 @@
 /* Tooltip: a popover carrying one hint line. Never interactive, never focused. */
 .nq-tooltip { padding: var(--nq-space-1) var(--nq-space-2); pointer-events: none; }
 
-/* Logo. Geometry lives in the SVG; color comes from tokens. The moved piece keeps the writer's ink. */
+/* Logo. The moving stroke and the inked q take the writer's color. */
 .nq-logo { display: block; width: 100%; height: auto; overflow: visible; }
 .nq-logo-letter, .nq-logo-piece { stroke: var(--nq-graphite); }
-.nq-logo-piece.is-moved { stroke: var(--nq-ink); }
+.nq-logo-letter.is-ink, .nq-logo-ink { stroke: var(--nq-ink); }
+.nq-logo-piece.is-moved { stroke: color-mix(in srgb, var(--nq-graphite), var(--nq-ink) var(--nq-logo-piece-ink, 100%)); }
 .nq-logo-caret { fill: var(--nq-caret); }
 .nq-logo-mono .nq-logo-letter, .nq-logo-mono .nq-logo-piece { stroke: currentColor; }
+.nq-logo-mono .nq-logo-ink { display: none; }
 
 /* Loading (foundation P2): the open state before the first render. Nothing
    until the delay has elapsed — fast loads show nothing — then the wordmark

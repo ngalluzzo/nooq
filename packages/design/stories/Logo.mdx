@@ -8,24 +8,20 @@ import { PIECE_LENGTH, TIMINGS } from "../src/brand/geometry.ts";
 
 <Canvas of={LogoStories.Hero} />
 
-## One counter, four letters
+## Wordmark and mark
 
-n, o, o and q share the same inner space. The wordmark is drawn around that single module: one rounded centerline, one 18-unit stroke, letters 106 units apart. It is drawn, not typeset. Literata sets documents; it never sets the name.
+The n and the two o’s use the same rounded module and an 18-unit stroke. The q tightens the corners, takes a 20-unit stroke and adds a straight tail. The whole q is in `ink` and doubles as the standalone mark.
 
-- **o** is the module, closed.
-- **n** is the module with its base gone and its sides run down to the baseline.
-- **q** is the module with a tail down its right side.
+## Ink transfer
 
-## The Move
-
-The animation types four identical o's, then performs a Move (DM-4.4): the base of the first o lets go, which leaves an n, travels under the word intact, docks at the last o and unrolls into its tail. Nothing is drawn in and nothing fades out. The piece is {PIECE_LENGTH.toFixed(1)} units long in every frame, so the q's descender is exactly what the n gave up. The tail stays in `ink` at rest: it is the one part of the mark that moved, attributed the way a change bar attributes an edit.
+The animation opens on four o’s and performs a Move (DM-4.4). The base of the first o peels away, straightens under the word and curves upright into the last o. The stroke stays {PIECE_LENGTH.toFixed(1)} units long and becomes the tail. Blue spreads from the join in both directions as the bowl settles into the q.
 
 <Canvas of={LogoStories.Frame} />
 
 | Timing | Total | Use |
 | --- | --- | --- |
-| `hero` | {TIMINGS.hero.total} ms | The site and first run. Ends with the caret parked after the q, blinking twice. |
-| `loader` | {TIMINGS.loader.total} ms | Loading states. Same choreography, no parked caret. |
+| `hero` | {TIMINGS.hero.total} ms | The site and first run. Plays once and settles at the wordmark. |
+| `loader` | {TIMINGS.loader.total} ms | Loading states. Moves faster and holds the finished wordmark before replay. |
 
 ## Using it
 

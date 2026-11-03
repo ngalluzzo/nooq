@@ -2,12 +2,17 @@ import type { JsonValue } from "@nooq/core";
 import type { Command, SelectionRequest } from "./definitions.ts";
 
 export type TextMode = "plain" | "rich";
-export type TextMark = "strong" | "em" | "code";
+export type TextMark = "strong" | "em" | "code" | "strike" | "underline" | "highlight";
 /**
  * Bare mark bases nooq reserves for itself (0009 §2). Every other base is
  * namespaced by the declaring plugin's id.
  */
-export const RESERVED_MARK_BASES = Object.freeze(["strong", "em", "code", "link"] as const);
+// Richer formatting (2026-11-03): strike, underline, highlight join the
+// reserved bare bases — reference-surface vocabulary like their siblings.
+/** The bare (non-payloaded) marks a rich binding may author — the toggles. */
+export const BARE_MARKS: readonly string[] = Object.freeze(["strong", "em", "code", "strike", "underline", "highlight"]);
+
+export const RESERVED_MARK_BASES = Object.freeze(["strong", "em", "code", "strike", "underline", "highlight", "link"] as const);
 export type ReservedMarkBase = (typeof RESERVED_MARK_BASES)[number];
 /**
  * A policy's marks are BASES (0009 §2): a reserved bare base, or a base

@@ -52,7 +52,7 @@ function numberedPosition(view: { roots: readonly string[]; blocks: Readonly<Rec
 
 export const writingTextPolicy = defineTextPolicy({
   defaultMode: "plain", enter: { command: splitBlock },
-  marks: ["strong", "em", "code", "link"],
+  marks: ["strong", "em", "code", "strike", "underline", "highlight", "link"],
   renderMarks: { link: renderLinkMark },
 });
 /** The inline-text essentials blocks, in the order the reference kinds array below types them. */
@@ -83,6 +83,10 @@ export const essentialsDOM = defineDOMPlugin({
       const bar = element.querySelector<HTMLElement>(".nq-bar")!;
       let tip: ReturnType<typeof tooltip> | undefined, tipWriter: string | undefined;
       return { element, update(block: Block) {
+        // Alignment is a field (BlockNote-parity, richer formatting): the
+        // body carries it; markdown has no alignment — export keeps text.
+        const body = element.querySelector<HTMLElement>(".nq-block-body");
+        if (body) body.style.textAlign = block.fields.align === "center" || block.fields.align === "right" ? (block.fields.align as "center" | "right") : "";
         // Tier-1: heading level by field — the tag swaps in place, data-level
         // drives the style, the level field feeds export. One field, one truth.
         if (isHeading) {

@@ -27,6 +27,9 @@ const TOGGLES: readonly { base: TextMark; label: string }[] = [
   { base: "strong", label: "Bold" },
   { base: "em", label: "Italic" },
   { base: "code", label: "Code" },
+  { base: "strike", label: "Strikethrough" },
+  { base: "underline", label: "Underline" },
+  { base: "highlight", label: "Highlight" },
 ];
 /** The reserved payloaded base the Link button opens (0009 §2/§5). */
 const LINK_BASE = "link";
@@ -40,6 +43,10 @@ export interface FormatHost {
   toggleMark(mark: TextMark): boolean;
   /** Toggle bases this binding's policy admits (strong/em/code only; a payloaded base never toggles, 0009 §2). */
   marks?: readonly string[];
+  /** DM-3.2: the block's fields, so the alignment control reads current state. */
+  blockFields?: () => Record<string, unknown>;
+  /** Runs a command (the alignment control writes the align field). */
+  runCommand?: (id: string, args: unknown) => unknown;
 }
 
 export interface FormatToolbarSetup {
@@ -72,6 +79,31 @@ export function createFormatToolbar(editor: Editor, setup: FormatToolbarSetup): 
   const element = document.createElement("div");
   element.className = "nq-format";
   element.setAttribute("role", "toolbar");
+
+  /** The alignment control: three buttons, one field write — current state
+   *  from the block, the press never moves focus (the strip's discipline). */
+  let alignButtons: HTMLButtonElement[] | undefined;
+  const buildAlign = (host: FormatHost): void => {
+    if (alignButtons === undefined && host.blockFields !== undefined && host.runCommand !== undefined) {
+      alignButtons = (["left", "center", "right"] as const).map(align => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.align = align;
+        button.setAttribute("aria-label", `Align ${align}`);
+        button.textContent = align === "left" ? "⇤" : align === "center" ? "↔" : "⇥";
+        button.tabIndex = -1; // pointer affordance only (§3) — the toggles' discipline
+        button.addEventListener("pointerdown", event => event.preventDefault());
+        button.addEventListener("click", () => {
+          const block = setup.selectionBlock();
+          if (block === undefined) return;
+          const current = host.blockFields?.().align;
+          void host.runCommand?.("nooq.field.set", { block, key: "align", value: current === align ? "left" : align });
+        });
+        return button;
+      });
+      for (const button of alignButtons) element.append(button);
+    }
+  };
   element.setAttribute("aria-label", "Formatting");
   element.hidden = true;
   setup.mount.append(element);
@@ -87,6 +119,7 @@ export function createFormatToolbar(editor: Editor, setup: FormatToolbarSetup): 
 
   /** The strip's buttons for one admitted set: toggles in TOGGLES order, then Link. */
   function render(host: FormatHost, linkAdmitted: boolean): void {
+    buildAlign(host); // the segmented control, once; state refreshes below
     const wanted: string[] = TOGGLES.filter(({ base }) => host.marks?.includes(base)).map(({ base }) => base);
     if (linkAdmitted) wanted.push(LINK_BASE);
     for (const [base, el] of buttons) if (!wanted.includes(base)) { el.remove(); buttons.delete(base); }
@@ -141,6 +174,10 @@ export function createFormatToolbar(editor: Editor, setup: FormatToolbarSetup): 
 
   /** Pressed states from the stored marks over the selection — the same predicate a click will toggle. */
   function refresh(): void {
+    if (alignButtons !== undefined) {
+      const current = String((setup.host(shown!.block)?.blockFields?.().align ?? "left"));
+      for (const button of alignButtons) button.setAttribute("aria-pressed", button.dataset.align === current ? "true" : "false");
+    }
     if (!shown) return;
     const host = setup.host(shown.block);
     if (!host) { hide(); return; }

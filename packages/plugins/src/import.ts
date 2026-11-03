@@ -45,6 +45,9 @@ function parseInline(raw: string): { text: RenderedText; fields: Record<string, 
     let m: RegExpMatchArray | null;
     if ((m = rest.match(/^\*\*([^*]+)\*\*/)) !== null) { push(m[1]!, ["strong"]); i += m[0]!.length; continue; }
     if ((m = rest.match(/^\*([^*]+)\*/)  ) !== null) { push(m[1]!, ["em"]); i += m[0]!.length; continue; }
+    if ((m = rest.match(/^~~([^~]+)~~/)  ) !== null) { push(m[1]!, ["strike"]); i += m[0]!.length; continue; }
+    if ((m = rest.match(/^<u>([^<]+)<\/u>/i)) !== null) { push(m[1]!, ["underline"]); i += m[0]!.length; continue; }
+    if ((m = rest.match(/^<mark>([^<]+)<\/mark>/i)) !== null) { push(m[1]!, ["highlight"]); i += m[0]!.length; continue; }
     if ((m = rest.match(/^`([^`]+)`/)    ) !== null) { push(m[1]!, ["code"]); i += m[0]!.length; continue; }
     if ((m = rest.match(/^\[([^\]]*)\]\(([^)\s]+)\)/)) !== null) {
       const url = m[2]!;

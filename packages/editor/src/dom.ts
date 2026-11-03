@@ -2,7 +2,7 @@
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type Op, type TextChange } from "@nooq/core";
 import * as Y from "yjs";
 import { layout } from "@nooq/yjs";
-import { freezeInPlace, freezeSnapshot, textBlockOrder, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
+import { BARE_MARKS, freezeInPlace, freezeSnapshot, textBlockOrder, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { loading, notice, presenceCaret, slashMenu, syncStatus, type NoticeAction } from "@nooq/design";
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
@@ -210,7 +210,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     host: id => {
       const row = rows.get(id), binding = row?.bindings[0];
       if (!binding || binding.marks === undefined || !binding.element.isConnected) return undefined;
-      return { anchor: binding.element, selection: binding.selection, toggleMark: mark => binding.toggleMark?.(mark) ?? false, marks: binding.marks };
+      return { anchor: binding.element, selection: binding.selection, toggleMark: mark => binding.toggleMark?.(mark) ?? false, marks: binding.marks,
+        blockFields: () => ({ ...(editor.view.blocks[id]?.fields ?? {}) }),
+        runCommand: (command, args) => editor.commands.run(command, args) };
     },
     policyBases: id => views.get(rows.get(id)?.type ?? "")?.textPolicy?.marks,
     openLink: id => links.open(id),
@@ -498,7 +500,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     // Toggle authoring stays the reserved trio (0009 §2); payloaded and plugin bases
     // arrive through commands and renderers, never toggle formatting. The policy's
     // renderMarks build this surface's schema for them (0009 §3).
-    binding = mode === "rich" ? { ...mountRichText(id, row, { label, marks: (policy.marks ?? []).filter((mark): mark is TextMark => (["strong", "em", "code"] as readonly string[]).includes(mark)), ...(policy.renderMarks ? { renderMarks: policy.renderMarks } : {}) }, input), mode }
+    binding = mode === "rich" ? { ...mountRichText(id, row, { label, marks: (policy.marks ?? []).filter((mark): mark is TextMark => BARE_MARKS.includes(mark)), ...(policy.renderMarks ? { renderMarks: policy.renderMarks } : {}) }, input), mode }
       : { ...mountText(id, row, label, input), mode, toggleMark: () => false };
     return binding;
   }

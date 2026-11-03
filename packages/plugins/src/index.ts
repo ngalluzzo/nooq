@@ -11,3 +11,4 @@ export type { ActorDescriptor, Block, DocState, JsonValue, Op, RenderedText, Tex
 export type { SurfacePluginContext } from "./dom.ts";
 export { importMarkdown } from "./import.ts";
 export { defineAction } from "./actions.ts";
+export { BARE_MARKS } from "./text-policy.ts";

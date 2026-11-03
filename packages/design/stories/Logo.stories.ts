@@ -35,7 +35,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "n, o, o and q share one counter, so the wordmark is one module drawn four ways. The animation types oooo, then performs a Move (DM-4.4): the base of the first o lets go, which leaves an n, travels under the word intact, and unrolls into the q's tail. The piece keeps its length the whole way.",
+          "The base of the first o peels away, straightens beneath the baseline and curves upright into the q’s tail. The stroke keeps its length. Ink spreads around the bowl from the join as the corners tighten.",
       },
     },
   },
@@ -49,6 +49,7 @@ export const Wordmark: Story = {
   play: async ({ canvas, canvasElement }) => {
     await expect(canvas.getByRole("img", { name: "nooq" })).toBeInTheDocument();
     await expect(canvasElement.querySelector(".nq-logo")).toHaveAttribute("data-phase", "rest");
+    await expect(canvasElement.querySelector(".nq-logo-letter.is-ink")).toHaveAttribute("stroke-width", "20");
   },
 };
 
@@ -73,10 +74,10 @@ export const AppIcon: Story = {
   },
 };
 
-/** The hero timing (3.4s): for the site and first run. Plays on load. */
+/** For the site and first run. Plays on load. */
 export const Hero: Story = { render: () => player("hero", true) };
 
-/** The loader timing (1.8s): the same choreography, no parked caret. */
+/** The same choreography at loader speed. */
 export const Loader: Story = {
   render: () => player("loader", false),
   play: async ({ canvas, canvasElement, userEvent }) => {
@@ -103,7 +104,7 @@ interface ScrubArgs {
 
 /** Any frame, for review. Drag `ms`. */
 export const Frame: StoryObj<ScrubArgs> = {
-  args: { ms: 1800, timing: "hero" },
+  args: { ms: 1100, timing: "hero" },
   argTypes: {
     ms: { control: { type: "range", min: 0, max: TIMINGS.hero.total, step: 10 } },
     timing: { control: "inline-radio", options: Object.keys(TIMINGS) },

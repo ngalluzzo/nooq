@@ -87,9 +87,13 @@ export const PointerSelection: Story = {
     await expect(strip.hidden).toBe(false);
     expect(strip.getAttribute("role")).toBe("toolbar");
     const labels = Array.from(strip.querySelectorAll("button")).map(el => el.textContent);
-    expect(labels).toEqual(["Bold", "Italic", "Code", "Link"]); // exactly what the reference policy admits
-    for (const button of Array.from(strip.querySelectorAll("button"))) expect(button.getAttribute("aria-pressed")).toBe("false");
-    // The strip is pointer affordance only: its buttons are never tab stops (§3), and focus stays in the text.
+    expect(labels).toEqual(["⇤", "↔", "⇥", "Bold", "Italic", "Code", "Strikethrough", "Underline", "Highlight", "Link"]); // the alignment control, then exactly what the reference policy admits
+    for (const button of Array.from(strip.querySelectorAll("button"))) {
+      const pressed = button.getAttribute("aria-pressed");
+      expect(pressed).toBe(button.dataset.align === "left" ? "true" : "false"); // alignment: left is the resting truth; the toggles rest off
+    }
+    // The strip is pointer affordance only: its buttons are never tab stops
+    // (§3 — the align control's buttons join the discipline), and focus stays in the text.
     for (const button of Array.from(strip.querySelectorAll("button"))) expect(button.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(host);
 

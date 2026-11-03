@@ -5,14 +5,14 @@
  */
 
 import { resolveColor, type ThemeId, type Tokens } from "../tokens.ts";
-import { BODY, fmt, HEIGHT, LETTER_X, oPath, pointsAttr, REST, STROKE, TAIL_TOP, TAIL_X, WIDTH } from "./geometry.ts";
+import { fmt, HEIGHT, pointsAttr, Q_STROKE, Q_WIDTH, Q_X, REST, STROKE, TAIL, WIDTH } from "./geometry.ts";
 
 interface Inks {
   letters: string;
-  tail: string;
+  q: string;
 }
 
-const attrs = `fill="none" stroke-width="${STROKE}" stroke-linejoin="round"`;
+const attrs = (width: number) => `fill="none" stroke-width="${width}" stroke-linejoin="round"`;
 
 function file(viewBox: string, title: string, body: string, size?: string): string {
   return [
@@ -24,47 +24,46 @@ function file(viewBox: string, title: string, body: string, size?: string): stri
   ].join("\n");
 }
 
-function wordmarkBody({ letters, tail }: Inks): string {
+function wordmarkBody({ letters, q }: Inks): string {
   return [
-    ...REST.letters.map((l) => `<path d="${l.d}" stroke="${letters}" ${attrs}/>`),
-    `<polyline points="${pointsAttr([REST.piece.points[0]!, REST.piece.points.at(-1)!])}" stroke="${tail}" ${attrs}/>`,
+    ...REST.letters.slice(0, 3).map((l) => `<path d="${l.d}" stroke="${letters}" ${attrs(STROKE)}/>`),
+    markBody(q),
   ].join("\n");
 }
 
-function markBody({ letters, tail }: Inks): string {
+function markBody(ink: string): string {
   return [
-    `<path d="${oPath(LETTER_X[3]!)}" stroke="${letters}" ${attrs}/>`,
-    `<polyline points="${pointsAttr([[TAIL_X, TAIL_TOP], [TAIL_X, HEIGHT]])}" stroke="${tail}" ${attrs}/>`,
+    `<path d="${REST.letters[3]!.d}" stroke="${ink}" ${attrs(Q_STROKE)}/>`,
+    `<polyline points="${pointsAttr(TAIL)}" stroke="${ink}" ${attrs(Q_STROKE)}/>`,
   ].join("\n");
 }
 
 function inks(tokens: Tokens, theme: ThemeId): Inks {
-  return { letters: resolveColor(tokens, "graphite", theme), tail: resolveColor(tokens, "ink", theme) };
+  return { letters: resolveColor(tokens, "graphite", theme), q: resolveColor(tokens, "ink", theme) };
 }
 
 /** Every logo file, by name. */
 export function logoAssets(tokens: Tokens): Record<string, string> {
   const box = `0 0 ${WIDTH} ${fmt(HEIGHT)}`;
-  const markX = LETTER_X[3]! - STROKE / 2;
-  const markBox = `${markX} 0 ${BODY + STROKE} ${fmt(HEIGHT)}`;
-  const graphite = resolveColor(tokens, "graphite", "light");
+  const markBox = `${Q_X} 0 ${Q_WIDTH} ${fmt(HEIGHT)}`;
+  const light = inks(tokens, "light");
 
   // The app icon: the mark centered on a paper tile by its full height, so the bowl sits above center and the tail below.
   const tile = 200;
-  const dx = (tile - (BODY + STROKE)) / 2 - markX;
+  const dx = (tile - Q_WIDTH) / 2 - Q_X;
   const dy = (tile - HEIGHT) / 2;
   const icon = [
     `<rect width="${tile}" height="${tile}" rx="44" fill="${resolveColor(tokens, "paper", "light")}"/>`,
     `<g transform="translate(${fmt(dx)} ${fmt(dy)})">`,
-    markBody(inks(tokens, "light")),
+    markBody(light.q),
     `</g>`,
   ].join("\n");
 
   return {
-    "nooq-wordmark.svg": file(box, "nooq", wordmarkBody(inks(tokens, "light"))),
+    "nooq-wordmark.svg": file(box, "nooq", wordmarkBody(light)),
     "nooq-wordmark-dark.svg": file(box, "nooq", wordmarkBody(inks(tokens, "dark"))),
-    "nooq-wordmark-mono.svg": file(box, "nooq", wordmarkBody({ letters: graphite, tail: graphite })),
-    "nooq-mark.svg": file(markBox, "nooq", markBody(inks(tokens, "light"))),
+    "nooq-wordmark-mono.svg": file(box, "nooq", wordmarkBody({ letters: light.letters, q: light.letters })),
+    "nooq-mark.svg": file(markBox, "nooq", markBody(light.q)),
     "nooq-icon.svg": file(`0 0 ${tile} ${tile}`, "nooq", icon),
   };
 }

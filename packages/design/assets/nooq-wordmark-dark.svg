@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 145.106" role="img" aria-label="nooq">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 135.106" role="img" aria-label="nooq">
 <title>nooq</title>
-<path d="M9 100V38A29 29 0 0 1 38 9H54A29 29 0 0 1 83 38V100" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
-<path d="M144 9H160A29 29 0 0 1 189 38V62A29 29 0 0 1 160 91H144A29 29 0 0 1 115 62V38A29 29 0 0 1 144 9Z" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
-<path d="M250 9H266A29 29 0 0 1 295 38V62A29 29 0 0 1 266 91H250A29 29 0 0 1 221 62V38A29 29 0 0 1 250 9Z" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
-<path d="M356 9H372A29 29 0 0 1 401 38V62A29 29 0 0 1 372 91H356A29 29 0 0 1 327 62V38A29 29 0 0 1 356 9Z" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
-<polyline points="401,38 401,145.106" stroke="#93a6ff" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<path d="M9 91V38A29 29 0 0 1 38 9H54A29 29 0 0 1 83 38V91" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<path d="M189 62V38A29 29 0 0 0 160 9H144A29 29 0 0 0 115 38V62A29 29 0 0 0 144 91H160A29 29 0 0 0 189 62Z" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<path d="M295 62V38A29 29 0 0 0 266 9H250A29 29 0 0 0 221 38V62A29 29 0 0 0 250 91H266A29 29 0 0 0 295 62Z" stroke="#eceef2" fill="none" stroke-width="18" stroke-linejoin="round"/>
+<path d="M394 72V28A18 18 0 0 0 376 10H346A18 18 0 0 0 328 28V72A18 18 0 0 0 346 90H376A18 18 0 0 0 394 72Z" stroke="#93a6ff" fill="none" stroke-width="20" stroke-linejoin="round"/>
+<polyline points="394,135.106 394,28" stroke="#93a6ff" fill="none" stroke-width="20" stroke-linejoin="round"/>
 </svg>

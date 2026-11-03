@@ -92,6 +92,11 @@ function applyMarks(content: string, marks: readonly string[], fields?: Readonly
   if (marks.includes("code")) out = `\`${out}\``;
   if (marks.includes("em")) out = `*${out}*`;
   if (marks.includes("strong")) out = `**${out}**`; // strong outside em: strong+em nests to ***
+  if (marks.includes("strike")) out = `~~${out}~~`; // GFM strikethrough
+  // Underline and highlight have no markdown: CommonMark's inline HTML
+  // carries them verbatim (what the writer meant survives the round trip).
+  if (marks.includes("underline")) out = `<u>${out}</u>`;
+  if (marks.includes("highlight")) out = `<mark>${out}</mark>`;
   // 0009: hosts enforce one token per base per character on apply, the model
   // may tolerate more, and readers pick deterministically — smallest wins.
   const token = marks.filter(mark => mark.startsWith("link:")).sort()[0];

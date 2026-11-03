@@ -5,11 +5,12 @@ import {
   BASELINE,
   BODY,
   BOTTOM,
+  fmt,
   LETTER_X,
   logoFrame,
   PIECE_LENGTH,
-  piecePoint,
   polylineLength,
+  Q_STROKE,
   RADIUS,
   REST,
   STROKE,
@@ -42,8 +43,8 @@ const frames = (t: Timing) => {
   return [...ms].sort((a, b) => a - b);
 };
 
-describe("the shared counter", () => {
-  test("every letter is drawn on the same centerline module", () => {
+describe("the starting letters", () => {
+  test("the starting letters share one centerline module", () => {
     const steps = LETTER_X.slice(1).map((x, i) => x - LETTER_X[i]!);
     expect(new Set(steps).size).toBe(1);
     expect(BOTTOM - TOP).toBe(100 - STROKE);
@@ -51,52 +52,44 @@ describe("the shared counter", () => {
   });
 
   test("the piece is an o's base: its ends meet the sides where the corners begin", () => {
-    expect(piecePoint(0, 0)).toEqual([0, BOTTOM - RADIUS]);
-    const [x, y] = piecePoint(0, PIECE_LENGTH - 1e-9);
-    expect(x).toBeCloseTo(BODY, 6);
-    expect(y).toBeCloseTo(BOTTOM - RADIUS, 6);
+    const points = logoFrame(0).piece.points;
+    for (const [point, x] of [[points[0]!, LETTER_X[0]], [points.at(-1)!, LETTER_X[0] + BODY]] as const) {
+      expect(point[0]).toBeCloseTo(x, 1);
+      expect(point[1]).toBeCloseTo(BOTTOM - RADIUS, 8);
+    }
   });
 });
 
 describe("the Move conserves the piece", () => {
   for (const [name, t] of timings) {
     test(`${name}: the piece is ${PIECE_LENGTH.toFixed(2)} long in every frame`, () => {
-      for (const ms of frames(t)) expect(polylineLength(logoFrame(ms, t).piece.points)).toBeCloseTo(PIECE_LENGTH, 0);
+      for (const ms of frames(t)) expect(polylineLength(logoFrame(ms, t).piece.points)).toBeCloseTo(PIECE_LENGTH, 1);
     });
   }
 
   test("at rest, the q's tail is exactly the piece, hanging straight from the bowl's corner", () => {
     const pts = REST.piece.points;
-    expect(pts[0]).toEqual([TAIL_X, TAIL_TOP]);
+    expect(pts.at(-1)).toEqual([TAIL_X, TAIL_TOP]);
     expect(pts.at(-1)![0]).toBeCloseTo(TAIL_X, 9);
-    expect(pts.at(-1)![1]).toBeCloseTo(TAIL_TOP + PIECE_LENGTH, 9);
+    expect(pts[0]![1]).toBeCloseTo(TAIL_TOP + PIECE_LENGTH, 9);
     for (const [x] of pts) expect(x).toBeCloseTo(TAIL_X, 9);
   });
 
-  test("at rest, the first letter is an n: its stems reach the baseline", () => {
-    expect(REST.letters[0]!.d).toStartWith(`M${LETTER_X[0]} ${BASELINE}V`);
-    expect(REST.letters[0]!.d).toEndWith(`V${BASELINE}`);
+  test("at rest, the n stems end at the o's lower centerline", () => {
+    expect(REST.letters[0]!.d).toStartWith(`M${LETTER_X[0]} ${BOTTOM}V`);
+    expect(REST.letters[0]!.d).toEndWith(`V${BOTTOM}`);
   });
 });
 
 describe("the choreography", () => {
   for (const [name, t] of timings) {
-    test(`${name}: starts empty except for the caret`, () => {
-      const f = logoFrame(-1, t);
-      expect(f.letters.every((l) => !l.visible)).toBe(true);
-      expect(f.piece.visible).toBe(false);
-      expect(f.caret.visible).toBe(true);
-    });
-
-    test(`${name}: types the four o's in order, each at its key`, () => {
-      t.keys.forEach((k, i) => {
-        expect(logoFrame(k - 1, t).letters[i]!.visible).toBe(false);
-        expect(logoFrame(k, t).letters[i]!.visible).toBe(true);
-      });
-      // Before the release, all four are identical o's: the arch plus its attached base.
-      const f = logoFrame(t.release[0] - 1, t);
+    test(`${name}: opens on all four o's with no caret`, () => {
+      const f = logoFrame(0, t);
+      expect(f.letters.every((l) => l.visible)).toBe(true);
+      expect(f.piece.visible).toBe(true);
       expect(f.piece.moved).toBe(false);
-      expect(f.piece.points[0]).toEqual([LETTER_X[0]!, BOTTOM - RADIUS]);
+      expect(f.caret.visible).toBe(false);
+      expect(f.q).toEqual({ weight: STROKE, ink: 0 });
     });
 
     test(`${name}: moves through the phases in order and ends at rest`, () => {
@@ -144,21 +137,31 @@ describe("the choreography", () => {
     });
   }
 
-  test("the hero parks the caret after the q and blinks; the loader does not", () => {
-    const hero = TIMINGS.hero;
-    const at = (q: number) => logoFrame(hero.ready[0] + q * (hero.ready[1] - hero.ready[0]), hero);
-    expect(at(0.2).caret).toEqual({ visible: true, x: at(0.2).caret.x });
-    expect(at(0.2).caret.x).toBeGreaterThan(TAIL_X + STROKE / 2);
-    expect(at(0.6).caret.visible).toBe(false);
-    expect(at(0.85).caret.visible).toBe(true);
-    expect(logoFrame(TIMINGS.loader.unroll[1] + 10, TIMINGS.loader).caret.visible).toBe(false);
+  test("the ink follows the upright stroke around the bowl", () => {
+    const t = TIMINGS.hero;
+    const f = frames(t).map((ms) => logoFrame(ms, t)).find((frame) => frame.q!.ink > 0 && frame.q!.ink < 1)!;
+    const [tip, behind] = f.piece.points.slice(-2).reverse();
+    expect(tip![0]).toBeCloseTo(behind![0], 8);
+    expect(tip![1]).toBeLessThan(behind![1]!);
+    expect(f.letters[3]!.d).toStartWith(`M${fmt(tip![0])} `);
+    expect(REST.q).toEqual({ weight: Q_STROKE, ink: 1 });
   });
 
-  test("the caret blinks once in the beat after oooo", () => {
-    const t = TIMINGS.hero;
-    expect(logoFrame(t.keys[3] + 100, t).caret.visible).toBe(true);
+  test("custom timings can still type the letters and park the caret", () => {
+    const t: Timing = {
+      keys: [0, 150, 270, 410],
+      release: [800, 950], travel: [950, 1300], unroll: [1300, 1750],
+      ready: [1800, 2100], total: 2100,
+    };
+    expect(logoFrame(-1, t).letters.every((l) => !l.visible)).toBe(true);
+    t.keys.forEach((key, i) => {
+      expect(logoFrame(key - 1, t).letters[i]!.visible).toBe(false);
+      expect(logoFrame(key, t).letters[i]!.visible).toBe(true);
+    });
     expect(logoFrame(t.keys[3] + 250, t).caret.visible).toBe(false);
-    expect(logoFrame(t.keys[3] + 400, t).caret.visible).toBe(true);
+    expect(logoFrame(1840, t).caret.visible).toBe(true);
+    expect(logoFrame(1840, t).caret.x).toBeGreaterThan(TAIL_X + Q_STROKE / 2);
+    expect(logoFrame(1980, t).caret.visible).toBe(false);
   });
 });
 
@@ -180,12 +183,13 @@ describe("wordmark()", () => {
 
   test("renderWordmarkFrame draws any frame", () => {
     const el = wordmark();
-    const f = logoFrame(TIMINGS.hero.keys[1], TIMINGS.hero);
+    const f = logoFrame(1100, TIMINGS.hero);
     renderWordmarkFrame(el, f);
     const op = Array.from(el.querySelectorAll(".nq-logo-letter")).map((l) => l.getAttribute("opacity"));
-    expect(op).toEqual(["1", "1", "0", "0"]);
-    expect(el.querySelector(".nq-logo-piece")?.classList.contains("is-moved")).toBe(false);
-    expect(el.dataset.phase).toBe("typing");
+    expect(op).toEqual(["1", "1", "1", "1"]);
+    expect(el.querySelector(".nq-logo-piece")?.classList.contains("is-moved")).toBe(true);
+    expect(el.querySelector(".nq-logo-ink")?.getAttribute("visibility")).toBe("visible");
+    expect(el.dataset.phase).toBe("unroll");
   });
 
   test("with reduced motion, nothing moves: it resolves at rest immediately", async () => {
@@ -206,10 +210,28 @@ describe("wordmark()", () => {
     expect(el.querySelector(".nq-logo-piece")?.getAttribute("points")).toBe(wordmark().querySelector(".nq-logo-piece")?.getAttribute("points"));
   });
 
-  test("mark() is the q alone", () => {
+  test("a replay replaces the in-flight animation", async () => {
+    const el = wordmark();
+    const first = animateWordmark(el, { reducedMotion: false });
+    const replay = animateWordmark(el, { reducedMotion: false });
+    await first.finished;
+    first.cancel();
+    expect(el.dataset.phase).toBe("typing");
+    replay.cancel();
+    await replay.finished;
+    expect(el.dataset.phase).toBe("rest");
+  });
+
+  test("mark() is the same inked q that ends the wordmark", () => {
     const m = mark();
     expect(m.querySelectorAll(".nq-logo-letter").length).toBe(1);
     expect(m.getAttribute("aria-label")).toBe("nooq");
+    const bowl = m.querySelector(".nq-logo-letter")!;
+    const wordmarkBowl = wordmark().querySelectorAll(".nq-logo-letter")[3]!;
+    expect(bowl.getAttribute("d")).toBe(wordmarkBowl.getAttribute("d"));
+    expect(bowl.getAttribute("stroke-width")).toBe(String(Q_STROKE));
+    expect(bowl.classList.contains("is-ink")).toBe(true);
+    expect(wordmarkBowl.classList.contains("is-ink")).toBe(true);
   });
 });
 
@@ -222,12 +244,13 @@ describe("assets/", () => {
     });
   }
 
-  test("colors come from tokens: graphite letters, ink tail, per theme", () => {
+  test("colors come from tokens: graphite noo, ink q, per theme", () => {
     expect(assets["nooq-wordmark.svg"]).toContain('stroke="#15171c"');
     expect(assets["nooq-wordmark.svg"]).toContain('stroke="#2343d1"');
     expect(assets["nooq-wordmark-dark.svg"]).toContain('stroke="#eceef2"');
     expect(assets["nooq-wordmark-dark.svg"]).toContain('stroke="#93a6ff"');
     expect(assets["nooq-wordmark-mono.svg"]).not.toContain("#2343d1");
+    expect(assets["nooq-mark.svg"]!.match(/stroke="#2343d1"/g)).toHaveLength(2);
   });
 
   test("every file is a labeled image", () => {

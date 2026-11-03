@@ -6,20 +6,19 @@
 
 import { svg } from "../dom.ts";
 import {
-  BODY,
   CARET,
   fmt,
   HEIGHT,
-  LETTER_X,
   logoFrame,
   pointsAttr,
+  Q_STROKE,
+  Q_WIDTH,
+  Q_X,
   REST,
   STROKE,
-  TAIL_TOP,
-  TAIL_X,
+  TAIL,
   TIMINGS,
   WIDTH,
-  oPath,
   type LogoFrame,
   type Timing,
   type TimingName,
@@ -46,21 +45,21 @@ function frameSvg(viewBox: string, { title = "nooq", mono }: LogoProps, ...child
 /** The wordmark. At rest unless animated with `animateWordmark`. */
 export function wordmark(props: LogoProps = {}): SVGSVGElement {
   const letters = REST.letters.map((l) => svg("path", { class: "nq-logo-letter", d: l.d, ...stroke }));
-  const piece = svg("polyline", { class: "nq-logo-piece is-moved", points: pointsAttr(REST.piece.points), ...stroke });
+  const ink = svg("path", { class: "nq-logo-ink", pathLength: "1", ...stroke });
+  const piece = svg("polyline", { class: "nq-logo-piece", ...stroke });
   const caret = svg("rect", { class: "nq-logo-caret", y: String(CARET.top), width: String(CARET.width), height: String(CARET.height), opacity: "0" });
-  const el = frameSvg(`0 0 ${WIDTH} ${fmt(HEIGHT)}`, props, ...letters, piece, caret);
-  el.dataset.phase = REST.phase;
+  const el = frameSvg(`0 0 ${WIDTH} ${fmt(HEIGHT)}`, props, ...letters, ink, piece, caret);
+  renderWordmarkFrame(el, REST);
   return el;
 }
 
-/** The mark: the q alone, its tail in ink. Collapse the wordmark and this is what remains. */
+/** The mark is the same inked q that ends the wordmark. */
 export function mark(props: LogoProps = {}): SVGSVGElement {
-  const x = LETTER_X[3]! - STROKE / 2;
   return frameSvg(
-    `${x} 0 ${BODY + STROKE} ${fmt(HEIGHT)}`,
+    `${Q_X} 0 ${Q_WIDTH} ${fmt(HEIGHT)}`,
     props,
-    svg("path", { class: "nq-logo-letter", d: oPath(LETTER_X[3]!), ...stroke }),
-    svg("polyline", { class: "nq-logo-piece is-moved", points: pointsAttr([[TAIL_X, TAIL_TOP], [TAIL_X, HEIGHT]]), ...stroke }),
+    svg("path", { class: "nq-logo-letter is-ink", d: REST.letters[3]!.d, ...stroke, "stroke-width": Q_STROKE }),
+    svg("polyline", { class: "nq-logo-piece is-moved", points: pointsAttr(TAIL), ...stroke, "stroke-width": Q_STROKE }),
   );
 }
 
@@ -71,10 +70,22 @@ export function renderWordmarkFrame(el: SVGSVGElement, frame: LogoFrame): void {
     letters[i]!.setAttribute("d", l.d);
     letters[i]!.setAttribute("opacity", l.visible ? "1" : "0");
   });
-  const piece = el.querySelector(".nq-logo-piece")!;
+  const { weight, ink } = frame.q ?? { weight: STROKE, ink: 0 };
+  const q = letters[3]!;
+  const bowlInk = el.querySelector(".nq-logo-ink")!;
+  q.setAttribute("stroke-width", fmt(weight));
+  q.classList.toggle("is-ink", ink === 1);
+  bowlInk.setAttribute("visibility", frame.letters[3]!.visible && ink > 0 && ink < 1 ? "visible" : "hidden");
+  bowlInk.setAttribute("d", frame.letters[3]!.d);
+  bowlInk.setAttribute("stroke-width", fmt(weight));
+  bowlInk.setAttribute("stroke-dasharray", `${ink} ${1 - ink}`);
+  bowlInk.setAttribute("stroke-dashoffset", String(ink / 2));
+  const piece = el.querySelector<SVGPolylineElement>(".nq-logo-piece")!;
   piece.setAttribute("points", pointsAttr(frame.piece.points));
   piece.setAttribute("opacity", frame.piece.visible ? "1" : "0");
+  piece.setAttribute("stroke-width", fmt(weight));
   piece.classList.toggle("is-moved", frame.piece.moved);
+  piece.style.setProperty("--nq-logo-piece-ink", `${(frame.piece.ink ?? 1) * 100}%`);
   const caret = el.querySelector(".nq-logo-caret")!;
   caret.setAttribute("x", String(frame.caret.x));
   caret.setAttribute("opacity", frame.caret.visible ? "1" : "0");
@@ -98,22 +109,29 @@ function prefersReducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+const active = new WeakMap<SVGSVGElement, WordmarkAnimation>();
+
 /** Play the Move on a wordmark. Whatever happens, it ends at rest: the logo is never left half-drawn. */
 export function animateWordmark(el: SVGSVGElement, { timing = "hero", reducedMotion = prefersReducedMotion() }: AnimateOptions = {}): WordmarkAnimation {
+  active.get(el)?.cancel();
+  if (reducedMotion) {
+    renderWordmarkFrame(el, REST);
+    return { finished: Promise.resolve(), cancel: () => {} };
+  }
+
   const t = typeof timing === "string" ? TIMINGS[timing] : timing;
   let frameId = 0;
+  let stopped = false;
   let done!: () => void;
   const finished = new Promise<void>((resolve) => (done = resolve));
   const rest = () => {
+    if (stopped) return;
+    stopped = true;
     cancelAnimationFrame(frameId);
+    active.delete(el);
     renderWordmarkFrame(el, REST);
     done();
   };
-
-  if (reducedMotion) {
-    rest();
-    return { finished, cancel: () => {} };
-  }
 
   let start: number | undefined;
   const step = (now: number) => {
@@ -124,6 +142,8 @@ export function animateWordmark(el: SVGSVGElement, { timing = "hero", reducedMot
     frameId = requestAnimationFrame(step);
   };
   renderWordmarkFrame(el, logoFrame(0, t));
+  const animation = { finished, cancel: rest };
+  active.set(el, animation);
   frameId = requestAnimationFrame(step);
-  return { finished, cancel: rest };
+  return animation;
 }

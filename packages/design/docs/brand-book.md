@@ -92,10 +92,10 @@ nooq writes like its founding documents: plain, short, and citable. It states wh
 
 ## Logo
 
-n, o, o and q share one counter, so the wordmark is one module drawn four ways: a rounded centerline at an 18-unit stroke. It is drawn, never typeset. Use `wordmark()` or `mark()` where the theme is loaded, and the files in `assets/` everywhere else.
+n and the two o’s share a rounded module with an 18-unit stroke. The q has tighter corners, a 20-unit stroke and a straight descender. Use the drawn wordmark through `wordmark()` or `mark()` where the theme is loaded and the files in `assets/` everywhere else.
 
-- Letters are `graphite`; the q's tail is `ink`. Mono uses one ink for everything.
-- The animation types four o's, then moves the first o's base to become the q's tail (DM-4.4). The piece keeps its length, so the descender is exactly what the n gave up. Use `hero` timing for the site and first run, `loader` for loading.
+- Set noo in `graphite` and the entire q in `ink`. Mono uses one color for the whole wordmark. The q also stands alone as the mark.
+- The animation opens on four o’s. The base of the first o peels away, straightens beneath the baseline and curves upright into the last o (DM-4.4). The same length of stroke becomes the q’s tail. Ink spreads around the bowl from the join as the corners tighten. Use `hero` timing for the site and first run and `loader` for loading.
 - Under reduced motion, show the wordmark at rest.
 - Keep one counter width (56 units) clear on every side. Smallest: wordmark 64px wide, mark 16px tall.
 - Never set the name in a font, recolor the tail in `pencil`, outline the letters, or give the two o's a face.
