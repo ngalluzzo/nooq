@@ -67,8 +67,8 @@ test("a pointer selection shows the strip with exactly the permitted buttons; th
   // The policy event: button 0 completing a non-collapsed selection in a rich host.
   mouseUp(host);
   expect(strip.hidden).toBe(false);
-  expect(labels(strip)).toEqual(["Bold", "Italic", "Code", "Link"]); // the reference policy admits all four
-  for (const button of Array.from(strip.querySelectorAll("button"))) expect(button.getAttribute("aria-pressed")).toBe("false");
+  expect(labels(strip)).toEqual(["⇤", "↔", "⇥", "Bold", "Italic", "Code", "Strikethrough", "Underline", "Highlight", "Link"]); // the align control, then every mark the reference policy admits
+  for (const button of Array.from(strip.querySelectorAll("button"))) expect(button.getAttribute("aria-pressed")).toBe(button.dataset.align === "left" ? "true" : "false"); // left rests pressed; toggles rest off
   expect(document.activeElement).toBe(host); // the strip never takes focus
   // The action toolbar's discipline: a button press is prevented, so the selection survives the click.
   const bold = strip.querySelector<HTMLButtonElement>("[data-nq-base='strong']")!;
@@ -155,7 +155,7 @@ test("the strip shows only the bases the block's policy admits", async () => {
   const host = surface.element.querySelector<HTMLElement>(`[data-nq-block="${id}"] .nq-rich-text`)!;
   const strip = stripOf(surface);
   selectChars(host, 0, 10); mouseUp(host);
-  expect(labels(strip)).toEqual(["Italic", "Code"]); // em and code only: no Bold, and no Link the policy never admitted
+  expect(labels(strip)).toEqual(["⇤", "↔", "⇥", "Italic", "Code"]); // the align control rides every host; the toggles: em and code only
 
   surface.destroy();
   // A policy that admits only the payloaded link base: one button, the one entrance Mod-k shares.
@@ -164,7 +164,7 @@ test("the strip shows only the bases the block's policy admits", async () => {
   await settled();
   const host2 = surface2.element.querySelector<HTMLElement>(`[data-nq-block="${id}"] .nq-rich-text`)!;
   selectChars(host2, 0, 10); mouseUp(host2);
-  expect(labels(stripOf(surface2))).toEqual(["Link"]);
+  expect(labels(stripOf(surface2))).toEqual(["⇤", "↔", "⇥", "Link"]); // alignment everywhere; the one entrance Mod-k shares
   surface2.destroy(); editor.close();
 });
 
