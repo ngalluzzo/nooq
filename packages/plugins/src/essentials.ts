@@ -135,6 +135,14 @@ export const moveBlock = defineCommand<{ block: string; parent: string | null; i
     if (!ctx.isAlive(id)) return { status: "not-applicable" };
     if (parent !== null && !ctx.isAlive(parent)) return { status: "not-applicable" };
     if (parent === id) return { status: "not-applicable" }; // DM-3.1: never under itself
+    if (parent !== null) {
+      // DM-3.1: never under its own subtree either — the UI must not offer
+      // what applyMove would reject; compute, don't throw.
+      const subtree = new Set<string>([id]);
+      const grow = (bid: string): void => { for (const child of (ctx.snapshot.blocks[bid]?.children ?? []) as readonly string[]) if (!subtree.has(child)) { subtree.add(child); grow(child); } };
+      grow(id);
+      if (subtree.has(parent)) return { status: "not-applicable" };
+    }
     // The index is where the LINE said — computed against the destination
     // BEFORE the move; applyMove enforces the subtree rule.
     const view = ctx.snapshot;

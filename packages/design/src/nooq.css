@@ -445,10 +445,7 @@
 .nq-block-body[data-level="6"] { font-size: 0.9rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
 .nq-divider { border: none; border-top: 1px solid var(--nq-graphite-muted); margin: 0.5rem 0; }
 
-/* Tier-1 drag handle: the grip fades in at the left gutter on row hover. */
-.nq-draghandle { position: absolute; width: 20px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: grab; color: var(--nq-graphite-muted); opacity: 0; transition: opacity 80ms ease; border-radius: 4px; background: none; border: none; font: inherit; line-height: 1; z-index: 5; user-select: none; }
-.nq-draghandle::before { content: "\22EE\22EE"; letter-spacing: -1px; font-size: 0.7rem; }
-.nq-draghandle:hover, .nq-draghandle:focus-visible { opacity: 1; color: var(--nq-ink); background: color-mix(in oklab, var(--nq-paper, white) 85%, transparent); }
-.nq-draghandle-active { opacity: 1; cursor: grabbing; }
-.nq-drop-indicator { position: absolute; height: 2px; background: var(--nq-ink); border-radius: 1px; z-index: 6; pointer-events: none; }
+/* Tier-1 drop indicator: the blue line; the grip is .nq-handle (tokens). */
+.nq-drop-indicator { position: absolute; height: 1px; background: var(--nq-ink); border-radius: var(--nq-radius-xs); z-index: 6; pointer-events: none; }
+.nq-handle-active { opacity: 1 !important; cursor: grabbing !important; }
 .nq-editor { position: relative; }
