@@ -5,3 +5,6 @@ storybook-static/
 .DS_Store
 .bun-cache/
 .env
+
+# gooi host state (rooms, agent sessions)
+/.gooi/

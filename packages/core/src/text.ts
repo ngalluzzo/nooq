@@ -15,6 +15,23 @@ export type TextChange =
   | { insert: string; marks?: string[] }
   | { delete: number };
 
+/** Split a rendered span into runs for a splice, preserving UTF-16 marks. */
+export function markedInserts(text: { s: string; marks: readonly (readonly string[])[] }, from = 0, to = text.s.length): Extract<TextChange, { insert: string }>[] {
+  const out: Extract<TextChange, { insert: string }>[] = [];
+  while (from < to) {
+    const marks = text.marks[from] ?? [];
+    let end = from + 1;
+    while (end < to) {
+      const next = text.marks[end] ?? [];
+      if (next.length !== marks.length || next.some((name, index) => name !== marks[index])) break;
+      end++;
+    }
+    out.push({ insert: text.s.slice(from, end), ...(marks.length ? { marks: [...marks] } : {}) });
+    from = end;
+  }
+  return out;
+}
+
 export class TextChangeError extends Error {
   constructor(message: string) {
     super(message);

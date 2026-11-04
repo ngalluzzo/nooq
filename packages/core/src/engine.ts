@@ -16,7 +16,7 @@ import type {
   Transaction,
 } from "./model.ts";
 import { liveTree, subtreeOf } from "./tree.ts";
-import { applyTextChanges, type TextChange } from "./text.ts";
+import { applyTextChanges, markedInserts, type TextChange } from "./text.ts";
 import { wellFormedAccess } from "./access.ts";
 
 export function emptyDocument(docId: string): DocState {
@@ -127,20 +127,14 @@ export function inverseOf(pre: DocState, tx: Transaction): Op[] | undefined {
         break;
       }
       case "textEdit": {
-        const before = working.blocks[op.block]?.text?.s ?? "";
+        const before = working.blocks[op.block]?.text ?? { s: "", marks: [] };
         applyOp(working, op, tx);
-        // The reverse splice: walk the changes against the pre-text; every
-        // deletion returns as an insertion of what it took, every insertion
-        // as a deletion of its length; retains stay — emitted in reverse.
-        // The reverse splice: retentions anchor positions, deletions return
-        // as insertions of what they took, insertions as deletions — IN
-        // ORDER (splices invert in place; reversing the list would detach
-        // the anchors).
+        // Invert each splice in order, restoring marks from the pre-edit runs.
         let at = 0;
         const parts: import("./text.ts").TextChange[] = [];
         for (const change of op.changes) {
           if ("retain" in change) { parts.push({ retain: change.retain }); at += change.retain; }
-          else if ("delete" in change) { parts.push({ insert: before.slice(at, at + change.delete) }); at += change.delete; }
+          else if ("delete" in change) { parts.push(...markedInserts(before, at, at + change.delete)); at += change.delete; }
           else if ("insert" in change) { parts.push({ delete: change.insert.length }); }
         }
         inverses.push({ op: "textEdit", block: op.block, changes: parts });

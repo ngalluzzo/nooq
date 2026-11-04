@@ -75,7 +75,7 @@
 .nq-block { position: relative; display: grid; grid-template-columns: var(--nq-gutter) minmax(0, 1fr); color: var(--nq-graphite); }
 .nq-fallback { grid-template-columns: minmax(0, 1fr); gap: var(--nq-space-2); padding-inline-start: var(--nq-gutter); }
 .nq-gutter { position: relative; display: flex; justify-content: flex-end; gap: 10px; padding-right: 12px; }
-.nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: var(--nq-control-handle); padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; opacity: 0; }
+.nq-handle { align-self: flex-start; display: grid; place-items: center; width: 18px; height: var(--nq-control-handle); padding: 0; border: 0; border-radius: var(--nq-radius-xs); background: transparent; color: var(--nq-graphite-muted); cursor: grab; touch-action: none; opacity: 0; }
 .nq-block:hover .nq-handle, .nq-block.is-active .nq-handle, .nq-handle:focus-visible { opacity: 1; }
 .nq-handle:hover { background: var(--nq-paper-sunken); }
 .nq-handle:focus-visible { outline: 2px solid transparent; box-shadow: var(--nq-focus-ring); }
@@ -141,23 +141,24 @@
 .nq-children { display: flex; flex-direction: column; gap: var(--nq-block-gap); margin: var(--nq-block-gap) 0 0; padding-inline-start: calc(var(--nq-gutter) - var(--nq-change-bar)); border-inline-start: var(--nq-change-bar) solid var(--nq-rule); }
 .nq-children:empty { display: none; }
 /* Multi-column layout (foundation P2). The columns view's OWN children
-   container is the grid — two equal tracks, the column-gap gutter between
+   container is the grid, with the column-gap gutter between tracks and
    them, block-gap between grid rows. The child combinator is the scope: a
    column's own .nq-children, and every deeper one, keeps the plain flex
    stacking above. Inside columns the nesting treatment resets — no gutter
    indent, no rule border — because columns are parallel, not depth.
-   Narrow widths degrade to one track through a plain max-width media query,
-   NOT a container query: container queries need size/layout containment on
-   an ancestor, and the only classed ancestor is .nq-editor, which holds
-   fixed-position children (popovers carry viewport-computed --nq-x/--nq-y);
-   containment would re-anchor them to the editor box. The breakpoint is the
-   literal 724px tracking calc(measure + gutter) — media conditions cannot
-   substitute custom properties. Stacking is honest: one track, the same
-   tree order (reading order = column order = DOM order, foundation.md). */
-.nq-columns > .nq-children { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--nq-column-gap); row-gap: var(--nq-block-gap); margin: 0; padding-inline-start: 0; border-inline-start: 0; }
-@media (max-width: 724px) {
-  .nq-columns > .nq-children { grid-template-columns: minmax(0, 1fr); }
-}
+   A measured narrow group stacks in tree order. The grid's actual width
+   can differ from the viewport in embedded documents and nested blocks. */
+.nq-columns { position: relative; min-width: 0; }
+.nq-columns > .nq-children { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--nq-column-gap); row-gap: var(--nq-block-gap); margin: 0; padding-inline-start: 0; border-inline-start: 0; }
+.nq-column { min-width: 0; }
+.nq-column > .nq-children { margin: 0; padding-inline-start: 0; border-inline-start: 0; }
+.nq-column-empty { margin-block: var(--nq-space-1); }
+.nq-column-empty[hidden], .nq-column-resize[hidden] { display: none; }
+.nq-column-resize { position: absolute; z-index: var(--nq-layer-presence); inset-block: 0; inline-size: var(--nq-column-gap); padding: 0; border: 0; background: transparent; translate: -50% 0; cursor: col-resize; touch-action: none; }
+.nq-column-resize:dir(rtl) { translate: 50% 0; }
+.nq-column-resize::after { content: ""; position: absolute; inset-block: 0; inset-inline-start: calc(50% - .5px); inline-size: 1px; background: var(--nq-rule-strong); }
+.nq-column-resize:hover::after, .nq-column-resize:focus-visible::after, .nq-column-resize.is-resizing::after { inline-size: 2px; background: var(--nq-ink); }
+.nq-column-resize:focus-visible { outline: 2px solid var(--nq-ink); outline-offset: -2px; }
 /* Windowed runs (EB-8): quiet skeletons that hold estimated height. A flat
    sunken ground; no shimmer, no animation (§3). */
 .nq-editor [data-nq-ph] { border-radius: var(--nq-radius-sm); background: var(--nq-paper-sunken); }
@@ -445,6 +446,10 @@
 
 /* Tier-1 drop indicator: the blue line; the grip is .nq-handle (tokens). */
 .nq-drop-indicator { position: absolute; height: 1px; background: var(--nq-ink); border-radius: var(--nq-radius-xs); z-index: var(--nq-layer-presence); pointer-events: none; }
+.nq-drop-indicator.is-side { width: 2px; translate: -50% 0; }
+.nq-side-placement { display: grid; gap: var(--nq-space-2); }
+.nq-side-placement-actions { display: flex; flex-wrap: wrap; gap: var(--nq-space-2); }
+.nq-side-placement .nq-field-select { min-width: 0; width: 100%; }
 .nq-handle-active { opacity: 1 !important; cursor: grabbing !important; }
 .nq-editor { position: relative; }
 

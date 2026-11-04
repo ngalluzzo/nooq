@@ -4,23 +4,13 @@ import { Editor, createSurface } from "../../editor/src/index.ts";
 import { essentialsDOM } from "../../editor/src/reference.ts";
 import { column, columns, essentials, paragraph } from "../../plugins/src/essentials.ts";
 import { callout, callouts } from "../../plugin-callouts/src/index.ts";
+import { draghandle } from "../../plugin-draghandle/src/index.ts";
+import { draghandleDOM } from "../../plugin-draghandle/src/dom.ts";
 import { calloutsDOM } from "../../plugin-callouts/src/dom.ts";
 import type { Tokens } from "../src/index.ts";
 import tokensJson from "../tokens.json";
 
 const tokens = tokensJson as Tokens;
-
-/**
- * Multi-column layout (foundation P2): `nooq.columns/v1` carrying two
- * `nooq.column/v1` children, each seeded with content — a paragraph and a
- * callout, so the surface renders plugin blocks inside the grid. Reading
- * order is the rule: tree order = column order = DOM order, and narrow
- * widths stack in that same order (a max-width media query, documented in
- * nooq.css). The consumer provides only the two block types and the insert
- * command from essentials; the theme does the layout — do not restyle the
- * grid, override the tokens (`column-gap`, `block-gap`) instead. Nothing
- * animates, so reduced motion changes nothing here.
- */
 
 const editors = new Set<Editor>();
 const fixtures = new WeakMap<HTMLElement, { editor: Editor; ids: Record<"columnsId" | "left" | "leftText" | "right" | "rightText", string> }>();
@@ -59,7 +49,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Two parallel columns as ordinary blocks: the columns view is a plain element whose own children container the theme turns into a two-track grid (`repeat(2, minmax(0, 1fr))`, `column-gap` between, `block-gap` rows); the nesting treatment resets inside it — no gutter indent, no rule border — because columns are parallel, not depth, while a column's own children keep the plain stacking. Reading order is the rule (foundation.md): tree order = column order = DOM order, and narrow widths stack in that same order. Provide the block types and the `insert-columns` command from essentials — the slash menu offers it as “Two columns” — and theme by overriding tokens, never the grid.",
+          "Columns are ordinary blocks in reading order. Older groups open with equal widths. A separator resizes its adjacent pair, and the block grip supports side drops or keyboard placement. Narrow layouts stack in the same order.",
       },
     },
   },
@@ -110,7 +100,7 @@ export const SideBySide: Story = {
     for (const columnId of [ids.left, ids.right]) {
       const shell = grid.querySelector<HTMLElement>(`[data-nq-block="${columnId}"]`)!;
       expect(shell.querySelector(":scope > .nq-column")).not.toBeNull();
-      // A column's own children container stays plain flex stacking with the nesting treatment.
+      // A column's own children stay in a plain vertical stack.
       const children = shell.querySelector<HTMLElement>(":scope > .nq-column > .nq-children")!;
       expect(getComputedStyle(children).display).toBe("flex");
       expect(children.contains(calloutsInColumns.find(calloutEl => shell.contains(calloutEl))!)).toBe(true);
@@ -121,5 +111,63 @@ export const SideBySide: Story = {
     await userEvent.click(host);
     await userEvent.keyboard("!");
     await waitFor(() => expect(editor.view.blocks[ids.leftText]!.text!.s.endsWith("!")).toBe(true));
+  },
+};
+
+const placementFixtures = new WeakMap<HTMLElement, { editor: Editor; target: string; source: string; extra: string }>();
+
+function placementStage(): HTMLElement {
+  const editor = new Editor({
+    docId: `column-placement-${crypto.randomUUID()}`, actor: { actorId: "human:story" },
+    plugins: [essentials, draghandle],
+  });
+  editors.add(editor);
+  const insert = (text: string) => editor.insertBlock({ type: paragraph.type, parent: null, text });
+  const target = insert("Release plan");
+  const source = insert("Success criteria");
+  const extra = insert("Open questions");
+  const surface = createSurface(editor, { plugins: [essentialsDOM, draghandleDOM], textMode: "rich" });
+  const page = document.createElement("div");
+  page.className = "nq-doc";
+  page.dataset.columnPlacementDemo = "true";
+  page.append(surface.element);
+  placementFixtures.set(page, { editor, target, source, extra });
+  return page;
+}
+
+export const SideDrop: Story = { render: placementStage };
+
+export const PlacementAndResize: Story = {
+  render: placementStage,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const page = canvasElement.querySelector<HTMLElement>("[data-column-placement-demo]")!;
+    const { editor, target, source, extra } = placementFixtures.get(page)!;
+    const grip = (id: string) => page.querySelector<HTMLButtonElement>(`[data-nq-block="${id}"] .nq-handle`)!;
+    const move = async (from: string, beside: string) => {
+      grip(from).focus();
+      await userEvent.keyboard("{Enter}");
+      await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Target block" }), beside);
+      await userEvent.click(canvas.getByRole("button", { name: "Place right" }));
+    };
+    await move(source, target);
+    const group = editor.view.roots[0]!;
+    const [left, right] = editor.view.blocks[group]!.children;
+    expect(editor.view.blocks[left!]!.children).toEqual([target]);
+    expect(editor.view.blocks[right!]!.children).toEqual([source]);
+
+    const splitter = await canvas.findByRole("separator", { name: "Resize columns 1 and 2" });
+    await waitFor(() => expect(splitter).toHaveAttribute("aria-valuenow", "50"));
+    splitter.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(splitter).toHaveAttribute("aria-valuenow", "55"));
+
+    await move(extra, source);
+    await waitFor(() => expect(canvas.getByRole("separator", { name: "Resize columns 2 and 3" })).toBeVisible());
+    expect(editor.view.blocks[group]!.children).toHaveLength(3);
+    expect(editor.view.blocks[editor.view.blocks[group]!.children[2]!]!.children).toEqual([extra]);
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    await waitFor(() => expect(page.querySelector(".nq-columns")).toBeNull());
   },
 };
