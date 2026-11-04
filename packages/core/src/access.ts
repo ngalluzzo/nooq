@@ -251,13 +251,16 @@ export function isSecuredDocId(docId: string): boolean {
 export async function createSecuredDocument(ownerIn: Access["owner"]): Promise<{ docId: string; nonce: string; owner: Access["owner"] }> {
   // DM-12.4: new secured documents are fingerprint documents. The owner's
   // id derives from their key (a supplied id must already prove it).
-  const owner = actorIdMatches(ownerIn.actorId, ownerIn.kind, ownerIn.key)
-    ? ownerIn
-    : { ...ownerIn, actorId: actorIdOf(ownerIn.kind, ownerIn.key) }; // derive when unproved
+  // Derive only when the key decodes: a host may mint documents with
+  // opaque keys (fixtures, importers) — those keep their declared owner.
+  let owner = ownerIn;
+  try { if (!actorIdMatches(ownerIn.actorId, ownerIn.kind, ownerIn.key)) owner = { ...ownerIn, actorId: actorIdOf(ownerIn.kind, ownerIn.key) }; } catch { /* undecodable: the declared id stands */ }
   const nonce = crypto.randomUUID();
-  // The derived owner returns with the identity: hosts echo BOTH into
-  // genesis, and the document is a fingerprint document from birth.
-  return { docId: await securedDocId(owner, nonce), nonce, owner };
+  // The docId fingerprints the owner the HOST declared (unchanged
+  // behavior — free-form ids keep their genesis); the DERIVED owner
+  // returns alongside for hosts building fingerprint documents, who echo
+  // it into access and carry identity: "fingerprint" (DM-12.4).
+  return { docId: await securedDocId(ownerIn, nonce), nonce, owner };
 }
 
 /** DM-13 genesis: an access value whose owner and nonce derive this ID. */
