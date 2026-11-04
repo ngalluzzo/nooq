@@ -40,7 +40,7 @@ function twoColumns(): HTMLElement {
   // Story-only framing: the columns view MEASURES its container (narrow
   // groups stack, by design) — pin the width so two-track layout is the
   // deterministic subject on every runner's viewport, not a coincidence of it.
-  page.style.width = "1100px";
+  page.style.cssText = "width: 1100px; max-width: none"; // past the measure on purpose: two tracks are the subject
   page.dataset.twoColumnsDemo = "true";
   page.append(surface.element);
   fixtures.set(page, { editor, ids: { columnsId, left, leftText, right, rightText } });
