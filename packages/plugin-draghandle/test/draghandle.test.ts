@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { essentials, moveBlock } from "@nooq/plugins/essentials";
-import { Editor } from "@nooq/editor";
+import { Editor } from "../../editor/src/index.ts";
 
 /** Tier-1 drag handle: the command (the gesture's every path ends here). */
 describe("the move command (nooq.block.move)", () => {

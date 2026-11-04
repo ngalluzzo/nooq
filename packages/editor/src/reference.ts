@@ -3,6 +3,8 @@ import { applyTextChanges, liveTree, replaceChanges, type ActorKey, type Block, 
 import { defineBlock, defineJob, definePlugin, type PublicationResult } from "@nooq/plugins";
 import { defineDOMPlugin, defineTextPolicy, type BlockViewContext, type BlockViewDefinition, type MarkRenderer, type SurfaceActionContext } from "@nooq/plugins/dom";
 import { essentials, insertBlock, splitBlock, deleteBlock, insertColumns } from "@nooq/plugins/essentials";
+import { draghandle } from "@nooq/plugin-draghandle";
+import { draghandleDOM } from "@nooq/plugin-draghandle/dom";
 import { tablesPlugin } from "@nooq/plugin-tables";
 import { tablesDOM } from "@nooq/plugin-tables/dom";
 import { blockRow, suggestionCard, tooltip, type DiffSegment, type SuggestionState } from "@nooq/design";
@@ -10,6 +12,7 @@ import { callout, calloutMarkdown } from "@nooq/plugin-callouts";
 import { actorKindOf, type Editor, type JobBinding } from "./controller.ts";
 import { createDocumentHeader, type DocumentHeader, type DocumentHeaderOptions } from "./header.ts";
 import { announce } from "./status.ts";
+import { mountColumn, mountColumns } from "./columns-view.ts";
 
 export { essentials } from "@nooq/plugins/essentials";
 
@@ -169,32 +172,22 @@ export const essentialsDOM = defineDOMPlugin({
         if (!row.contains(marker)) { row.append(marker, body); }
       }, destroy() { text.destroy(); } };
     } },
-    // Multi-column layout (foundation P2): the plainest possible views — a
-    // shell carrying the class, the children container retained, nothing
-    // else. The surface's recursive walk does the nesting; the theme's grid
-    // does the layout. Columns are parallel, not depth, so they take no
-    // gutter and no bar of their own.
-    { type: "nooq.columns/v1", mount(ctx) {
-      const element = document.createElement("div");
-      element.className = "nq-columns";
-      element.append(ctx.children.element);
-      return { element, update() {} };
-    } },
-    { type: "nooq.column/v1", mount(ctx) {
-      const element = document.createElement("div");
-      element.className = "nq-column";
-      element.append(ctx.children.element);
-      return { element, update() {} };
-    } },
+    { type: "nooq.columns/v1", mount: mountColumns },
+    { type: "nooq.column/v1", mount: mountColumn },
   ],
-  // Deleted essentials blocks stay reachable in the history layer, drawn as
-  // the deleted BlockRow with Restore (DM-3.4) — the surface does the drawing.
+  // Deleted essentials content is reachable through the history layer's
+  // Restore affordance (DM-3.4).
   history: state => {
     const placed = new Set<string>();
     const visit = (ids: readonly string[]): void => { for (const id of ids) { placed.add(id); visit(state.blocks[id]?.children ?? []); } };
     visit(state.roots);
     const own = new Set(essentials.contributes.blocks.map(block => block.type));
-    return Object.values(state.blocks).filter(block => own.has(block.type) && !placed.has(block.id)).map(block => block.id);
+    return Object.values(state.blocks).filter(block => {
+      if (!own.has(block.type) || placed.has(block.id)) return false;
+      // Layout undo retires empty shells. A detached layout with content
+      // remains restorable from history.
+      return block.children.length > 0 || (block.type !== "nooq.column/v1" && block.type !== "nooq.columns/v1");
+    }).map(block => block.id);
   },
   menus: [
     ...textBlocks.map((block, i) => ({ id: `insert:${block.type}`, label: block.label, glyph: ["T", "H", "❝", "H1"][i], command: insertBlock.id,
@@ -334,8 +327,8 @@ export const simulatedRewrite = rewritePlugin({
 });
 import type { Plugin } from "@nooq/plugins";
 import type { DOMPlugin } from "@nooq/plugins/dom";
-export const referencePlugins: readonly Plugin[] = [essentials, review, simulatedRewrite.plugin, tablesPlugin];
-export const referenceDOM: readonly DOMPlugin[] = [essentialsDOM, reviewDOM, simulatedRewrite.dom, tablesDOM];
+export const referencePlugins: readonly Plugin[] = [essentials, review, simulatedRewrite.plugin, tablesPlugin, draghandle];
+export const referenceDOM: readonly DOMPlugin[] = [essentialsDOM, reviewDOM, simulatedRewrite.dom, tablesDOM, draghandleDOM];
 export function referenceJobBindings(signer?: ActorKey): JobBinding[] {
   return [{ job: simulatedRewrite.job, actor: { actorId: "ai:reference", kind: "ai", model: "simulated/1" }, signer }];
 }

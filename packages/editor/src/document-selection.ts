@@ -234,7 +234,10 @@ export function createDocumentSelection(editor: Editor, root: HTMLElement, bindi
   for (const type of ["copy", "cut", "paste"] as const) root.addEventListener(type, event => {
     const range = get(); if (!range || !cross(range) || !isTextTarget(event.target)) return;
     handled(event); if (!event.clipboardData) return;
-    if (type === "paste") replace(event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n"));
+    if (type === "paste") {
+      const plain = event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
+      if (plain) replace(plain);
+    }
     else { event.clipboardData.setData("text/plain", text()); if (type === "cut") replace(""); }
   }, { capture: true, signal: abort.signal });
   for (const type of ["dragstart", "drop"] as const) root.addEventListener(type, event => {

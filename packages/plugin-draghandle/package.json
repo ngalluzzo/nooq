@@ -9,6 +9,6 @@
   "dependencies": {
     "@nooq/plugins": "workspace:*",
     "@nooq/core": "workspace:*",
-    "@nooq/editor": "workspace:*"
+    "@nooq/design": "workspace:*"
   }
 }

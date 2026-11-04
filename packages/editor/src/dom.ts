@@ -2,13 +2,14 @@
 import { caretAfterChanges, liveTree, replaceChanges, type Block, type DocState, type Op, type TextChange } from "@nooq/core";
 import * as Y from "yjs";
 import { layout } from "@nooq/yjs";
-import { BARE_MARKS, freezeInPlace, freezeSnapshot, textBlockOrder, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
+import { BARE_MARKS, freezeInPlace, freezeSnapshot, resolveTextRange, textBlockOrder, type CommandResult, type Immutable, type PluginError, type SelectionRequest } from "@nooq/plugins";
 import { defineTextPolicy, type Action, type DocumentSelectionService, type TextMark, type BlockView, type BlockViewContext, type DOMPlugin, type RichTextOptions, type SurfaceAction, type SurfaceActionContext, type SurfaceActions, type TextBinding, type TextEditorBinding, type TextMode, type TextPolicy, type TextSelection } from "@nooq/plugins/dom";
 import { loading, notice, presenceCaret, slashMenu, syncStatus, type NoticeAction } from "@nooq/design";
 import { AuthorizationError, SessionError, type Editor } from "./controller.ts";
 import { mountRichText as createRichText, type RichTextSurfaceOptions } from "./rich-text.ts";
 import { createActions, mountActionToolbar } from "./actions.ts";
 import { importMarkdown as pluginsImportMarkdown } from "@nooq/plugins";
+import { collapsedLayoutBlock, columns, layoutColumns, isPasteTextBlock, pasteBlocks, type PasteBlock } from "@nooq/plugins/essentials";
 import { createJobsUI } from "./jobs-ui.ts";
 import { createHistoryLayer, openBlockHistory, viewKeepsHistory } from "./history-ui.ts";
 import { createAwayTracker, type AwayTracker } from "./away.ts";
@@ -20,6 +21,7 @@ import { createDocumentSelection } from "./document-selection.ts";
 import { createPresence } from "./presence.ts";
 import { createSurfaceStatus } from "./status.ts";
 import type { CursorAnchor } from "@nooq/sync";
+import { decodeHTMLPaste } from "./html-paste.ts";
 
 /** One entry of the surface's resolved keymap: the registered action a key string dispatches to (task-16). */
 export type KeyBinding = NonNullable<DOMPlugin["keys"]>[number];
@@ -60,7 +62,7 @@ export interface SurfaceOptions {
   loadingDelay?: number;
 }
 /** Rich bindings carry the bases their policy admits for authoring (0009 §2); plain bindings carry none. */
-interface Binding { marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; /** The rich host's toggle path (Mod-b's), which the formatting toolbar reuses rather than inventing a second. */ toggleMark?(mark: TextMark): boolean; destroy(): void }
+interface Binding { isComposing?(): boolean; marks?: readonly string[]; element: HTMLElement; update(block: Block): void; selection(): TextSelection; focus(selection?: TextSelection): void; insertText(text: string): boolean; /** The rich host's toggle path (Mod-b's), which the formatting toolbar reuses rather than inventing a second. */ toggleMark?(mark: TextMark): boolean; destroy(): void }
 type ViewProvider = { plugin: string; mount: DOMPlugin["views"][number]["mount"]; textPolicy?: TextPolicy; /** View-level extra the raw definition carried (rendersHistory for tombstone-keeping views). */ rendersHistory?: boolean };
 const defaultTextPolicy = defineTextPolicy();
 interface Row {
@@ -221,26 +223,58 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
   // popover anchored to the surface root; the collector reads the resolved
   // key map above at open time, so the sheet cannot drift from keyDown.
   const shortcuts = mountShortcutSheet({ element: root, keymap: keys, textMode, signal: surfaceAbort.signal });
-  // Tier-2 paste (gap audit #5): markdown-shaped text becomes blocks — the
-  // import is the export engine's inverse, and the round trip is pinned by
-  // test. Plain single-line text falls through to the ordinary typing path;
-  // unknown syntax degrades to paragraphs, never a failed paste.
+  // Capture at the surface before a ProseMirror binding consumes the same
+  // clipboard event. Specialized file and table paths keep their own targets.
   const MARKDOWN_LINE = /^\s*(#{1,6}\s|[-*]\s|\d+[.)]\s|[-*]\s\[ |x|X\]|>|---|===|\*\*\*)/;
-  const looksMarkdown = (text: string): boolean => text.split(/\r?\n/).some(line => MARKDOWN_LINE.test(line));
+  const imagePaste = plugins.some(plugin => plugin.forPlugin.id === "nooq.image" && !!plugin.surface);
   const onPaste = (event: ClipboardEvent): void => {
-    if (destroyed || rendering || !event.clipboardData) return;
-    const text = event.clipboardData.getData("text/plain");
-    if (!text || !looksMarkdown(text)) return; // ordinary text: the input path owns it
-    const focused = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>("[data-nq-block]") : null;
-    const after = focused?.dataset.nqBlock ?? Array.from(root.querySelectorAll<HTMLElement>("[data-nq-block]")).filter(el => root.contains(el)).at(-1)?.dataset.nqBlock;
-    if (!after || !liveTree(editor.view).alive.has(after)) return;
-    const result = editor.commands.run("nooq.doc.import", { blocks: pluginsImportMarkdown(text), after });
-    if (result.status === "failed") fail(undefined, result.error);
-    else if (result.status === "denied") fail(undefined, new AuthorizationError(result.reason, result.retryable));
-    else event.preventDefault();
+    const data = event.clipboardData;
+    if (event.defaultPrevented || destroyed || rendering || !data || !editor.registry.command(pasteBlocks.id)) return;
+    if (imagePaste && Array.from(data.items ?? []).some(item => item.kind === "file" && item.type.startsWith("image/"))) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const focused = target === root ? root.ownerDocument.activeElement : target;
+    const tracked = documentSelection?.service.get();
+    const cross = !!tracked && tracked.anchor.block !== tracked.head.block;
+    const first = cross ? resolveTextRange(editor.view, tracked)?.[0]?.block : undefined;
+    const targetId = focused?.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock;
+    const id = targetId ?? (target === root ? first : undefined);
+    const binding = id ? rows.get(id)?.bindings[0] : undefined;
+    const fromSurface = target === root && cross;
+    if (!id || !binding || (!fromSurface && (!focused || !binding.element.contains(focused)))
+      || binding.isComposing?.() || !isPasteTextBlock(editor.view.blocks[id]?.type)) return;
+    const current = binding.selection();
+    const range = tracked ?? { anchor: { block: id, offset: current.anchor }, head: { block: id, offset: current.head } };
+    const plain = data.getData("text/plain").replace(/\r\n?/g, "\n");
+    const html = data.getData("text/html");
+    const own = (result: CommandResult) => {
+      if (result.status === "not-applicable") return false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (result.status === "failed") fail(undefined, result.error);
+      if (result.status === "denied") fail(undefined, new AuthorizationError(result.reason, result.retryable));
+      return true;
+    };
+    const marks = views.get(editor.view.blocks[first ?? id]?.type ?? "")?.textPolicy?.marks;
+    const paste = (blocks: PasteBlock[]) => {
+      const result = editor.commands.run(pasteBlocks, { range, blocks, ...(marks ? { marks } : {}) });
+      if (cross && result.status === "applied") documentSelection?.service.clear();
+      return own(result);
+    };
+    if (html) {
+      const blocks = decodeHTMLPaste(root.ownerDocument, html);
+      if (blocks && paste(blocks)) return;
+      if (!plain) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+    if (!html && plain && !cross && plain.split("\n").some(line => MARKDOWN_LINE.test(line)) && editor.registry.command("nooq.doc.import")) {
+      if (own(editor.commands.run("nooq.doc.import", { blocks: pluginsImportMarkdown(plain), after: id }))) return;
+    }
+    if (html && plain && !cross) paste([{ type: "nooq.paragraph/v1", text: { s: plain, marks: Array.from({ length: plain.length }, () => []) }, children: [] }]);
   };
-  
-  root.addEventListener("paste", onPaste, { signal: surfaceAbort.signal });
+  root.addEventListener("paste", onPaste, { capture: true, signal: surfaceAbort.signal });
   let renderState: DocState | undefined;
   let snapshotCache: { revision: number; value: Immutable<DocState> } | undefined;
   const fail = (plugin: string | undefined, cause: unknown) => editor.reportError({ plugin, phase: "view", cause });
@@ -415,7 +449,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       if (!accepted) area.value = value;
       syncPlaceholder();
     };
-    const binding: Binding & TextBinding & { composing: boolean } = { element: area, composing: false,
+    const binding: Binding & TextBinding & { composing: boolean } = { element: area, composing: false, isComposing: () => binding.composing,
       selection: () => ({ anchor: area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart, head: area.selectionDirection === "backward" ? area.selectionStart : area.selectionEnd }),
       focus(selection) { if (controller.signal.aborted) return; area.focus({ preventScroll: true }); if (selection) area.setSelectionRange(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head), selection.anchor > selection.head ? "backward" : "forward"); },
       insertText(text) {
@@ -566,6 +600,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     shell.append(presence, row.view.element); return row;
   }
   function schedule() { if (!scheduled && !destroyed) { scheduled = true; queueMicrotask(render); } }
+  root.addEventListener("nooq:column-flow", schedule, { signal: surfaceAbort.signal });
   let mountedFocused = false;
   /** Lab/test observability: remote renders seen, pins applied (EB-7). */
   const stats = { remoteRenders: 0, pins: 0, lastAnchor: null as string | null, lastDrift: 0, lastAnchorRect: null as { top: number; bottom: number } | null, lastViewportTop: 0, renderCounts: { targeted: 0, full: 0, presence: 0, windowed: 0 } };
@@ -776,7 +811,8 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
     const estSubtree = (id: string): number => {
       const memo = estMemo.get(id); if (memo !== undefined) return memo;
       const block = state.blocks[id];
-      const total = block ? estimateOf(id, block) + block.children.reduce((n, child) => n + estSubtree(child), 0) : 0;
+      const total = block && !collapsedLayoutBlock(state, block)
+        ? estimateOf(id, block) + block.children.reduce((n, child) => n + estSubtree(child), 0) : 0;
       estMemo.set(id, total);
       return total;
     };
@@ -814,12 +850,19 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
       return { el, height: 0 };
     };
     const walk = (ids: readonly string[], parent: HTMLElement) => {
+      // The grid needs each lane shell in its own slot. Window the contents
+      // inside each lane using the same vertical origin when they run in parallel.
+      const lanes = parent.parentElement?.classList.contains("nq-columns");
+      const parallel = lanes && !parent.parentElement!.hasAttribute("data-nq-columns-stacked");
+      const laneTop = walkY;
+      let layoutBottom = laneTop;
       let at = 0;
       for (const id of ids) {
-        const block = state.blocks[id]; if (!block || wanted.has(id)) continue;
+        const block = state.blocks[id]; if (!block || wanted.has(id) || collapsedLayoutBlock(state, block)) continue;
+        if (parallel) walkY = laneTop;
         const est = estSubtree(id);
         const mounted = rows.get(id);
-        if (!mounted && id !== focusedBlock && id !== anchorBlock && (walkY + est < winTop || walkY > winBottom)) {
+        if (!lanes && !mounted && id !== focusedBlock && id !== anchorBlock && (walkY + est < winTop || walkY > winBottom)) {
           // Outside the window and never mounted: accumulate into the gap.
           const which: "top" | "bottom" = walkY + est < winTop ? "top" : "bottom";
           const gap = gapFor(parent, which, id, at);
@@ -829,7 +872,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
           walkY += est;
           continue;
         }
-        if (mounted && id !== focusedBlock && id !== anchorBlock && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
+        if (!lanes && mounted && id !== focusedBlock && id !== anchorBlock && walkY + est < winTop - (window.innerHeight || 800) && !mounted.bindings.some(b => b.element.contains(document.activeElement))) {
           // Mounted but far above the window: release it — never the focused
           // row (it is by definition visible; estimate drift must not eat it).
           cleanup(mounted); mounted.shell.remove(); rows.delete(id);
@@ -846,7 +889,7 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         if (row && row.type !== block.type) { cleanup(row); row.shell.remove(); rows.delete(id); row = undefined; }
         if (!row) { row = makeRow(id, block); rows.set(id, row); }
         for (const binding of row.bindings) binding.update(block);
-        const signature = JSON.stringify(block);
+        const signature = JSON.stringify(block) + (block.type === columns.type ? JSON.stringify(layoutColumns(state, block)) : "");
         if (signature !== row.signature) {
           try { row.view.update(freezeSnapshot(block)); if (!row.view.element.contains(row.children)) throw new Error("View removed its children container"); }
           catch (cause) { fail(views.get(block.type)?.plugin, cause); cleanup(row); row.abort = new AbortController(); row.view.element.remove(); row.view = fallback(id, row); row.view.update(freezeSnapshot(block)); row.shell.append(row.view.element); }
@@ -863,7 +906,9 @@ export function createSurface(editor: Editor, options: SurfaceOptions = {}): Edi
         jobs.mount(row.shell, id); // every render re-placed: active job surfaces re-attach with their block
         applyAway(row); // away marks ride the walk: a marked block mounts notched — mounting itself never clears
         at++; walkY += estimateOf(id, block); walk(block.children, row.children);
+        if (parallel) layoutBottom = Math.max(layoutBottom, walkY);
       }
+      if (parallel) walkY = layoutBottom;
     };
     walk(state.roots, body);
     if (structural || changedIds === null) {

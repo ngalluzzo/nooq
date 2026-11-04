@@ -108,6 +108,7 @@ export function rebaseTextChanges(changes: readonly TextChange[], before: string
 }
 
 export interface HostedRichText extends RichTextBinding {
+  isComposing(): boolean;
   update(text: RenderedText, fields?: Readonly<Record<string, JsonValue>>): void;
   insertText(text: string): boolean;
 }
@@ -302,7 +303,7 @@ export function mountRichText(host: {
       return false;
     },
     handlePaste(_view, _event, slice) {
-      // This binding has one inline text flow. Multi-block import is a later host service.
+      // Hosts can handle rich clipboard content before this inline fallback.
       dispatch(state.tr.insertText(slice.content.textBetween(0, slice.content.size, "\n"))); return true;
     },
     handleDOMEvents: {
@@ -326,7 +327,7 @@ export function mountRichText(host: {
     },
   });
   element.toggleAttribute("data-nq-empty", state.doc.textContent === "");
-  return { element, update, insertText,
+  return { element, update, insertText, isComposing: () => composing || view.composing,
     selection: () => { if (!disposed && !composing) syncSelection(); return { anchor: state.selection.anchor, head: state.selection.head }; },
     focus(selection) {
       if (disposed) return;

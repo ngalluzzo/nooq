@@ -8,8 +8,8 @@
  */
 import "../../editor/test/dom.ts";
 import { expect, test } from "bun:test";
-import { canonicalJson, makeBlock } from "@nooq/core";
-import { column, columns, essentials, insertColumns, paragraph } from "../src/essentials.ts";
+import { canonicalJson, liveTree, makeBlock } from "@nooq/core";
+import { column, columns, essentials, insertColumns, paragraph, placeBeside, resizeColumns } from "../src/essentials.ts";
 import type { BlockDefinition } from "../src/index.ts";
 import { exportMarkdown } from "../src/export.ts";
 import { Editor, createSurface } from "../../editor/src/index.ts";
@@ -31,12 +31,12 @@ function seededShape(editor: Editor, columnsId: string): [string, string, string
   return [columnsId, left!, right!, leftText, rightText];
 }
 
-test("the layout schemas carry no fields and no text, create fresh, and diagnose clean", () => {
+test("the layout schemas create fresh defaults without inline text and diagnose clean", () => {
   expect(essentials.contributes.blocks.map(block => block.type)).toContain(columns.type);
   expect(essentials.contributes.blocks.map(block => block.type)).toContain(column.type);
   for (const block of [columns, column]) {
     expect(block.text).toBe("none");
-    expect(block.create()).toEqual({ fields: {} });
+    expect(block.create()).toEqual({ fields: block === columns ? { widths: {} } : {} });
     expect("text" in block.create()).toBe(false); // never seeds inline content
     const definition: BlockDefinition = block; // the contract every consumer resolves
     expect(definition.diagnose(makeBlock({ type: block.type, fields: {} }, "writer"))).toEqual([]);
@@ -206,4 +206,139 @@ test("the slash menu offers Two columns; one click builds the five-block shape a
   expect(focused.closest(`[data-nq-block="${leftText}"]`)).not.toBeNull(); // the caret landed in column 1's paragraph
   surface.destroy();
   editor.close();
+});
+
+test("legacy layouts resize, undo to equal widths, and redo without changing children", () => {
+  const editor = new Editor({ docId: "legacy-widths", actor: { actorId: "writer" }, plugins: [essentials] });
+  const group = editor.insertBlock({ type: columns.type, parent: null, fields: {} });
+  const left = editor.insertBlock({ type: column.type, parent: group });
+  const right = editor.insertBlock({ type: column.type, parent: group });
+  expect(editor.commands.run(resizeColumns, { group, left, right, share: .65 }).status).toBe("applied");
+  const widths = editor.view.blocks[group]!.fields.widths;
+  expect(widths).toEqual({ [left]: 1.3, [right]: .7 });
+  expect(editor.commands.run(resizeColumns, { group, left: right, right: left, share: .65 }).status).toBe("not-applicable");
+  editor.undo();
+  expect(editor.view.blocks[group]!.fields.widths).toEqual({});
+  editor.redo();
+  expect(editor.view.blocks[group]!.fields.widths).toEqual(widths);
+  expect(editor.view.blocks[group]!.children).toEqual([left, right]);
+  editor.close();
+});
+
+test("side placement wraps existing branches and adds a third lane beside a resized lane", () => {
+  const editor = new Editor({ docId: "side-drop", actor: { actorId: "writer" }, plugins: [essentials] });
+  const target = editor.insertBlock({ type: paragraph.type, parent: null, text: "Target" });
+  const source = editor.insertBlock({ type: paragraph.type, parent: null, text: "Source" });
+  const child = editor.insertBlock({ type: paragraph.type, parent: source, text: "Child" });
+  const extra = editor.insertBlock({ type: paragraph.type, parent: null, text: "Extra" });
+  const fourth = editor.insertBlock({ type: paragraph.type, parent: null, text: "Fourth" });
+  expect(editor.commands.run(placeBeside, { block: source, target: child, side: "left" }).status).toBe("not-applicable");
+  const before = editor.history().length;
+  expect(editor.commands.run(placeBeside, { block: source, target, side: "left" }).status).toBe("applied");
+  expect(editor.history().length).toBe(before + 1);
+  const group = editor.view.roots[0]!;
+  const [left, right] = editor.view.blocks[group]!.children;
+  expect(editor.view.blocks[left!]!.children).toEqual([source]);
+  expect(editor.view.blocks[right!]!.children).toEqual([target]);
+  expect(editor.view.blocks[source]!.children).toEqual([child]);
+  editor.undo();
+  expect(editor.view.roots).toEqual([target, source, extra, fourth]);
+  editor.redo();
+  expect(editor.view.roots).toEqual([group, extra, fourth]);
+  editor.commands.run(resizeColumns, { group, left: left!, right: right!, share: .6 });
+  expect(editor.commands.run(placeBeside, { block: extra, target, side: "right" }).status).toBe("applied");
+  const third = editor.view.blocks[group]!.children[2]!;
+  expect(editor.view.blocks[third]!.children).toEqual([extra]);
+  const widths = editor.view.blocks[group]!.fields.widths;
+  expect(widths).toEqual({ [left!]: 1.2, [right!]: .4, [third]: .4 });
+  expect(editor.commands.run(placeBeside, { block: fourth, target, side: "right" }).status).toBe("not-applicable");
+  expect(editor.commands.run(placeBeside, { block: source, target: extra, side: "right" }).status).toBe("applied");
+  expect(editor.view.blocks[group]!.children).toEqual([right!, third, left!]);
+  expect(editor.view.blocks[group]!.fields.widths).toEqual(widths);
+  editor.close();
+});
+
+test("undo side placement keeps a lane a peer has since populated", async () => {
+  const relay = new NooqRelay();
+  const docId = "undo-side-drop";
+  const peer = (name: string) => new Editor({ docId, actor: { actorId: `human:${name}` }, plugins: [essentials], transport: relay.connect(docId) });
+  const alice = peer("alice"), bob = peer("bob");
+  try {
+    await settled();
+    const target = alice.insertBlock({ type: paragraph.type, parent: null, text: "Target" });
+    const source = alice.insertBlock({ type: paragraph.type, parent: null, text: "Source" });
+    expect(alice.commands.run(placeBeside, { block: source, target, side: "right" }).status).toBe("applied");
+    await settled();
+    const group = bob.view.roots[0]!, lane = bob.view.blocks[group]!.children[1]!;
+    const added = bob.insertBlock({ type: paragraph.type, parent: lane, text: "Peer content" });
+    await settled();
+    alice.undo();
+    await settled();
+    for (const editor of [alice, bob]) {
+      expect(liveTree(editor.view).alive.has(added)).toBe(true);
+      expect(editor.view.blocks[lane]!.children).toEqual([added]);
+      expect(editor.view.roots.filter(id => id !== group)).toEqual([target, source]);
+    }
+    alice.redo();
+    await settled();
+    expect(bob.view.blocks[lane]!.children).toContain(added);
+    expect(bob.view.blocks[lane]!.children).toContain(source);
+    expect(canonicalJson(alice.view)).toBe(canonicalJson(bob.view));
+  } finally {
+    alice.close();
+    bob.close();
+  }
+});
+
+test("a peer edit arriving after undo reopens the retired layout", async () => {
+  const relay = new NooqRelay();
+  const docId = "offline-side-drop";
+  const upstream = relay.connect(docId);
+  const pending: string[] = [];
+  let paused = false;
+  const alice = new Editor({ docId, actor: { actorId: "human:alice" }, plugins: [essentials], transport: relay.connect(docId) });
+  const bob = new Editor({ docId, actor: { actorId: "human:bob" }, plugins: [essentials], transport: {
+    send: raw => { if (paused) pending.push(raw); else upstream.send(raw); },
+    onMessage: listener => upstream.onMessage(listener),
+    close: () => upstream.close(),
+  } });
+  const surface = createSurface(alice, { plugins: [essentialsDOM] });
+  try {
+    await settled();
+    const target = alice.insertBlock({ type: paragraph.type, parent: null, text: "Target" });
+    const source = alice.insertBlock({ type: paragraph.type, parent: null, text: "Source" });
+    expect(alice.commands.run(placeBeside, { block: source, target, side: "right" }).status).toBe("applied");
+    await settled();
+    const group = bob.view.roots[0]!, lane = bob.view.blocks[group]!.children[1]!;
+    expect(surface.element.querySelector(".nq-columns")).not.toBeNull();
+
+    paused = true;
+    const late = bob.insertBlock({ type: paragraph.type, parent: lane, text: "Offline content" });
+    await settled();
+    expect(pending.length).toBeGreaterThan(0);
+    alice.undo();
+    await settled();
+    expect(surface.element.querySelector(".nq-columns")).toBeNull();
+    expect(liveTree(alice.view).alive.has(lane)).toBe(true);
+
+    paused = false;
+    for (const message of pending) upstream.send(message);
+    await settled();
+    expect(liveTree(alice.view).alive.has(late)).toBe(true);
+    expect(surface.element.querySelector(".nq-columns .nq-column textarea")?.getAttribute("aria-label")).not.toBeNull();
+    expect(surface.element.querySelector(`[data-nq-block="${late}"] textarea`)).not.toBeNull();
+    expect(canonicalJson(alice.view)).toBe(canonicalJson(bob.view));
+
+    alice.redo();
+    await settled();
+    expect(alice.view.blocks[lane]!.children).toContain(late);
+    alice.undo();
+    await settled();
+    expect(liveTree(alice.view).alive.has(late)).toBe(true);
+    expect(canonicalJson(alice.view)).toBe(canonicalJson(bob.view));
+  } finally {
+    surface.destroy();
+    alice.close();
+    bob.close();
+  }
 });

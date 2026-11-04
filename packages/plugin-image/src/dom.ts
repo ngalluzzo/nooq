@@ -104,9 +104,11 @@ export const imageDOM = (host: ImageHostOptions = {}): import("@nooq/plugins/dom
         .catch(() => announce("The image upload failed."));
     };
     const onPaste = (event: ClipboardEvent): void => {
+      if (event.defaultPrevented) return;
       const file = imageFileOf(event.clipboardData?.items ?? null);
       if (!file) return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       receive(file, document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>("[data-nq-block]")?.dataset.nqBlock ?? lastRow() : lastRow());
     };
     const onDragOver = (event: DragEvent) => { if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) event.preventDefault(); };
@@ -117,7 +119,7 @@ export const imageDOM = (host: ImageHostOptions = {}): import("@nooq/plugins/dom
       const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-nq-block]") : null;
       receive(file, row?.dataset.nqBlock ?? lastRow());
     };
-    root.addEventListener("paste", onPaste, { signal });
+    root.addEventListener("paste", onPaste, { capture: true, signal });
     root.addEventListener("dragover", onDragOver, { signal });
     root.addEventListener("drop", onDrop, { signal });
   },

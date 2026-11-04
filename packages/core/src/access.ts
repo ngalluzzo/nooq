@@ -135,7 +135,12 @@ export function accessExtends(current: Access, next: unknown): boolean {
     const keptHonest = next.grants.every(n => {
       if (epoch(n) !== nextEpoch) return false;
       const prior = before.get(n.actorId);
-      return prior === undefined || (prior.key === n.key && prior.kind === n.kind && prior.role === n.role && (n.name ?? undefined) === (prior.name ?? undefined)); // a silent rename is a rewrite (DM-13.5)
+      if (prior === undefined) return true;
+      // DM-13.5: a silent rename (a recorded name changed) is a rewrite; an
+      // honest ADDITION (absent -> named) is allowed — the spec's promise.
+      const sameIdentity = prior.key === n.key && prior.kind === n.kind && prior.role === n.role;
+      const nameHonest = (n.name ?? undefined) === (prior.name ?? undefined) || (prior.name === undefined && typeof n.name === "string");
+      return sameIdentity && nameHonest;
     });
     const unique = nextIds.size === next.grants.length;
     // The revoked roll is append-only and grows by exactly the omitted
