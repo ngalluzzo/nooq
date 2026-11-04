@@ -79,9 +79,12 @@ export const SideBySide: Story = {
     const grid = columnsRow.querySelector<HTMLElement>(":scope > .nq-columns > .nq-children")!;
 
     // The grid: two equal tracks, the column-gap gutter, block-gap rows.
+    // The view applies the template from its ResizeObserver's layout cycle —
+    // wait for the FLOW, not the first paint (a runner may assert before the
+    // observer fires and see the single auto-track of an unset grid).
+    await waitFor(() => { expect(getComputedStyle(grid).display).toBe("grid"); });
+    await waitFor(() => { expect(getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/)).toHaveLength(2); });
     const style = getComputedStyle(grid);
-    await expect(style.display).toBe("grid");
-    await expect(style.gridTemplateColumns.trim().split(/\s+/)).toHaveLength(2);
     await expect(style.columnGap).toBe(editorToken("column-gap"));
     await expect(style.rowGap).toBe(editorToken("block-gap"));
     // The nesting treatment resets inside columns: no gutter indent, no rule border.
