@@ -512,3 +512,9 @@
 
 /* Stage 3 ranges: the rectangle, in the selection ink. */
 .nq-table-cell-selected { background: var(--nq-selection) !important; }
+
+/* Stage 5: header columns (the cell knows its index) and the named color palette. */
+.nq-table-header-cell { background: var(--nq-paper-sunken); font-weight: 600; }
+.nq-table-cell-highlight { background: var(--nq-pencil-soft); }
+.nq-table-cell-note { background: var(--nq-ink-soft); }
+.nq-table-cell-flag { background: var(--nq-stamp-soft); }

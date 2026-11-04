@@ -13,7 +13,7 @@
 import { defineDOMPlugin, defineTextPolicy, insertAfterSelection, type BlockViewContext } from "@nooq/plugins/dom";
 import { defineAction } from "@nooq/plugins";
 import { blockRow } from "@nooq/design";
-import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, clearRange, pasteIntoRange, mergeCells, splitCell } from "./index.ts";
+import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, toggleHeaderColumn, clearRange, pasteIntoRange, mergeCells, splitCell, cycleCellColor, CELL_COLORS } from "./index.ts";
 
 /** From a focused cell, its table id — or null outside tables. */
 type TableView = { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
@@ -57,6 +57,10 @@ export const tablesDOM = defineDOMPlugin({
       args: ctx => ({ table: tableOf(ctx) as string, from: columnOf(ctx), to: columnOf(ctx) + 1 }), when: ctx => tableOf(ctx) !== null }),
     defineAction({ id: "nooq.table.action.toggle-header", label: "Toggle header row", placements: ["toolbar"], command: toggleHeaderRow,
       args: ctx => ({ row: rowOf(ctx) as string }), when: ctx => tableOf(ctx) !== null }),
+    defineAction({ id: "nooq.table.action.header-column", label: "Toggle header column", placements: ["toolbar"], command: toggleHeaderColumn,
+      args: ctx => ({ table: tableOf(ctx) as string, column: columnOf(ctx) }), when: ctx => tableOf(ctx) !== null && columnOf(ctx) >= 0 }),
+    defineAction({ id: "nooq.table.action.cell-color", label: "Cell color", placements: ["toolbar"], command: cycleCellColor,
+      args: ctx => ({ cell: ctx.block }), when: ctx => tableOf(ctx) !== null }),
     defineAction({ id: "nooq.table.action.split", label: "Split merged cell", placements: ["toolbar"], command: splitCell,
       args: ctx => ({ cell: ctx.block }), when: ctx => tableOf(ctx) !== null && typeof (ctx.snapshot.blocks[ctx.block]?.fields as { colspan?: unknown } | undefined)?.colspan === "number" && ((ctx.snapshot.blocks[ctx.block]!.fields as { colspan: number }).colspan) >= 2 }),
   ],
@@ -326,7 +330,28 @@ export const tablesDOM = defineDOMPlugin({
             void ctx.run("nooq.table.add-row", { afterRow: here.row });
           }
         });
-        return { element, update(block) { refresh(); paintSpan(typeof block.fields.colspan === "number" ? block.fields.colspan : 1); }, destroy() { text.destroy(); resize.remove(); } };
+        const paintHeaderColumn = (isHeader: boolean): void => { body?.classList.toggle("nq-table-header-cell", isHeader); };
+        const paintColor = (color: string): void => {
+          body?.classList.remove(...CELL_COLORS.filter(c => c !== "none").map(c => `nq-table-cell-${c}`));
+          if (color !== "none" && CELL_COLORS.includes(color)) body?.classList.add(`nq-table-cell-${color}`);
+        };
+        const isHeaderColumn = (): boolean => {
+          // The column's index within its row, against the table's headerColumns field.
+          const row = rowOfCell();
+          if (row === null) return false;
+          const column = columnOfCell();
+          if (column < 0) return false;
+          const tableId = ctx.parentOf(row);
+          if (tableId === null || tableId === undefined) return false;
+          const list = ctx.snapshot().blocks[tableId]?.fields.headerColumns;
+          return Array.isArray(list) && (list as number[]).includes(column);
+        };
+        return { element, update(block) {
+          refresh();
+          paintSpan(typeof block.fields.colspan === "number" ? block.fields.colspan : 1);
+          paintHeaderColumn(isHeaderColumn());
+          paintColor(typeof block.fields.color === "string" ? block.fields.color : "none");
+        }, destroy() { text.destroy(); resize.remove(); } };
       } },
   ],
 });

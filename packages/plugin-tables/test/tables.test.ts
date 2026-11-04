@@ -8,10 +8,10 @@ import { Editor } from "@nooq/editor";
 
 describe("tables (0015 stage 1)", () => {
   test("the tree: table → row → cell; cells hold inline text", () => {
-    expect(table.create().fields).toEqual({});
+    expect(table.create().fields).toEqual({ headerColumns: [] }); // the birthright (stage 5)
     expect(tableRow.create().fields).toEqual({});
     expect(tableCell.create().text).toEqual({ s: "", marks: [] });
-    expect(tableCell.create().fields).toEqual({ colspan: 1 }); // the birthright (stage 4)
+    expect(tableCell.create().fields).toEqual({ colspan: 1, color: "none" }); // the birthrights (stages 4-5)
     expect(tablesPlugin.contributes.blocks).toHaveLength(3);
   });
 
@@ -305,6 +305,57 @@ describe("stage 4: merged and split cells", () => {
     const view = e.view as unknown as { blocks: Record<string, { children: readonly string[]; fields: Record<string, unknown> }> };
     const spanSum = (row: string): number => view.blocks[row]!.children.reduce((sum, cell) => sum + (typeof view.blocks[cell]!.fields.colspan === "number" ? (view.blocks[cell]!.fields.colspan as number) : 1), 0);
     expect(spanSum(grid[0]![0]! === undefined ? "" : (e.view.blocks[t]!.children as string[])[0]!)).toBe(2);
+    e.close();
+  });
+});
+
+describe("stage 5: header columns and cell colors", () => {
+  const grid2x2 = () => {
+    const e = new Editor({ docId: `h${Math.random()}`, actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    return { e, t, grid: e.view.blocks[t]!.children.map(row => e.view.blocks[row]!.children as string[]) };
+  };
+
+  test("toggleHeaderColumn: ONE field write on the table; the array flips; undo round-trips", () => {
+    const { e, t } = grid2x2();
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([]); // the birthright
+    expect(e.commands.run("nooq.table.toggle-header-column", { table: t, column: 0 }).status).toBe("applied");
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([0]);
+    expect(e.commands.run("nooq.table.toggle-header-column", { table: t, column: 1 }).status).toBe("applied");
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([0, 1]);
+    e.commands.run("nooq.table.toggle-header-column", { table: t, column: 0 });
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([1]); // flip off, order stable
+    e.undo();
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([0, 1]); // the old array, back (the birthright guarantees it)
+    e.close();
+  });
+
+  test("cycleCellColor: the named palette cycles; undo walks it back", () => {
+    const { e, grid } = grid2x2();
+    const cell = grid[0]![0]!;
+    expect(e.view.blocks[cell]!.fields.color).toBe("none"); // the birthright
+    for (const next of ["highlight", "note", "flag"]) {
+      expect(e.commands.run("nooq.table.cell-color", { cell }).status).toBe("applied");
+      expect(e.view.blocks[cell]!.fields.color).toBe(next);
+    }
+    expect(e.commands.run("nooq.table.cell-color", { cell }).status).toBe("applied");
+    expect(e.view.blocks[cell]!.fields.color).toBe("none"); // the cycle wraps
+    e.undo();
+    expect(e.view.blocks[cell]!.fields.color).toBe("flag"); // undo walks the palette back
+    e.close();
+  });
+
+  test("colors and spans compose: a merged, highlighted header cell is legal (fields are fields)", () => {
+    const { e, t, grid } = grid2x2();
+    e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    e.commands.run("nooq.table.cell-color", { cell: grid[0]![0]! });
+    e.commands.run("nooq.table.toggle-header-column", { table: t, column: 0 });
+    const cell = e.view.blocks[grid[0]![0]!]!;
+    expect(cell.fields.colspan).toBe(2);
+    expect(cell.fields.color).toBe("highlight");
+    expect(e.view.blocks[t]!.fields.headerColumns).toEqual([0]); // three fields, one cell, all legal
     e.close();
   });
 });

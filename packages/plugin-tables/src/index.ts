@@ -9,7 +9,12 @@ import { defineBlock, defineCommand, definePlugin } from "@nooq/plugins";
 
 export const table = defineBlock({
   type: "nooq.table/v1", label: "Table",
-  text: "none", create: () => ({ fields: {} }), diagnose: () => [],
+  text: "none",
+  // headerColumns is the table's birthright (stage 5): the array of column
+  // indices styled as headers — present from creation so every toggle has
+  // an old value to invert (the colspan lesson, applied by default).
+  create: () => ({ fields: { headerColumns: [] as import("@nooq/core").JsonValue[] } }),
+  diagnose: () => [],
 });
 export const tableRow = defineBlock({
   type: "nooq.table-row/v1", label: "Row",
@@ -21,7 +26,7 @@ export const tableCell = defineBlock({
   // colspan is a birthright (stage 4): present from creation so every merge
   // write has an old value to invert — undo round-trips (DM-4.10's stated
   // first-set limit never fires for spans).
-  create: () => ({ fields: { colspan: 1 }, text: { s: "", marks: [] } }),
+  create: () => ({ fields: { colspan: 1, color: "none" }, text: { s: "", marks: [] } }),
   diagnose: () => [],
 });
 
@@ -195,6 +200,38 @@ export const pasteIntoRange = defineCommand<{ cells: readonly (readonly string[]
   },
 });
 
+/** The cell color palette — themed, named, fixed (a payloaded picker is
+ *  the link mechanism's job; these are the surface's own vocabulary). */
+export const CELL_COLORS: readonly string[] = Object.freeze(["none", "highlight", "note", "flag"]);
+
+/** Cycle a cell's color through the palette — one field write; undo
+ *  round-trips (the birthright guarantees the old value). */
+export const cycleCellColor = defineCommand<{ cell: string }>({
+  id: "nooq.table.cell-color", label: "Cell color",
+  validateArgs: (a): a is { cell: string } => !!a && typeof a === "object" && typeof (a as { cell?: unknown }).cell === "string",
+  prepare(ctx, { cell: id }) {
+    if (!ctx.isAlive(id) || ctx.snapshot.blocks[id]?.type !== tableCell.type) return { status: "not-applicable" };
+    const current = typeof ctx.snapshot.blocks[id]!.fields.color === "string" ? (ctx.snapshot.blocks[id]!.fields.color as string) : "none";
+    const next = CELL_COLORS[(CELL_COLORS.indexOf(current) + 1) % CELL_COLORS.length]!;
+    if (next === current) return { status: "not-applicable" }; // single-color palette: a no-op is not a transaction
+    return { status: "ready", intent: "cell-color", ops: [{ op: "setField", block: id, key: "color", value: next }] };
+  },
+});
+
+/** Header columns (stage 5): ONE field write on the table flips the column —
+ *  the array of indices, undo round-trips through the birthright array. */
+export const toggleHeaderColumn = defineCommand<{ table: string; column: number }>({
+  id: "nooq.table.toggle-header-column", label: "Toggle header column",
+  validateArgs: (a): a is { table: string; column: number } => !!a && typeof a === "object" && typeof (a as { table?: unknown }).table === "string" && Number.isInteger((a as { column?: unknown }).column as number),
+  prepare(ctx, { table: id, column }) {
+    if (!ctx.isAlive(id) || ctx.snapshot.blocks[id]?.type !== table.type) return { status: "not-applicable" };
+    const current: number[] = Array.isArray(ctx.snapshot.blocks[id]!.fields.headerColumns) ? [...(ctx.snapshot.blocks[id]!.fields.headerColumns as number[])] : [];
+    const at = current.indexOf(column);
+    if (at >= 0) current.splice(at, 1); else current.push(column);
+    return { status: "ready", intent: "toggle-header-column", ops: [{ op: "setField", block: id, key: "headerColumns", value: current as unknown as import("@nooq/core").JsonValue }] };
+  },
+});
+
 /** Merged cells (0015 stage 4): merge is DELETION + a span field — the
  *  origin cell carries colspan, the covered cells tombstone in the same
  *  transaction; split is the exact inverse (restore + clear), so undo
@@ -306,7 +343,7 @@ export const toggleHeaderRow = defineCommand<{ row: string }>({
 
 export const tablesPlugin = definePlugin({
   id: "nooq.tables", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, resizeColumn, clearRange, pasteIntoRange, mergeCells, splitCell] },
+  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, toggleHeaderColumn, resizeColumn, clearRange, pasteIntoRange, mergeCells, splitCell, cycleCellColor] },
 });
 
 export const TABLES_VERSION = tablesPlugin.version;
