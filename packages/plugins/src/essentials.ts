@@ -1,3 +1,7 @@
+import { pasteBlocks } from "./paste.ts";
+export { isPasteTextBlock, pasteBlocks, PASTE_INTENT, type PasteBlock } from "./paste.ts";
+import { column, columns, placeBeside, resizeColumns } from "./columns.ts";
+export { column, columns, collapsedLayoutBlock, columnPlacement, columnWeights, layoutColumns, placeBeside, resizeColumns, MAX_LAYOUT_COLUMNS, MIN_LAYOUT_COLUMN_WIDTH, PLACE_BESIDE_INTENT, type PlaceBesideArgs } from "./columns.ts";
 import { defineBlock, defineCommand, definePlugin } from "./definitions.ts";
 import { markWithPayload, type InsertBlockArgs } from "./recipes.ts";
 import { mergeText } from "./merge.ts";
@@ -43,16 +47,6 @@ export const listItem = defineBlock({
   create: () => ({ fields: { kind: "bullet" }, text: { s: "", marks: [] } }),
   diagnose: () => [],
 });
-/**
- * Multi-column layout (foundation P2). Structure is children, not fields
- * (DM-3.2): the columns block carries two column children, each seeded with
- * an empty paragraph so a writer lands in column 1 ready to type. Reading
- * order is the rule — tree order = column order = DOM order — and narrow
- * widths stack in that same order.
- */
-const layoutBlock = (type: string, label: string) => defineBlock({ type, label, text: "none", create: () => ({ fields: {} }), diagnose: () => [] });
-export const columns = layoutBlock("nooq.columns/v1", "Columns");
-export const column = layoutBlock("nooq.column/v1", "Column");
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
 
 export const insertBlock = defineCommand<{ type: string; parent: string | null; index?: number; clearBlock?: string; fields?: Record<string, import("@nooq/core").JsonValue> }>({
@@ -277,5 +271,5 @@ export const link = defineCommand<LinkArgs>({
   prepare: (ctx, args) => linkRecipe.prepare(ctx, { block: args.block, from: args.from, to: args.to, ...(args.href !== undefined ? { payload: args.href } : {}) }),
 });
 export const essentials = definePlugin({ id: "nooq.essentials", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, importBlocks, insertColumns, setField, toggleCheck, moveBlock] },
+  contributes: { blocks: [paragraph, heading, divider, quote, title, listItem, columns, column], commands: [insertBlock, editText, deleteBlock, splitBlock, mergeText, link, importBlocks, pasteBlocks, insertColumns, placeBeside, resizeColumns, setField, toggleCheck, moveBlock] },
 });
