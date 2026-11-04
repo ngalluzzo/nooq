@@ -11,6 +11,7 @@ describe("tables (0015 stage 1)", () => {
     expect(table.create().fields).toEqual({});
     expect(tableRow.create().fields).toEqual({});
     expect(tableCell.create().text).toEqual({ s: "", marks: [] });
+    expect(tableCell.create().fields).toEqual({ colspan: 1 }); // the birthright (stage 4)
     expect(tablesPlugin.contributes.blocks).toHaveLength(3);
   });
 
@@ -240,6 +241,70 @@ describe("stage 3c: paste into a range", () => {
     expect(e.view.blocks[grid[0]![0]!]!.text!.s).toBe("x");
     expect(e.view.blocks[grid[0]![1]!]!.text!.s).toBe("y");
     expect(e.view.blocks[grid[1]![0]!]!.text!.s).toBe(""); // the overflow row never landed
+    e.close();
+  });
+});
+
+describe("stage 4: merged and split cells", () => {
+  const grid2x2 = () => {
+    const e = new Editor({ docId: `m${Math.random()}`, actor: { actorId: "w" }, plugins: [essentials, tablesPlugin] });
+    e.insertBlock({ type: "nooq.paragraph/v1", parent: null, text: "anchor" });
+    e.commands.run(insertTable, { parent: null, index: 1 });
+    const t = e.view.roots[1]!;
+    return { e, t, grid: e.view.blocks[t]!.children.map(row => e.view.blocks[row]!.children as string[]) };
+  };
+
+  test("merge: ONE transaction — the origin carries colspan, covered cells tombstone", () => {
+    const { e, grid } = grid2x2();
+    const merged = e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    expect(merged.status).toBe("applied");
+    expect(e.view.blocks[grid[0]![0]!]!.fields.colspan).toBe(2);
+    expect(e.view.blocks[grid[0]![0]!]!.text).toBeDefined(); // the origin, alive with its text
+    expect(e.view.blocks[grid[0]![1]!]).toBeDefined(); // tombstoned: map entry persists (DM-3.4)
+    e.close();
+  });
+
+  test("merge is honest about scope: cross-row ranges decline (rowspan is stage 2, named)", () => {
+    const { e, grid } = grid2x2();
+    const attempted = e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[1]![0]!] });
+    expect(attempted.status).toBe("not-applicable");
+    e.close();
+  });
+
+  test("split: the exact inverse — colspan-1 cells restored in place", () => {
+    const { e, grid } = grid2x2();
+    e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    const split = e.commands.run("nooq.table.split", { cell: grid[0]![0]! });
+    expect(split.status).toBe("applied");
+    expect(e.view.blocks[grid[0]![0]!]!.fields.colspan).toBe(1);
+    expect(e.view.blocks[grid[0]![0]!]!.text).toBeDefined(); // origin still alive
+    const row = e.view.blocks[Object.keys(e.view.blocks).find(id => (e.view.blocks[id]!.children as readonly string[]).includes(grid[0]![0]!))!]!;
+    expect(row.children.length).toBeGreaterThanOrEqual(2); // restored to width
+    e.close();
+  });
+
+  test("UNDO round-trips both, for free (DM-4.10 over merge and split)", () => {
+    const { e, grid } = grid2x2();
+    e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    e.undo();
+    expect(e.view.blocks[grid[0]![0]!]!.fields.colspan).toBe(1); // the span write, undone to the birthright
+    const rowAfter = Object.keys(e.view.blocks).find(id => (e.view.blocks[id]!.children as readonly string[]).includes(grid[0]![0]!))!;
+    expect((e.view.blocks[rowAfter]!.children as readonly string[])).toContain(grid[0]![1]!); // the covered cell, restored to its row
+    // And split: merge again, split, undo the split — the merge is back
+    e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    e.commands.run("nooq.table.split", { cell: grid[0]![0]! });
+    e.undo();
+    expect(e.view.blocks[grid[0]![0]!]!.fields.colspan).toBe(2); // the merge stands again
+    e.close();
+  });
+
+  test("the ghost counts SPAN-SUM, not cells: a merged row is ragged on purpose, no ghost", () => {
+    const { e, t, grid } = grid2x2();
+    e.commands.run("nooq.table.merge", { cells: [grid[0]![0]!, grid[0]![1]!] });
+    // Row 0 now: one cell, colspan 2 → span-sum 2 = the table's width: NOT ragged
+    const view = e.view as unknown as { blocks: Record<string, { children: readonly string[]; fields: Record<string, unknown> }> };
+    const spanSum = (row: string): number => view.blocks[row]!.children.reduce((sum, cell) => sum + (typeof view.blocks[cell]!.fields.colspan === "number" ? (view.blocks[cell]!.fields.colspan as number) : 1), 0);
+    expect(spanSum(grid[0]![0]! === undefined ? "" : (e.view.blocks[t]!.children as string[])[0]!)).toBe(2);
     e.close();
   });
 });

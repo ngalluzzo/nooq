@@ -13,7 +13,7 @@
 import { defineDOMPlugin, defineTextPolicy, insertAfterSelection, type BlockViewContext } from "@nooq/plugins/dom";
 import { defineAction } from "@nooq/plugins";
 import { blockRow } from "@nooq/design";
-import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, clearRange, pasteIntoRange } from "./index.ts";
+import { table, tableCell, tableRow, tablesPlugin, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, clearRange, pasteIntoRange, mergeCells, splitCell } from "./index.ts";
 
 /** From a focused cell, its table id — or null outside tables. */
 type TableView = { roots: readonly string[]; blocks: Record<string, { children: readonly string[]; type: string }> };
@@ -57,6 +57,8 @@ export const tablesDOM = defineDOMPlugin({
       args: ctx => ({ table: tableOf(ctx) as string, from: columnOf(ctx), to: columnOf(ctx) + 1 }), when: ctx => tableOf(ctx) !== null }),
     defineAction({ id: "nooq.table.action.toggle-header", label: "Toggle header row", placements: ["toolbar"], command: toggleHeaderRow,
       args: ctx => ({ row: rowOf(ctx) as string }), when: ctx => tableOf(ctx) !== null }),
+    defineAction({ id: "nooq.table.action.split", label: "Split merged cell", placements: ["toolbar"], command: splitCell,
+      args: ctx => ({ cell: ctx.block }), when: ctx => tableOf(ctx) !== null && typeof (ctx.snapshot.blocks[ctx.block]?.fields as { colspan?: unknown } | undefined)?.colspan === "number" && ((ctx.snapshot.blocks[ctx.block]!.fields as { colspan: number }).colspan) >= 2 }),
   ],
   views: [
     { type: table.type, mount(ctx) {
@@ -168,6 +170,8 @@ export const tablesDOM = defineDOMPlugin({
           });
           return;
         }
+        if (event.key.toLowerCase() === "m" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void ctx.run("nooq.table.merge", { cells: selectedCells().flat() }); return; }
+        if (event.key.toLowerCase() === "m" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void ctx.run("nooq.table.split", { cell: range.anchor.row >= 0 ? (cellIds()[range.anchor.row]?.[range.anchor.col] ?? "") : "" }); return; }
         if (event.key === "Escape") { range = undefined; paint(); }
       });
       // Column sizing: every row reads the same widths field, so the columns
@@ -228,7 +232,9 @@ export const tablesDOM = defineDOMPlugin({
       return { element, update(block) {
         const view = ctx.snapshot() as unknown as { blocks: Record<string, { children: readonly string[] }> };
         const tableId = ctx.parent; // the row's parent IS the table (EB-T: no scan)
-        const widest = tableId === null ? 0 : Math.max(...((view.blocks[tableId]?.children ?? []) as readonly string[]).map(row => view.blocks[row]!.children.length));
+        const spanOf = (row: string): number => ((ctx.snapshot().blocks[row]?.children ?? []) as readonly string[])
+          .reduce((sum, cell) => sum + (typeof ctx.snapshot().blocks[cell]?.fields.colspan === "number" ? (ctx.snapshot().blocks[cell]!.fields.colspan as number) : 1), 0);
+        const widest = tableId === null ? 0 : Math.max(...((view.blocks[tableId]?.children ?? []) as readonly string[]).map(row => spanOf(row)));
         const short = block.children.length < widest;
         if (short && !element.contains(ghost)) element.append(ghost);
         if (!short && element.contains(ghost)) ghost.remove();
@@ -245,6 +251,8 @@ export const tablesDOM = defineDOMPlugin({
         const element = blockRow({ content: [editor, ctx.children.element], kind: "paragraph", actor: "human" });
         const body = element.querySelector<HTMLElement>(".nq-block-body");
         if (body) body.classList.add("nq-table-cell");
+        // Merged cells (stage 4): the span is a field; the grid consumes N tracks.
+        const paintSpan = (span: number): void => { if (span > 1) element.style.gridColumn = `span ${span}`; else element.style.gridColumn = ""; };
         // The resize reporter: a column edge when this cell is not its row's
         // last (the table's own right edge is nobody's handle). data-column
         // names the column it grows; the TABLE view owns the drag.
@@ -318,7 +326,7 @@ export const tablesDOM = defineDOMPlugin({
             void ctx.run("nooq.table.add-row", { afterRow: here.row });
           }
         });
-        return { element, update() { refresh(); }, destroy() { text.destroy(); resize.remove(); } };
+        return { element, update(block) { refresh(); paintSpan(typeof block.fields.colspan === "number" ? block.fields.colspan : 1); }, destroy() { text.destroy(); resize.remove(); } };
       } },
   ],
 });

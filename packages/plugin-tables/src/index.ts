@@ -18,7 +18,10 @@ export const tableRow = defineBlock({
 export const tableCell = defineBlock({
   type: "nooq.table-cell/v1", label: "Cell",
   text: "inline",
-  create: () => ({ fields: {}, text: { s: "", marks: [] } }),
+  // colspan is a birthright (stage 4): present from creation so every merge
+  // write has an old value to invert — undo round-trips (DM-4.10's stated
+  // first-set limit never fires for spans).
+  create: () => ({ fields: { colspan: 1 }, text: { s: "", marks: [] } }),
   diagnose: () => [],
 });
 
@@ -192,6 +195,60 @@ export const pasteIntoRange = defineCommand<{ cells: readonly (readonly string[]
   },
 });
 
+/** Merged cells (0015 stage 4): merge is DELETION + a span field — the
+ *  origin cell carries colspan, the covered cells tombstone in the same
+ *  transaction; split is the exact inverse (restore + clear), so undo
+ *  (DM-4.10) round-trips both for free. A merged row is ragged *on purpose*,
+ *  the field naming the intent — the ghost compares SPAN-SUM to width. */
+export const mergeCells = defineCommand<{ cells: readonly string[] }>({
+  id: "nooq.table.merge", label: "Merge cells",
+  validateArgs: (a): a is { cells: readonly string[] } => !!a && typeof a === "object" && Array.isArray((a as { cells?: unknown }).cells) && (a as { cells: unknown[] }).cells.every(id => typeof id === "string"),
+  prepare(ctx, { cells }) {
+    if (cells.length < 2) return { status: "not-applicable" }; // merging needs at least two
+    // All cells must be alive siblings of ONE row (colspan v1; rowspan is stage 2's flattened grid).
+    const view = ctx.snapshot as unknown as { blocks: Record<string, { children: readonly string[]; type: string }> };
+    const rows = new Set<string>();
+    for (const cell of cells) {
+      if (!ctx.isAlive(cell)) return { status: "not-applicable" };
+      const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(cell));
+      if (row === undefined) return { status: "not-applicable" };
+      rows.add(row);
+    }
+    if (rows.size !== 1) return { status: "not-applicable" };
+    // The origin: the LEFTMOST selected cell (deterministic — the merge is the
+    // same transaction whoever drags the range).
+    const row = [...rows][0]!;
+    const order = (view.blocks[row]!.children as readonly string[]).filter(id => cells.includes(id));
+    if (order.length !== cells.length) return { status: "not-applicable" };
+    const origin = order[0]!, covered = order.slice(1);
+    const ops: import("@nooq/core").Op[] = [];
+    const existing = ctx.snapshot.blocks[origin]!.fields.colspan;
+    const span = (typeof existing === "number" ? existing : 1) + covered.length;
+    ops.push({ op: "setField", block: origin, key: "colspan", value: span });
+    for (const cell of covered) ops.push({ op: "delete", block: cell });
+    return { status: "ready", intent: "merge-cells", ops };
+  },
+});
+
+/** Split: the exact inverse — restore colspan-1 covered cells, clear the span. */
+export const splitCell = defineCommand<{ cell: string }>({
+  id: "nooq.table.split", label: "Split cell",
+  validateArgs: (a): a is { cell: string } => !!a && typeof a === "object" && typeof (a as { cell?: unknown }).cell === "string",
+  prepare(ctx, { cell: id }) {
+    if (!ctx.isAlive(id)) return { status: "not-applicable" };
+    const span = ctx.snapshot.blocks[id]!.fields.colspan;
+    if (typeof span !== "number" || span < 2) return { status: "not-applicable" }; // not merged
+    const view = ctx.snapshot as unknown as { blocks: Record<string, { children: readonly string[] }> };
+    const row = Object.keys(view.blocks).find(pid => view.blocks[pid]!.children.includes(id));
+    if (row === undefined) return { status: "not-applicable" };
+    const cells = view.blocks[row]!.children as readonly string[];
+    const at = cells.indexOf(id);
+    const ops: import("@nooq/core").Op[] = [{ op: "setField", block: id, key: "colspan", value: 1 }]; // the birthright, not absence
+    for (let i = 1; i < span; i++) ops.push({ op: "insert", block: ctx.createBlock(tableCell.type), parent: row, index: at + i });
+    return { status: "ready", intent: "split-cell", ops };
+  },
+});
+
 /** Selection ranges (stage 3): clear the rectangle's cells — ONE transaction
  *  of textEdits (empty cells stay empty; clearing an all-empty range is not
  *  a transaction). The RANGE itself is view state, never document state —
@@ -249,7 +306,7 @@ export const toggleHeaderRow = defineCommand<{ row: string }>({
 
 export const tablesPlugin = definePlugin({
   id: "nooq.tables", version: "1.0.0", apiVersion: 1,
-  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, resizeColumn, clearRange, pasteIntoRange] },
+  contributes: { blocks: [table, tableRow, tableCell], commands: [insertTable, addRowAfter, addColumn, removeColumn, moveColumn, completeRow, toggleHeaderRow, resizeColumn, clearRange, pasteIntoRange, mergeCells, splitCell] },
 });
 
 export const TABLES_VERSION = tablesPlugin.version;
