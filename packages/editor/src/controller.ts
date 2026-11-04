@@ -50,6 +50,9 @@ import type { TextAuthor } from "@nooq/plugins/dom";
 import { SyncSession, type AwarenessEntry, type Cursor, type OutboxEntry, type SyncTransport } from "@nooq/sync";
 import { PluginRegistry, PluginRuntime, freezeInPlace, freezeSnapshot, type Immutable, type Plugin, type Command, type CommandResult, type PreparedCommand, type SelectionRequest, type Job, type JobHandle, type JobStart, type PublicationResult, type PluginError, type ChangeEvent } from "@nooq/plugins";
 import { layout } from "@nooq/yjs";
+import { PASTE_INTENT, PLACE_BESIDE_INTENT } from "@nooq/plugins/essentials";
+import { columnPlacementInverse } from "./layout-undo.ts";
+import { anchorPasteUndo, rebasePasteUndo, type PasteUndo } from "./paste-undo.ts";
 
 export interface JobBinding { job: Job<any, any> | string; actor: ActorDescriptor; signer?: import("@nooq/core").ActorKey }
 export class AuthorizationError extends Error {
@@ -191,7 +194,7 @@ export function buildRotation(current: import("@nooq/core").Access, revoke: read
   const currentEpoch = current.epoch ?? 0;
   const survivors = current.grants
     .filter(g => (g.epoch ?? 0) === currentEpoch && !revoke.includes(g.actorId))
-    .map(g => ({ ...g, epoch }));
+    .map(g => ({ ...g, epoch })); // name rides the spread (DM-13.5): rotation never strips profiles
   const revoked = [...(current.revoked ?? []), ...revoke.filter(id => !(current.revoked ?? []).includes(id) && id !== current.owner.actorId)];
   return { ...current, epoch, grants: survivors, revoked };
 }
@@ -616,8 +619,8 @@ export class Editor {
    * Access writes never enter (an epoch cannot go backward — Cmd+Z does not
    * un-revoke; you re-grant, which is one ordinary transaction).
    */
-  #undoStack: Array<{ tx: Transaction; inverse: Op[] }> = [];
-  #redoStack: Array<{ tx: Transaction; inverse: Op[] }> = [];
+  #undoStack: Array<{ tx: Transaction; inverse: Op[]; paste?: PasteUndo }> = [];
+  #redoStack: Array<{ tx: Transaction; inverse: Op[]; paste?: PasteUndo }> = [];
   #undoing = 0; // >0 while applying an undo/redo transaction itself
 
   private pushUndo(tx: Transaction, pre: DocState, burstContinuation: boolean): void {
@@ -625,7 +628,9 @@ export class Editor {
     if (tx.ops.some(op => op.op === "setAccess")) return; // the exception, by design
     const inverse = inverseOf(pre, tx);
     if (inverse === undefined) return;
-    this.#undoStack.push({ tx, inverse });
+    const paste = tx.intent === PASTE_INTENT && tx.actor.plugin === "nooq.essentials"
+      ? anchorPasteUndo(this.ydoc, pre, this.view as DocState, inverse) : undefined;
+    this.#undoStack.push({ tx, inverse, paste });
     if (this.#undoStack.length > 200) this.#undoStack.shift(); // bounded, like the lab's history tail
     this.#redoStack = []; // a new action forks the timeline; redo expires
   }
@@ -649,16 +654,27 @@ export class Editor {
     this.traverse(entry, "redo", this.#undoStack);
   }
 
-  private traverse(entry: { tx: Transaction; inverse: Op[] }, intent: "undo" | "redo", sink: Array<{ tx: Transaction; inverse: Op[] }>): void {
+  private traverse(entry: { tx: Transaction; inverse: Op[]; paste?: PasteUndo }, intent: "undo" | "redo", sink: Array<{ tx: Transaction; inverse: Op[]; paste?: PasteUndo }>): void {
     const pre = structuredClone(this.view) as DocState;
+    const layoutUndo = intent === "undo" && entry.tx.intent === PLACE_BESIDE_INTENT && entry.tx.actor.plugin === "nooq.essentials";
+    const ops = entry.paste ? rebasePasteUndo(this.ydoc, pre, entry.inverse, entry.paste)
+      : layoutUndo ? columnPlacementInverse(pre, entry.tx, entry.inverse, this.hasTransport) : entry.inverse;
+    if (!ops) {
+      this.reportError({ phase: "view", cause: new Error("The pasted content changed and could not be reversed safely.") });
+      return;
+    }
+    if ((layoutUndo || entry.paste) && ops.length === 0) return;
     this.#undoing++;
     let counter: Op[] | undefined;
     try {
-      const tx = this.tx([...entry.inverse], intent);
+      const tx = this.tx([...ops], intent);
       this.apply(tx);
       counter = inverseOf(pre, tx);
     } finally { this.#undoing--; }
-    if (counter !== undefined) sink.push({ tx: entry.tx, inverse: counter });
+    if (counter !== undefined) {
+      const paste = entry.paste ? anchorPasteUndo(this.ydoc, pre, this.view as DocState, counter) : undefined;
+      sink.push({ tx: entry.tx, inverse: counter, paste });
+    }
   }
 
   canUndo(): boolean { return this.#undoStack.length > 0; }

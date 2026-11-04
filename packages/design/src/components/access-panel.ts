@@ -19,7 +19,7 @@ const NO_ROLE_WORD = "No role";
 /** One party of the access header as the panel renders it. */
 interface AccessRow {
   actorId: string;
-  /** The name joined from awareness, when the actor is here. Absent renders the bare actor ID — the panel invents no names. */
+  /** The resolved name: live presence first, then the grant's recorded name (DM-13.5). Absent renders the bare actor ID — never invented. */
   name?: string;
   /** DM-5 actor kind, as the access header carries it per party. Default "human". */
   kind?: ActorKind;

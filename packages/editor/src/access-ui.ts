@@ -41,8 +41,8 @@ export interface AccessSource {
 
 /** The access shape as this module reads it; accepts a frozen or mutable `Access` alike. */
 export interface AccessView {
-  owner: { actorId: string; kind: ActorKind };
-  grants: readonly { actorId: string; kind: ActorKind; role: Role; epoch?: number }[];
+  owner: { actorId: string; kind: ActorKind; name?: string };
+  grants: readonly { actorId: string; kind: ActorKind; role: Role; epoch?: number; name?: string }[];
   /** DM-13.6: the rotation epoch and the revoked roll. */
   epoch?: number;
   revoked?: readonly string[];
@@ -116,12 +116,17 @@ export function createAccessUI(editor: AccessSource, options: AccessUIOptions = 
       }
       const entry = editor.awareness.get(party.actorId);
       const present = entry !== undefined && entry.cursor !== null;
+      // DM-13.5 (profiles): live presence first (fresh, self-chosen), then
+      // the name the document itself carries (durable — the grant's), then
+      // the bare actorId (never invented). Offline parties keep their names.
+      const recorded = (party as { name?: unknown }).name;
+      const name = entry?.name ?? (typeof recorded === "string" && recorded !== "" ? recorded : undefined);
       return {
         actorId: party.actorId,
         kind: party.kind,
         role,
         ...(owner ? { owner: true } : {}),
-        ...(entry?.name ? { name: entry.name } : {}),
+        ...(name !== undefined ? { name } : {}),
         ...(verified.has(party.actorId) ? { verified: true } : {}),
         ...(present && nowMs - (lastSeen.get(party.actorId) ?? nowMs) > IDLE_AFTER ? { idle: true } : {}),
       };

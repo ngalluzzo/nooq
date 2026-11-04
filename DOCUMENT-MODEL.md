@@ -538,6 +538,14 @@ The document header gains an optional `access` value:
   documented incident tool (DM-10.6 closed by this section). The UI
   labels the actor ("removed" badge, one history event line), never the
   mechanics — per the owner's recorded product decisions.
+- **Profiles travel with trust (DM-13.5).** A grant (and the owner) may
+  carry `name` — durable, validated (non-empty, bounded), preserved through
+  same-epoch extension and epoch rotation alike; a SILENT rename (same key,
+  kind, and role, different name) is a rewrite the owner signs deliberately,
+  never a rotation that slips one past. Surfaces resolve names: live
+  presence first (fresh, self-chosen), then the recorded grant name, then
+  the bare actorId — a name is never invented. Offline parties keep their
+  names; departed ones keep them in history.
 - **Kinds are granted.** Each grant (and the owner) binds a `kind`. An
   envelope's `tx.actor.kind` MUST equal its signer's granted kind; in an
   adoption, the proposer's kind MUST equal the proposer's grant when one

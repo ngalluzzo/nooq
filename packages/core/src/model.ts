@@ -69,6 +69,11 @@ export interface Grant {
   /** The kind this actor's transactions must claim (DM-13, Draft 1.7). */
   kind: ActorKind;
   role: Role;
+  /** DM-13.5 (profiles, stage 1): the name the document itself carries for
+   *  this party — durable, unlike presence names. Surfaces resolve: live
+   *  presence first (fresh, self-chosen), then this (the recorded truth),
+   *  then the bare actorId (never invented). */
+  name?: string;
   /** DM-13.6 (proposals/0012): the epoch this grant authorizes at. A grant
    *  admits only while it matches `access.epoch`; absent = 0 (pre-epoch
    *  documents). Revocation is rotation: the next epoch's grant list simply
@@ -77,7 +82,7 @@ export interface Grant {
 }
 
 export interface Access {
-  owner: { actorId: ActorId; key: string; kind: ActorKind };
+  owner: { actorId: ActorId; key: string; kind: ActorKind; name?: string };
   /** Append-only within an epoch; revocation is epoch rotation (DM-13.6,
    *  proposals/0012 — DM-10.6 closed by it). Absent epoch = 0. */
   grants: Grant[];

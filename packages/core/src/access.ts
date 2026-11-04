@@ -47,8 +47,9 @@ const ROLES: readonly Role[] = ["writer", "suggester", "reader", "checkpointer"]
 export function wellFormedAccess(value: unknown): value is Access {
   const access = value as Access | null;
   const party = (item: unknown) => {
-    const p = item as { actorId?: unknown; key?: unknown; kind?: unknown } | null;
-    return !!p && typeof p.actorId === "string" && p.actorId !== "" && typeof p.key === "string" && p.key !== "" && KINDS.includes(p.kind as ActorKind);
+    const p = item as { actorId?: unknown; key?: unknown; kind?: unknown; name?: unknown } | null;
+    return !!p && typeof p.actorId === "string" && p.actorId !== "" && typeof p.key === "string" && p.key !== "" && KINDS.includes(p.kind as ActorKind)
+      && (p.name === undefined || (typeof p.name === "string" && p.name.trim() !== "" && p.name.length <= 120));
   };
   const lineage = (value: unknown) => {
     const pin = value as { docId?: unknown; checkpoint?: unknown } | null;
@@ -134,7 +135,7 @@ export function accessExtends(current: Access, next: unknown): boolean {
     const keptHonest = next.grants.every(n => {
       if (epoch(n) !== nextEpoch) return false;
       const prior = before.get(n.actorId);
-      return prior === undefined || (prior.key === n.key && prior.kind === n.kind && prior.role === n.role);
+      return prior === undefined || (prior.key === n.key && prior.kind === n.kind && prior.role === n.role && (n.name ?? undefined) === (prior.name ?? undefined)); // a silent rename is a rewrite (DM-13.5)
     });
     const unique = nextIds.size === next.grants.length;
     // The revoked roll is append-only and grows by exactly the omitted
