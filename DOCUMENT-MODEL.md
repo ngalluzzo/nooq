@@ -538,6 +538,15 @@ The document header gains an optional `access` value:
   documented incident tool (DM-10.6 closed by this section). The UI
   labels the actor ("removed" badge, one history event line), never the
   mechanics — per the owner's recorded product decisions.
+- **Fingerprint identity (DM-12.4).** An actorId may DERIVE from its
+  Ed25519 public key (multibase base58btc over the multicodec-prefixed
+  raw key, kind-prefixed: `human:z6Mk…`). A document declaring
+  `identity: "fingerprint"` proves every handle at validation — the
+  owner's and each grant's — so across documents a handle cannot be
+  claimed, only proven. New secured documents are fingerprint documents
+  by default; free-form ids remain legal (legacy, still key-bound within
+  the document by DM-13). Derived ids are unreadable on purpose: they are
+  proof, and names (DM-13.5) are how surfaces stay human.
 - **Profiles travel with trust (DM-13.5).** A grant (and the owner) may
   carry `name` — durable, validated (non-empty, bounded), preserved through
   same-epoch extension and epoch rotation alike; a SILENT rename (same key,

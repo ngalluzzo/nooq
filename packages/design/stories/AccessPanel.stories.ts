@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect, waitFor, within } from "storybook/test";
-import { createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Transaction } from "@nooq/core";
+import { actorIdOf, createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Transaction } from "@nooq/core";
 import { commitSigned, newDocument } from "../../yjs/src/index.ts";
 import { NooqRelay, settled } from "../../sync/src/index.ts";
 import { Editor, createDocumentHeader, createSurface } from "../../editor/src/index.ts";
@@ -64,21 +64,28 @@ export const Static: Story = {
 };
 
 const editors = new Set<Editor>();
-interface AccessStory { header: HTMLElement; surface: HTMLElement }
+interface AccessStory { header: HTMLElement; surface: HTMLElement; readerId?: string; aiId?: string }
 const fixtures = new WeakMap<HTMLElement, AccessStory>();
 
 /** A secured document with a real second peer: genesis on the wire first, the peer writes, Maya opens the header. */
 async function securedHost(): Promise<HTMLElement> {
   const mayaKey = await createActorKey(), tomasKey = await createActorKey(), aiKey = await createActorKey();
-  const ownerParty = { actorId: "human:maya", key: toBase64(mayaKey.publicBytes), kind: "human" as const };
+  // DM-12.4: a fingerprint document — every party's handle derives from
+  // their key; the names (DM-13.5) keep the panel human.
+  const mayaId = actorIdOf("human", toBase64(mayaKey.publicBytes));
+  const tomasId = actorIdOf("human", toBase64(tomasKey.publicBytes));
+  const referenceId = actorIdOf("ai", toBase64(aiKey.publicBytes));
+  const ownerParty = { actorId: mayaId, key: toBase64(mayaKey.publicBytes), kind: "human" as const };
+  const readerKey = await createActorKey();
+  const readerParty = { actorId: actorIdOf("human", toBase64(readerKey.publicBytes)), key: toBase64(readerKey.publicBytes), kind: "human" as const, role: "reader" as const };
   const { docId, nonce } = await createSecuredDocument(ownerParty);
   const access: Access = {
     owner: ownerParty,
     nonce,
     grants: [
-      { actorId: "human:tomas", key: toBase64(tomasKey.publicBytes), kind: "human", role: "writer" },
-      { actorId: "human:3d91f2ab", key: toBase64((await createActorKey()).publicBytes), kind: "human", role: "reader" },
-      { actorId: "ai:reference", key: toBase64(aiKey.publicBytes), kind: "ai", role: "suggester" },
+      { actorId: tomasId, key: toBase64(tomasKey.publicBytes), kind: "human", role: "writer", name: "Tomás" },
+      readerParty,
+      { actorId: referenceId, key: toBase64(aiKey.publicBytes), kind: "ai", role: "suggester", name: "Reference" },
     ],
   };
   const relay = new NooqRelay();
@@ -88,31 +95,31 @@ async function securedHost(): Promise<HTMLElement> {
   const ownerDoc = newDocument(docId);
   const genesis: Transaction = {
     id: newBlockId(),
-    actor: { actorId: "human:maya", kind: "human" },
+    actor: { actorId: mayaId, kind: "human" },
     lamport: 1,
     causality: {},
     ops: [{ op: "setAccess", access }],
   };
-  const committed = await commitSigned(ownerDoc, genesis, mayaKey, "human:maya");
+  const committed = await commitSigned(ownerDoc, genesis, mayaKey, mayaId); // DM-12.4: the tx actor proves too
   const ship = relay.connect(docId);
   ship.send(JSON.stringify({ v: 1, t: "update", doc: docId, update: toBase64(committed.update), envelope: committed.envelope }));
   await settled(6);
 
-  const maya = new Editor({ docId, actor: { actorId: "human:maya", name: "Maya" }, transport: relay.connect(docId), key: mayaKey, plugins: [essentials] });
-  const tomas = new Editor({ docId, actor: { actorId: "human:tomas", name: "Tomás" }, transport: relay.connect(docId), key: tomasKey });
-  editors.add(maya); editors.add(tomas);
+  const mayaEditor = new Editor({ docId, actor: { actorId: mayaId, name: "Maya" }, transport: relay.connect(docId), key: mayaKey, plugins: [essentials] });
+  const tomas = new Editor({ docId, actor: { actorId: tomasId, name: "Tomás" }, transport: relay.connect(docId), key: tomasKey });
+  editors.add(mayaEditor); editors.add(tomas);
   await settled();
   const block = tomas.insertBlock({ type: paragraph.type, parent: null, text: "The peer wrote this first." });
   await settled(6);
   tomas.setCursor({ block, offset: 4 }); // present, with a name on the awareness wire
 
-  const header = createDocumentHeader(maya, { selfName: "Maya" });
-  const surface = createSurface(maya, { plugins: [essentialsDOM] });
+  const header = createDocumentHeader(mayaEditor, { selfName: "Maya" });
+  const surface = createSurface(mayaEditor, { plugins: [essentialsDOM] });
   const page = document.createElement("div");
   page.dataset.accessDemo = "true";
   page.style.cssText = "display:flex;flex-direction:column;gap:var(--nq-space-6);max-width:calc(var(--nq-measure) + var(--nq-gutter))"; // story-only framing; components never size themselves inline
   page.append(header.element, surface.element);
-  fixtures.set(page, { header: header.element, surface: surface.element });
+  fixtures.set(page, { header: header.element, surface: surface.element, readerId: readerParty.actorId, aiId: referenceId });
   return page;
 }
 
@@ -157,18 +164,19 @@ export const EditorBacked: Story = {
     await expect(popover.querySelector(".nq-access-self .nq-access-you")?.textContent).toBe("you");
     await expect(popover.querySelector(".nq-access-self .nq-access-role")?.textContent).toBe("Writer");
     const tomasRow = await waitFor(() => {
-      const row = popover.querySelector<HTMLElement>('.nq-access-row[data-nq-actor="human:tomas"]');
-      expect(row).not.toBeNull(); // his derived ink resolves a beat late; the row waits it out
+      const row = Array.from(popover.querySelectorAll<HTMLElement>('.nq-access-row'))
+        .find(candidate => candidate.querySelector('.nq-actor-name')?.textContent === "Tomás") ?? null;
+      expect(row).not.toBeNull(); // DM-12.4: the id is a fingerprint now; the NAME (DM-13.5) is how humans find each other
       return row!;
     }, { timeout: 5000 });
     await expect(tomasRow.querySelector(".nq-actor-name")?.textContent).toBe("Tomás");
     await expect(tomasRow.querySelector(".nq-access-verified")?.getAttribute("title")).toBe("Their edits arrived verified here");
     const bareRow = await waitFor(() => {
-      const row = popover.querySelector<HTMLElement>('.nq-access-row[data-nq-actor="human:3d91f2ab"] .nq-actor-name');
-      expect(row?.textContent).toBe("human:3d91f2ab"); // never arrived: the bare actor id, no invented name
+      const row = popover.querySelector<HTMLElement>(`.nq-access-row[data-nq-actor="${fixtures.get(demo)!.readerId}"] .nq-actor-name`); // DM-12.4: the id is a fingerprint; bare, per the no-invented-names rule
+      expect(row?.textContent).toBe(fixtures.get(demo)!.readerId); // never arrived: the bare DERIVED id, no invented name
       return row!;
     }, { timeout: 5000 });
-    await expect(popover.querySelector('.nq-access-row[data-nq-actor="ai:reference"] .nq-access-role')?.textContent).toBe("Suggester");
+    await expect(popover.querySelector(`.nq-access-row[data-nq-actor="${fixtures.get(demo)!.aiId}"] .nq-access-role`)?.textContent).toBe("Suggester");
     await expect(within(popover).queryByText("Removing a writer takes effect per device at sync time (DM-13.6).")).not.toBeNull();
 
     // Escape closes returning focus to the button (the popover's contract).

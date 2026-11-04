@@ -99,3 +99,4 @@ export {
   type Transaction,
 } from "./model.ts";
 export { liveTree, subtreeOf, type LiveTree } from "./tree.ts";
+export { actorIdOf, isDerivedActorId, actorIdMatches } from "./identity.ts";

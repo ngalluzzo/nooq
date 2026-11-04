@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect, waitFor } from "storybook/test";
-import { createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Transaction } from "@nooq/core";
+import { actorIdOf, createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Transaction } from "@nooq/core";
 import { commitSigned, newDocument } from "../../yjs/src/index.ts";
 import { NooqRelay, settled } from "../../sync/src/index.ts";
 import { Editor, createDocumentHeader, createSurface } from "../../editor/src/index.ts";
@@ -43,25 +43,29 @@ type Story = StoryObj;
 async function stage(): Promise<HTMLElement> {
   // The trust layer, real: a secured document, keys, genesis first.
   const mayaKey = await createActorKey(), tomasKey = await createActorKey(), aiKey = await createActorKey();
-  const owner = { actorId: "human:maya", key: toBase64(mayaKey.publicBytes), kind: "human" as const };
+  // DM-12.4: a fingerprint document — every handle proves its key; names (DM-13.5) keep it human.
+  const mayaId = actorIdOf("human", toBase64(mayaKey.publicBytes));
+  const tomasId = actorIdOf("human", toBase64(tomasKey.publicBytes));
+  const aiId = actorIdOf("ai", toBase64(aiKey.publicBytes));
+  const owner = { actorId: mayaId, key: toBase64(mayaKey.publicBytes), kind: "human" as const };
   const { docId, nonce } = await createSecuredDocument(owner);
-  const access: Access = { owner, nonce, grants: [
-    { actorId: "human:tomas", key: toBase64(tomasKey.publicBytes), kind: "human", role: "writer" },
-    { actorId: "ai:reference", key: toBase64(aiKey.publicBytes), kind: "ai", role: "suggester" },
+  const access: Access = { owner: owner, nonce, grants: [
+    { actorId: tomasId, key: toBase64(tomasKey.publicBytes), kind: "human", role: "writer", name: "Tomás" },
+    { actorId: aiId, key: toBase64(aiKey.publicBytes), kind: "ai", role: "suggester", name: "Reference" },
   ] };
   const relay = new NooqRelay();
   const ownerDoc = newDocument(docId);
-  const genesis: Transaction = { id: newBlockId(), actor: { actorId: "human:maya", kind: "human" }, lamport: 1, causality: {}, ops: [{ op: "setAccess", access }] };
-  const committed = await commitSigned(ownerDoc, genesis, mayaKey, "human:maya");
+  const genesis: Transaction = { id: newBlockId(), actor: { actorId: mayaId, kind: "human" }, lamport: 1, causality: {}, ops: [{ op: "setAccess", access }] };
+  const committed = await commitSigned(ownerDoc, genesis, mayaKey, mayaId);
   const ship = relay.connect(docId);
   ship.send(JSON.stringify({ v: 1, t: "update", doc: docId, update: toBase64(committed.update), envelope: committed.envelope }));
   await settled(6);
 
   const plugins = [...referencePlugins, codePlugin, mathPlugin, imagePlugin, diagramPlugin];
   const doms = [...referenceDOM, codeDOM, mathDOM, imageDOM(), diagramDOM];
-  const maya = new Editor({ docId, actor: { actorId: "human:maya", name: "Maya" }, key: mayaKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
-  const tomas = new Editor({ docId, actor: { actorId: "human:tomas", name: "Tomás" }, key: tomasKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
-  const ai = new Editor({ docId, actor: { actorId: "ai:reference", name: "Reference", model: "qwen3-8b" }, key: aiKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
+  const maya = new Editor({ docId, actor: { actorId: mayaId, name: "Maya" }, key: mayaKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
+  const tomas = new Editor({ docId, actor: { actorId: tomasId, name: "Tomás" }, key: tomasKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
+  const ai = new Editor({ docId, actor: { actorId: aiId, name: "Reference", model: "qwen3-8b" }, key: aiKey, transport: relay.connect(docId), jobBindings: referenceJobBindings(), plugins });
   await settled(6);
 
   // The document is the team's own weekly — real prose, real structure;
@@ -102,7 +106,7 @@ async function stage(): Promise<HTMLElement> {
   const target = insert(tomas, "nooq.paragraph/v1", "The verdict so far: ");
   await settled(6);
   await ai.propose({
-    actor: { actorId: "ai:reference", name: "Reference", model: "qwen3-8b" },
+    actor: { actorId: aiId, name: "Reference", model: "qwen3-8b" },
     ops: [{ op: "textEdit", block: target, changes: [{ insert: "a skeptic's first hour is covered, with receipts." }] }],
     evidence: [target],
     intent: "complete-the-verdict",

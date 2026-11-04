@@ -8,6 +8,7 @@
  * whether an `access` header happens to be present.
  */
 
+import { actorIdOf, actorIdMatches } from "./identity.ts";
 import type { Envelope } from "./actor.ts";
 import { canonicalJson } from "./canonical.ts";
 import { fingerprint } from "./digest.ts";
@@ -57,7 +58,16 @@ export function wellFormedAccess(value: unknown): value is Access {
   };
   const epochOf = (value: { epoch?: number }) => value.epoch === undefined || (Number.isInteger(value.epoch) && value.epoch >= 0);
   const revokedOk = (a: Access) => a.revoked === undefined || (Array.isArray(a.revoked) && a.revoked.every((id) => typeof id === "string" && id !== "" && id !== a.owner.actorId) && new Set(a.revoked).size === a.revoked.length);
-  return !!access && party(access.owner) && typeof access.nonce === "string" && access.nonce !== "" && Array.isArray(access.grants)
+  // DM-12.4 (user-model stage 2): a fingerprint document PROVES every
+  // handle — the owner's and each grant's actorId derives from the
+  // presented key, or the access is not well-formed at all. A handle
+  // cannot be claimed, only proven. Absent flag = free-form ids (legacy,
+  // still key-bound within the document by DM-13).
+  const identity = (!!access ? (access as { identity?: unknown }).identity : undefined);
+  const identityOk = identity === undefined || identity === "fingerprint";
+  const proves = (p: { actorId: string; key: string; kind: string }): boolean => actorIdMatches(p.actorId, p.kind, p.key);
+  const proven = identity !== "fingerprint" || (!!access && proves(access.owner) && access.grants.every(proves));
+  return !!access && party(access.owner) && typeof access.nonce === "string" && access.nonce !== "" && Array.isArray(access.grants) && identityOk && proven
     && epochOf(access) && revokedOk(access) && access.grants.every((grant) => party(grant) && ROLES.includes(grant.role) && epochOf(grant) && (grant.epoch ?? 0) <= (access.epoch ?? 0))
     && lineage(access.rebasedFrom);
 }
@@ -238,9 +248,16 @@ export function isSecuredDocId(docId: string): boolean {
 }
 
 /** A fresh secured document identity for an owner. */
-export async function createSecuredDocument(owner: Access["owner"]): Promise<{ docId: string; nonce: string }> {
+export async function createSecuredDocument(ownerIn: Access["owner"]): Promise<{ docId: string; nonce: string; owner: Access["owner"] }> {
+  // DM-12.4: new secured documents are fingerprint documents. The owner's
+  // id derives from their key (a supplied id must already prove it).
+  const owner = actorIdMatches(ownerIn.actorId, ownerIn.kind, ownerIn.key)
+    ? ownerIn
+    : { ...ownerIn, actorId: actorIdOf(ownerIn.kind, ownerIn.key) }; // derive when unproved
   const nonce = crypto.randomUUID();
-  return { docId: await securedDocId(owner, nonce), nonce };
+  // The derived owner returns with the identity: hosts echo BOTH into
+  // genesis, and the document is a fingerprint document from birth.
+  return { docId: await securedDocId(owner, nonce), nonce, owner };
 }
 
 /** DM-13 genesis: an access value whose owner and nonce derive this ID. */

@@ -848,6 +848,12 @@ export class Editor {
     await this.ready;
     const identity = this.identities.get("local")!;
     const value = structuredClone(access);
+    // DM-12.4: when the owner's handle PROVES their key, the document is a
+    // fingerprint document by default — the flag rides genesis unless the
+    // host built a free-form document on purpose.
+    if (value.identity === undefined && (await import("@nooq/core")).actorIdMatches(value.owner.actorId, value.owner.kind, value.owner.key)) {
+      value.identity = "fingerprint";
+    }
     if (!isSecuredDocId(this.docId) || !await isGenesisFor(this.docId, value) || !identity.key
       || identity.publicKey !== value.owner.key || identity.actor.actorId !== value.owner.actorId || identity.actor.kind !== value.owner.kind) throw new Error("Invalid genesis identity");
     if (this.view.access || this.closed || this.runtime.busy) throw new Error("Genesis is no longer available");

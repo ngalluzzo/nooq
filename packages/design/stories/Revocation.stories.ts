@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
 import { expect, waitFor, within } from "storybook/test";
-import { createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Role, type Transaction } from "@nooq/core";
+import { actorIdOf, createActorKey, createSecuredDocument, newBlockId, toBase64, type Access, type Role, type Transaction } from "@nooq/core";
 import { commitSigned, newDocument, readState } from "../../yjs/src/index.ts";
 import { buildRotation } from "../../editor/src/controller.ts";
 import { NooqRelay, settled, SyncSession } from "../../sync/src/index.ts";
@@ -168,7 +168,7 @@ export const RotationDialog: Story = {
 async function buildLive(mount: HTMLElement, history: HTMLElement, options: { withDialog?: boolean } = {}): Promise<void> {
   const mayaKey = await createActorKey(), tomasKey = await createActorKey();
   const ownerParty = { actorId: "human:maya", key: toBase64(mayaKey.publicBytes), kind: "human" as const };
-  const { docId, nonce } = await createSecuredDocument(ownerParty);
+  const { docId, nonce, owner: securedOwner } = await createSecuredDocument(ownerParty); // DM-12.4: the derived owner returns
   const relay = new NooqRelay();
 
   const entries = (access: Access): readonly AccessPanelEntry[] => {

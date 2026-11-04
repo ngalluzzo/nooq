@@ -88,6 +88,12 @@ export interface Access {
   grants: Grant[];
   /** With `owner`, fingerprints into a secured document's ID (DM-13). */
   nonce: string;
+  /** DM-12.4 (user-model stage 2): when "fingerprint", every party's
+   *  actorId must DERIVE from their key (identity.ts) — handles cannot be
+   *  claimed, only proven, across every document that declares it. Absent
+   *  = free-form ids (pre-stage-2 documents; still legal, still bound to
+   *  keys within the document by DM-13). */
+  identity?: "fingerprint";
   /** DM-13.6 (proposals/0012): rotations advance this counter; grants cite
    *  the epoch they authorize at. Revocation takes effect per device at
    *  sync time — eventual, like every merge. */
