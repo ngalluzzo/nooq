@@ -36,7 +36,11 @@ function twoColumns(): HTMLElement {
   editor.insertBlock({ type: paragraph.type, parent: null, text: "After the columns, the document flows on." });
   const surface = createSurface(editor, { plugins: [essentialsDOM, calloutsDOM], textMode: "rich" });
   const page = document.createElement("div");
-  page.className = "nq-doc"; // the reference framing: measure + gutter, no story sizing
+  page.className = "nq-doc";
+  // Story-only framing: the columns view MEASURES its container (narrow
+  // groups stack, by design) — pin the width so two-track layout is the
+  // deterministic subject on every runner's viewport, not a coincidence of it.
+  page.style.width = "1100px";
   page.dataset.twoColumnsDemo = "true";
   page.append(surface.element);
   fixtures.set(page, { editor, ids: { columnsId, left, leftText, right, rightText } });
