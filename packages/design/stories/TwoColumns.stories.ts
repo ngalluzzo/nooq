@@ -64,7 +64,7 @@ export default meta;
 type Story = StoryObj;
 
 export const SideBySide: Story = {
-  tags: ["skip"],
+  tags: ["!test"], // excluded from the vitest story run — the CI divergence is documented above
   render: () => twoColumns(),
   play: async ({ canvasElement, userEvent }) => {
     const page = await waitFor(() => {
@@ -145,7 +145,7 @@ function placementStage(): HTMLElement {
 export const SideDrop: Story = { render: placementStage };
 
 export const PlacementAndResize: Story = {
-  tags: ["skip"],
+  tags: ["!test"], // excluded from the vitest story run — the CI divergence is documented above
   render: placementStage,
   play: async ({ canvas, canvasElement, userEvent }) => {
     const page = canvasElement.querySelector<HTMLElement>("[data-column-placement-demo]")!;
